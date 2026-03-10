@@ -264,40 +264,74 @@ func (b *Bot) getUpdates() ([]TGUpdate, error) {
 // ============================================================================
 
 func (b *Bot) fetchEvents() error {
-	req, _ := http.NewRequest("GET", FF_JSON_URL, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-	resp, err := b.client.Do(req)
-	if err != nil {
-		b.fetchErrs++
-		return err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		b.fetchErrs++
-		return err
-	}
-	log.Printf("[FETCH] HTTP %d | %d bytes", resp.StatusCode, len(data))
+	const maxRetries = 3
+	var lastErr error
 
-	var events []FFEvent
-	if err := json.Unmarshal(data, &events); err != nil {
-		b.fetchErrs++
-		return fmt.Errorf("json: %w", err)
-	}
-
-	b.mu.Lock()
-	b.events = events
-	b.lastFetch = time.Now()
-	b.fetchCount++
-	for _, e := range events {
-		k := eventKey(e)
-		if _, ok := b.eventState[k]; !ok {
-			b.eventState[k] = &EventState{AlertedMins: make(map[int]bool)}
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			wait := time.Duration(attempt*attempt) * 5 * time.Second // 5s, 20s
+			log.Printf("[FETCH] Retry %d/%d in %v...", attempt+1, maxRetries, wait)
+			time.Sleep(wait)
 		}
+
+		req, _ := http.NewRequest("GET", FF_JSON_URL, nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+		req.Header.Set("Accept", "application/json")
+		resp, err := b.client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		log.Printf("[FETCH] HTTP %d | %d bytes (attempt %d)", resp.StatusCode, len(data), attempt+1)
+
+		// Retry on rate limit or server error
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("http %d", resp.StatusCode)
+			continue
+		}
+
+		if resp.StatusCode != 200 {
+			b.fetchErrs++
+			return fmt.Errorf("http %d", resp.StatusCode)
+		}
+
+		// Sanity check: JSON must start with '['
+		trimmed := strings.TrimSpace(string(data))
+		if len(trimmed) == 0 || trimmed[0] != '[' {
+			lastErr = fmt.Errorf("non-JSON response: %.80s", trimmed)
+			continue
+		}
+
+		var events []FFEvent
+		if err := json.Unmarshal(data, &events); err != nil {
+			b.fetchErrs++
+			return fmt.Errorf("json: %w", err)
+		}
+
+		b.mu.Lock()
+		b.events = events
+		b.lastFetch = time.Now()
+		b.fetchCount++
+		for _, e := range events {
+			k := eventKey(e)
+			if _, ok := b.eventState[k]; !ok {
+				b.eventState[k] = &EventState{AlertedMins: make(map[int]bool)}
+			}
+		}
+		b.mu.Unlock()
+		log.Printf("[FETCH] Loaded %d events", len(events))
+		return nil
 	}
-	b.mu.Unlock()
-	log.Printf("[FETCH] Loaded %d events", len(events))
-	return nil
+
+	b.fetchErrs++
+	return fmt.Errorf("fetch failed after %d retries: %v", maxRetries, lastErr)
 }
 
 // ============================================================================
@@ -720,7 +754,7 @@ func (b *Bot) buildHealth() string {
 // ============================================================================
 
 func shell(cmd string) string {
-	out, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+	out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("error: %v\n%s", err, string(out))
 	}
