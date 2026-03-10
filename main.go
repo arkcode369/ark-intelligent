@@ -7,23 +7,36 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// ── CONFIG ──────────────────────────────────────────────────────────────────
+// ============================================================================
+// CONFIG
+// ============================================================================
 
 var (
 	BOT_TOKEN   = os.Getenv("BOT_TOKEN")
-	CHAT_ID     = os.Getenv("CHAT_ID")
+	CHAT_ID     = os.Getenv("CHAT_ID") // owner chat ID for VPS access
 	FF_JSON_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-	ALERT_BEFORE = []int{30, 15, 5}
+	ALERT_MINS  = []int{30, 15, 5}
 	WIB         *time.Location
+	BOT_START   time.Time
 )
 
-// ── DATA ────────────────────────────────────────────────────────────────────
+func init() {
+	WIB, _ = time.LoadLocation("Asia/Jakarta")
+	BOT_START = time.Now()
+}
+
+// ============================================================================
+// DATA MODELS
+// ============================================================================
 
 type FFEvent struct {
 	Title    string `json:"title"`
@@ -32,17 +45,16 @@ type FFEvent struct {
 	Impact   string `json:"impact"`
 	Forecast string `json:"forecast"`
 	Previous string `json:"previous"`
-	Actual   string `json:"actual"`
 }
 
 type EventState struct {
-	AlertedMinutes map[int]bool
-	ActualSent     bool
+	AlertedMins map[int]bool
+	ResultSent  bool
 }
 
 type Bot struct {
 	token      string
-	chatID     string
+	ownerID    string
 	client     *http.Client
 	events     []FFEvent
 	eventState map[string]*EventState
@@ -50,76 +62,74 @@ type Bot struct {
 	lastFetch  time.Time
 	offset     int
 	alertsOn   bool
+	fetchCount int
+	fetchErrs  int
 }
 
-// ── TELEGRAM STRUCTS ────────────────────────────────────────────────────────
+// ============================================================================
+// TELEGRAM TYPES
+// ============================================================================
 
 type TGUpdate struct {
-	UpdateID      int         `json:"update_id"`
-	Message       *TGMessage  `json:"message"`
-	CallbackQuery *TGCallback `json:"callback_query"`
+	UpdateID int         `json:"update_id"`
+	Message  *TGMessage  `json:"message"`
+	Callback *TGCallback `json:"callback_query"`
 }
-
 type TGMessage struct {
 	MessageID int    `json:"message_id"`
 	Chat      TGChat `json:"chat"`
 	Text      string `json:"text"`
 }
-
 type TGChat struct {
 	ID   int64  `json:"id"`
 	Type string `json:"type"`
 }
-
 type TGCallback struct {
 	ID      string     `json:"id"`
 	From    TGUser     `json:"from"`
 	Message *TGMessage `json:"message"`
 	Data    string     `json:"data"`
 }
-
 type TGUser struct {
 	ID int64 `json:"id"`
 }
-
 type TGResponse struct {
 	Ok     bool       `json:"ok"`
 	Result []TGUpdate `json:"result"`
 }
-
-type TGSendResponse struct {
-	Ok          bool   `json:"ok"`
-	Description string `json:"description"`
+type TGSendResp struct {
+	Ok   bool   `json:"ok"`
+	Desc string `json:"description"`
+}
+type InlineBtn struct {
+	Text string `json:"text"`
+	Data string `json:"callback_data,omitempty"`
+}
+type InlineKB struct {
+	Keyboard [][]InlineBtn `json:"inline_keyboard"`
 }
 
-type InlineKeyboardButton struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
-}
-
-type InlineKeyboardMarkup struct {
-	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
-}
-
-// ── COUNTRY FLAGS ───────────────────────────────────────────────────────────
+// ============================================================================
+// COUNTRY FLAGS + IMPACT ICONS
+// ============================================================================
 
 var countryFlags = map[string]string{
 	"USD": "\U0001F1FA\U0001F1F8", "EUR": "\U0001F1EA\U0001F1FA",
 	"GBP": "\U0001F1EC\U0001F1E7", "JPY": "\U0001F1EF\U0001F1F5",
 	"AUD": "\U0001F1E6\U0001F1FA", "NZD": "\U0001F1F3\U0001F1FF",
 	"CAD": "\U0001F1E8\U0001F1E6", "CHF": "\U0001F1E8\U0001F1ED",
-	"CNY": "\U0001F1E8\U0001F1F3", "ALL": "\U0001F30D",
+	"CNY": "\U0001F1E8\U0001F1F3",
 }
 
-func flag(country string) string {
-	if f, ok := countryFlags[strings.ToUpper(country)]; ok {
+func flag(c string) string {
+	if f, ok := countryFlags[strings.ToUpper(c)]; ok {
 		return f
 	}
 	return "\U0001F30D"
 }
 
-func impactIcon(impact string) string {
-	switch strings.ToLower(impact) {
+func impactIcon(imp string) string {
+	switch strings.ToLower(imp) {
 	case "high":
 		return "\U0001F534"
 	case "medium":
@@ -133,25 +143,59 @@ func impactIcon(impact string) string {
 	}
 }
 
-// ── BOT CORE ────────────────────────────────────────────────────────────────
+// ============================================================================
+// TIME PARSING — Fixed for ISO 8601 / RFC3339
+// ============================================================================
 
-func NewBot(token, chatID string) *Bot {
+func parseEventTime(dateStr string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339, dateStr)
+	if err != nil {
+		t, err = time.Parse("2006-01-02T15:04:05", dateStr)
+	}
+	return t, err
+}
+
+func eventKey(e FFEvent) string {
+	return fmt.Sprintf("%s|%s|%s", e.Date, e.Country, e.Title)
+}
+
+func fmtDuration(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	days := int(d.Hours()) / 24
+	hrs := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd%dh", days, hrs)
+	}
+	if hrs > 0 {
+		return fmt.Sprintf("%dh%dm", hrs, mins)
+	}
+	return fmt.Sprintf("%dm", mins)
+}
+
+// ============================================================================
+// BOT CORE
+// ============================================================================
+
+func NewBot(token, ownerID string) *Bot {
 	return &Bot{
 		token:      token,
-		chatID:     chatID,
+		ownerID:    ownerID,
 		client:     &http.Client{Timeout: 15 * time.Second},
 		eventState: make(map[string]*EventState),
-		alertsOn:   chatID != "",
+		alertsOn:   ownerID != "",
 	}
 }
 
-func (b *Bot) apiURL(method string) string {
+func (b *Bot) api(method string) string {
 	return fmt.Sprintf("https://api.telegram.org/bot%s/%s", b.token, method)
 }
 
-func (b *Bot) postJSON(method string, payload map[string]interface{}) error {
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", b.apiURL(method), strings.NewReader(string(body)))
+func (b *Bot) post(method string, p map[string]interface{}) error {
+	data, _ := json.Marshal(p)
+	req, err := http.NewRequest("POST", b.api(method), strings.NewReader(string(data)))
 	if err != nil {
 		return err
 	}
@@ -161,35 +205,29 @@ func (b *Bot) postJSON(method string, payload map[string]interface{}) error {
 		return err
 	}
 	defer resp.Body.Close()
-	var result TGSendResponse
-	json.NewDecoder(resp.Body).Decode(&result)
-	if !result.Ok {
-		return fmt.Errorf("tg %s: %s", method, result.Description)
+	var r TGSendResp
+	json.NewDecoder(resp.Body).Decode(&r)
+	if !r.Ok {
+		return fmt.Errorf("tg %s: %s", method, r.Desc)
 	}
 	return nil
 }
 
-func (b *Bot) sendMessage(chatID, text string) error {
-	if chatID == "" {
-		chatID = b.chatID
-	}
-	return b.postJSON("sendMessage", map[string]interface{}{
+func (b *Bot) send(chatID, text string) error {
+	return b.post("sendMessage", map[string]interface{}{
 		"chat_id": chatID, "text": text, "parse_mode": "HTML",
 		"disable_web_page_preview": true,
 	})
 }
 
-func (b *Bot) sendWithKB(chatID, text string, kb InlineKeyboardMarkup) error {
-	if chatID == "" {
-		chatID = b.chatID
-	}
-	return b.postJSON("sendMessage", map[string]interface{}{
+func (b *Bot) sendKB(chatID, text string, kb InlineKB) error {
+	return b.post("sendMessage", map[string]interface{}{
 		"chat_id": chatID, "text": text, "parse_mode": "HTML",
 		"reply_markup": kb, "disable_web_page_preview": true,
 	})
 }
 
-func (b *Bot) editMsg(chatID string, msgID int, text string, kb *InlineKeyboardMarkup) error {
+func (b *Bot) edit(chatID string, msgID int, text string, kb *InlineKB) error {
 	p := map[string]interface{}{
 		"chat_id": chatID, "message_id": msgID, "text": text,
 		"parse_mode": "HTML", "disable_web_page_preview": true,
@@ -197,7 +235,7 @@ func (b *Bot) editMsg(chatID string, msgID int, text string, kb *InlineKeyboardM
 	if kb != nil {
 		p["reply_markup"] = kb
 	}
-	return b.postJSON("editMessageText", p)
+	return b.post("editMessageText", p)
 }
 
 func (b *Bot) answerCB(cbID, text string) {
@@ -205,124 +243,138 @@ func (b *Bot) answerCB(cbID, text string) {
 	if text != "" {
 		p["text"] = text
 	}
-	b.postJSON("answerCallbackQuery", p)
+	b.post("answerCallbackQuery", p)
 }
 
 func (b *Bot) getUpdates() ([]TGUpdate, error) {
 	url := fmt.Sprintf("%s?offset=%d&timeout=1&allowed_updates=[\"message\",\"callback_query\"]",
-		b.apiURL("getUpdates"), b.offset)
+		b.api("getUpdates"), b.offset)
 	resp, err := b.client.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	var result TGResponse
-	json.NewDecoder(resp.Body).Decode(&result)
-	if !result.Ok {
-		return nil, fmt.Errorf("getUpdates failed")
-	}
-	return result.Result, nil
+	var r TGResponse
+	json.NewDecoder(resp.Body).Decode(&r)
+	return r.Result, nil
 }
 
-// ── DATA FETCHER ────────────────────────────────────────────────────────────
+// ============================================================================
+// DATA FETCHER
+// ============================================================================
 
 func (b *Bot) fetchEvents() error {
 	req, _ := http.NewRequest("GET", FF_JSON_URL, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
-	req.Header.Set("Accept", "application/json")
 	resp, err := b.client.Do(req)
 	if err != nil {
+		b.fetchErrs++
 		return err
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
+		b.fetchErrs++
 		return err
 	}
+	log.Printf("[FETCH] HTTP %d | %d bytes", resp.StatusCode, len(data))
+
 	var events []FFEvent
 	if err := json.Unmarshal(data, &events); err != nil {
-		return fmt.Errorf("json: %w (status %d)", err, resp.StatusCode)
+		b.fetchErrs++
+		return fmt.Errorf("json: %w", err)
 	}
+
 	b.mu.Lock()
 	b.events = events
 	b.lastFetch = time.Now()
+	b.fetchCount++
 	for _, e := range events {
-		key := eventKey(e)
-		if _, ok := b.eventState[key]; !ok {
-			b.eventState[key] = &EventState{AlertedMinutes: make(map[int]bool)}
+		k := eventKey(e)
+		if _, ok := b.eventState[k]; !ok {
+			b.eventState[k] = &EventState{AlertedMins: make(map[int]bool)}
 		}
 	}
 	b.mu.Unlock()
-	log.Printf("[FETCH] %d events", len(events))
+	log.Printf("[FETCH] Loaded %d events", len(events))
 	return nil
 }
 
-func eventKey(e FFEvent) string { return e.Title + "|" + e.Date }
+// ============================================================================
+// INLINE KEYBOARDS
+// ============================================================================
 
-func parseEventTime(s string) (time.Time, error) {
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		t, err = time.Parse("2006-01-02T15:04:05-0700", s)
+func kbMain() InlineKB {
+	return InlineKB{Keyboard: [][]InlineBtn{
+		{{Text: "\U0001F4C5 Today", Data: "today"}, {Text: "\U0001F4CB Week", Data: "week"}},
+		{{Text: "\U0001F534 High Impact", Data: "high"}, {Text: "\u23ED Next", Data: "next"}},
+		{{Text: "\u2699\uFE0F Settings", Data: "settings"}},
+	}}
+}
+
+func kbCalendar() InlineKB {
+	return InlineKB{Keyboard: [][]InlineBtn{
+		{{Text: "\U0001F534 High Only", Data: "high"}, {Text: "\u23ED Next", Data: "next"}},
+		{{Text: "\U0001F504 Refresh", Data: "today"}, {Text: "\U0001F3E0 Menu", Data: "menu"}},
+	}}
+}
+
+func kbHigh() InlineKB {
+	return InlineKB{Keyboard: [][]InlineBtn{
+		{{Text: "\U0001F4C5 Full Calendar", Data: "today"}, {Text: "\u23ED Next", Data: "next"}},
+		{{Text: "\U0001F3E0 Menu", Data: "menu"}},
+	}}
+}
+
+func kbNext() InlineKB {
+	return InlineKB{Keyboard: [][]InlineBtn{
+		{{Text: "\U0001F4C5 Today", Data: "today"}, {Text: "\U0001F534 High Only", Data: "high"}},
+		{{Text: "\U0001F3E0 Menu", Data: "menu"}},
+	}}
+}
+
+func kbWeek() InlineKB {
+	return InlineKB{Keyboard: [][]InlineBtn{
+		{{Text: "\U0001F534 High Only", Data: "high"}, {Text: "\u23ED Next", Data: "next"}},
+		{{Text: "\U0001F3E0 Menu", Data: "menu"}},
+	}}
+}
+
+func (b *Bot) kbSettings(chatID string) InlineKB {
+	alertText := "\U0001F514 Alerts ON"
+	if !b.alertsOn {
+		alertText = "\U0001F515 Alerts OFF"
 	}
-	return t, err
-}
-
-// ── INLINE KEYBOARDS ────────────────────────────────────────────────────────
-
-func kbMain() InlineKeyboardMarkup {
-	return InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
-		{{Text: "\U0001F4C5 Today", CallbackData: "calendar"}, {Text: "\U0001F4CB Week", CallbackData: "week"}},
-		{{Text: "\U0001F534 High Impact", CallbackData: "high"}, {Text: "\u23ED Next", CallbackData: "next"}},
-		{{Text: "\u2139\uFE0F Status", CallbackData: "alerts"}, {Text: "\U0001F194 Chat ID", CallbackData: "chatid"}},
-	}}
-}
-
-func kbCalendar() InlineKeyboardMarkup {
-	return InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
-		{{Text: "\U0001F534 High Only", CallbackData: "high"}, {Text: "\u23ED Next", CallbackData: "next"}, {Text: "\U0001F504 Refresh", CallbackData: "refresh"}},
-		{{Text: "\U0001F3E0 Menu", CallbackData: "start"}},
-	}}
-}
-
-func kbHigh() InlineKeyboardMarkup {
-	return InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
-		{{Text: "\U0001F4C5 Full Calendar", CallbackData: "calendar"}, {Text: "\u23ED Next", CallbackData: "next"}},
-		{{Text: "\U0001F3E0 Menu", CallbackData: "start"}},
-	}}
-}
-
-func kbNext() InlineKeyboardMarkup {
-	return InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
-		{{Text: "\U0001F4C5 Today", CallbackData: "calendar"}, {Text: "\U0001F534 High Only", CallbackData: "high"}},
-		{{Text: "\U0001F3E0 Menu", CallbackData: "start"}},
-	}}
-}
-
-func kbWeek() InlineKeyboardMarkup {
-	return InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
-		{{Text: "\U0001F534 High Only", CallbackData: "high"}, {Text: "\U0001F4C5 Today", CallbackData: "calendar"}},
-		{{Text: "\U0001F3E0 Menu", CallbackData: "start"}},
-	}}
-}
-
-func kbBack() InlineKeyboardMarkup {
-	return InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
-		{{Text: "\U0001F3E0 Menu", CallbackData: "start"}},
-	}}
-}
-
-func kbAlerts(on bool) InlineKeyboardMarkup {
-	txt, data := "\u25B6\uFE0F Turn ON", "alerts_on"
-	if on {
-		txt, data = "\u23F8 Turn OFF", "alerts_off"
+	rows := [][]InlineBtn{
+		{{Text: alertText, Data: "toggle_alerts"}},
+		{{Text: "\U0001F4CA Service Health", Data: "health"}},
 	}
-	return InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
-		{{Text: txt, CallbackData: data}},
-		{{Text: "\U0001F3E0 Menu", CallbackData: "start"}},
+	// Owner-only: VPS Monitor
+	if chatID == b.ownerID {
+		rows = append(rows, []InlineBtn{{Text: "\U0001F5A5 VPS Monitor", Data: "vps"}})
+	}
+	rows = append(rows, []InlineBtn{{Text: "\U0001F519 Back", Data: "menu"}})
+	return InlineKB{Keyboard: rows}
+}
+
+func kbVPS() InlineKB {
+	return InlineKB{Keyboard: [][]InlineBtn{
+		{{Text: "\U0001F504 Refresh", Data: "vps"}, {Text: "\U0001F433 Docker", Data: "vps_docker"}},
+		{{Text: "\U0001F4E1 Network", Data: "vps_net"}, {Text: "\U0001F4BE Disk", Data: "vps_disk"}},
+		{{Text: "\U0001F51D Top Procs", Data: "vps_top"}, {Text: "\U0001F4DD Logs", Data: "vps_logs"}},
+		{{Text: "\u2699\uFE0F Settings", Data: "settings"}, {Text: "\U0001F3E0 Menu", Data: "menu"}},
 	}}
 }
 
-// ── FORMAT HELPERS ───────────────────────────────────────────────────────────
+func kbVPSSub() InlineKB {
+	return InlineKB{Keyboard: [][]InlineBtn{
+		{{Text: "\U0001F519 VPS Overview", Data: "vps"}, {Text: "\U0001F3E0 Menu", Data: "menu"}},
+	}}
+}
+
+// ============================================================================
+// EVENT FORMATTERS
+// ============================================================================
 
 func fmtEventLine(e FFEvent) string {
 	t, err := parseEventTime(e.Date)
@@ -331,237 +383,236 @@ func fmtEventLine(e FFEvent) string {
 	}
 	wt := t.In(WIB)
 	line := fmt.Sprintf("%s <b>%s</b> %s %s", impactIcon(e.Impact), wt.Format("15:04"), flag(e.Country), e.Title)
-	var dp []string
+	var parts []string
 	if e.Forecast != "" {
-		dp = append(dp, "F:"+e.Forecast)
+		parts = append(parts, "F: "+e.Forecast)
 	}
 	if e.Previous != "" {
-		dp = append(dp, "P:"+e.Previous)
+		parts = append(parts, "P: "+e.Previous)
 	}
-	if e.Actual != "" {
-		dp = append(dp, "<b>A:"+e.Actual+"</b>")
-	}
-	if len(dp) > 0 {
-		line += "\n    " + strings.Join(dp, " | ")
+	if len(parts) > 0 {
+		line += "\n         " + strings.Join(parts, "  |  ")
 	}
 	return line
 }
 
-func fmtToday(events []FFEvent) string {
+func (b *Bot) buildToday() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
 	now := time.Now().In(WIB)
-	dayStr := now.Format("2006-01-02")
-	var dayEvents []FFEvent
-	for _, e := range events {
+	todayStr := now.Format("2006-01-02")
+
+	var today []FFEvent
+	var highCount int
+	for _, e := range b.events {
 		t, err := parseEventTime(e.Date)
 		if err != nil {
 			continue
 		}
-		if t.In(WIB).Format("2006-01-02") == dayStr {
-			dayEvents = append(dayEvents, e)
+		if t.In(WIB).Format("2006-01-02") == todayStr {
+			today = append(today, e)
+			if strings.EqualFold(e.Impact, "high") {
+				highCount++
+			}
 		}
 	}
-	if len(dayEvents) == 0 {
-		return fmt.Sprintf("\U0001F4C5 <b>%s</b>\n\nNo events today.", now.Format("Mon, 02 Jan 2006"))
+
+	if len(today) == 0 {
+		return fmt.Sprintf("\U0001F4C5 <b>%s</b>\n\nNo events scheduled today.", now.Format("Mon, 02 Jan 2006"))
 	}
-	sort.Slice(dayEvents, func(i, j int) bool { return dayEvents[i].Date < dayEvents[j].Date })
-	high := 0
-	for _, e := range dayEvents {
-		if strings.EqualFold(e.Impact, "high") {
-			high++
-		}
-	}
+
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("\U0001F4C5 <b>%s</b>\n", now.Format("Mon, 02 Jan 2006")))
-	sb.WriteString(fmt.Sprintf("%d events \u2022 %d high impact\n\n", len(dayEvents), high))
-	for _, e := range dayEvents {
-		if line := fmtEventLine(e); line != "" {
-			sb.WriteString(line + "\n")
+	sb.WriteString(fmt.Sprintf("\U0001F4C5 <b>%s (WIB)</b>\n", now.Format("Mon, 02 Jan 2006")))
+	sb.WriteString(fmt.Sprintf("%d events | \U0001F534 %d high impact\n\n", len(today), highCount))
+
+	for _, e := range today {
+		line := fmtEventLine(e)
+		if line != "" {
+			sb.WriteString(line + "\n\n")
 		}
 	}
-	sb.WriteString(fmt.Sprintf("\n<i>\U0001F534=HIGH \U0001F7E0=MED \U0001F7E1=LOW | %s</i>", time.Now().In(WIB).Format("15:04")))
+
+	sb.WriteString(fmt.Sprintf("\U0001F553 Updated: %s WIB", b.lastFetch.In(WIB).Format("15:04")))
 	return sb.String()
 }
 
-func fmtWeek(events []FFEvent) string {
-	dayMap := make(map[string][]FFEvent)
-	var days []string
-	for _, e := range events {
+func (b *Bot) buildWeek() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	type dayGroup struct {
+		date   string
+		label  string
+		events []FFEvent
+	}
+
+	groups := make(map[string]*dayGroup)
+	var order []string
+
+	for _, e := range b.events {
 		t, err := parseEventTime(e.Date)
 		if err != nil {
 			continue
 		}
-		ds := t.In(WIB).Format("2006-01-02")
-		if _, ok := dayMap[ds]; !ok {
-			days = append(days, ds)
+		wt := t.In(WIB)
+		key := wt.Format("2006-01-02")
+		if _, ok := groups[key]; !ok {
+			groups[key] = &dayGroup{date: key, label: wt.Format("Mon, 02 Jan")}
+			order = append(order, key)
 		}
-		dayMap[ds] = append(dayMap[ds], e)
+		groups[key].events = append(groups[key].events, e)
 	}
-	sort.Strings(days)
+	sort.Strings(order)
+
 	var sb strings.Builder
-	sb.WriteString("\U0001F4CB <b>Weekly Calendar</b>\n\n")
-	for _, ds := range days {
-		dev := dayMap[ds]
-		sort.Slice(dev, func(i, j int) bool { return dev[i].Date < dev[j].Date })
-		dt, _ := time.Parse("2006-01-02", ds)
-		h := 0
-		for _, e := range dev {
+	sb.WriteString("\U0001F4CB <b>WEEK OVERVIEW (WIB)</b>\n\n")
+
+	for _, key := range order {
+		g := groups[key]
+		var hi int
+		for _, e := range g.events {
 			if strings.EqualFold(e.Impact, "high") {
-				h++
+				hi++
 			}
 		}
-		sb.WriteString(fmt.Sprintf("\U0001F4CC <b>%s</b> (%d", dt.Format("Mon 02 Jan"), len(dev)))
-		if h > 0 {
-			sb.WriteString(fmt.Sprintf(", %d\U0001F534", h))
+		sb.WriteString(fmt.Sprintf("<b>%s</b>  (%d events", g.label, len(g.events)))
+		if hi > 0 {
+			sb.WriteString(fmt.Sprintf(", \U0001F534 %d", hi))
 		}
 		sb.WriteString(")\n")
-		for _, e := range dev {
-			if line := fmtEventLine(e); line != "" {
+		for _, e := range g.events {
+			line := fmtEventLine(e)
+			if line != "" {
 				sb.WriteString(line + "\n")
 			}
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString("<i>Source: ForexFactory</i>")
+
+	sb.WriteString(fmt.Sprintf("\U0001F553 Updated: %s WIB", b.lastFetch.In(WIB).Format("15:04")))
 	return sb.String()
 }
 
-func fmtHigh(events []FFEvent) string {
-	var hi []FFEvent
-	for _, e := range events {
-		if strings.EqualFold(e.Impact, "high") {
-			hi = append(hi, e)
+func (b *Bot) buildHigh() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	type dayGroup struct {
+		label  string
+		events []FFEvent
+	}
+	groups := make(map[string]*dayGroup)
+	var order []string
+	var total int
+
+	for _, e := range b.events {
+		if !strings.EqualFold(e.Impact, "high") {
+			continue
 		}
-	}
-	if len(hi) == 0 {
-		return "\U0001F534 <b>High Impact</b>\n\nNo high-impact events this week."
-	}
-	sort.Slice(hi, func(i, j int) bool { return hi[i].Date < hi[j].Date })
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("\U0001F534 <b>High Impact</b> (%d events)\n\n", len(hi)))
-	curDay := ""
-	for _, e := range hi {
 		t, err := parseEventTime(e.Date)
 		if err != nil {
 			continue
 		}
-		ds := t.In(WIB).Format("Mon 02 Jan")
-		if ds != curDay {
-			if curDay != "" {
-				sb.WriteString("\n")
+		wt := t.In(WIB)
+		key := wt.Format("2006-01-02")
+		if _, ok := groups[key]; !ok {
+			groups[key] = &dayGroup{label: wt.Format("Mon, 02 Jan")}
+			order = append(order, key)
+		}
+		groups[key].events = append(groups[key].events, e)
+		total++
+	}
+	sort.Strings(order)
+
+	if total == 0 {
+		return "\U0001F534 <b>HIGH IMPACT</b>\n\nNo high-impact events this week."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("\U0001F534 <b>HIGH IMPACT EVENTS (WIB)</b>\n%d events this week\n\n", total))
+
+	for _, key := range order {
+		g := groups[key]
+		sb.WriteString(fmt.Sprintf("<b>%s</b>\n", g.label))
+		for _, e := range g.events {
+			line := fmtEventLine(e)
+			if line != "" {
+				sb.WriteString(line + "\n")
 			}
-			sb.WriteString(fmt.Sprintf("\U0001F4CC <b>%s</b>\n", ds))
-			curDay = ds
 		}
-		wt := t.In(WIB)
-		sb.WriteString(fmt.Sprintf("\U0001F534 <b>%s</b> %s %s\n", wt.Format("15:04"), flag(e.Country), e.Title))
-		var dp []string
-		if e.Forecast != "" {
-			dp = append(dp, "F:"+e.Forecast)
-		}
-		if e.Previous != "" {
-			dp = append(dp, "P:"+e.Previous)
-		}
-		if e.Actual != "" {
-			dp = append(dp, "<b>A:"+e.Actual+"</b>")
-		}
-		if len(dp) > 0 {
-			sb.WriteString("    " + strings.Join(dp, " | ") + "\n")
-		}
+		sb.WriteString("\n")
 	}
-	sb.WriteString("\n<i>Source: ForexFactory</i>")
+
+	sb.WriteString(fmt.Sprintf("\U0001F553 Updated: %s WIB", b.lastFetch.In(WIB).Format("15:04")))
 	return sb.String()
 }
 
-func fmtNext(events []FFEvent, count int) string {
-	now := time.Now().In(WIB)
-	var up []FFEvent
-	for _, e := range events {
-		t, err := parseEventTime(e.Date)
-		if err != nil {
-			continue
-		}
-		if t.In(WIB).After(now) {
-			up = append(up, e)
-		}
-	}
-	sort.Slice(up, func(i, j int) bool { return up[i].Date < up[j].Date })
-	if len(up) == 0 {
-		return "\u23ED <b>Next Events</b>\n\nNo upcoming events this week."
-	}
-	if count > len(up) {
-		count = len(up)
-	}
-	up = up[:count]
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("\u23ED <b>Next %d Events</b>\n\n", count))
-	for _, e := range up {
-		t, _ := parseEventTime(e.Date)
-		wt := t.In(WIB)
-		mins := int(time.Until(wt).Minutes())
-		cd := ""
-		if mins < 60 {
-			cd = fmt.Sprintf("%dm", mins)
-		} else if mins < 1440 {
-			cd = fmt.Sprintf("%dh%dm", mins/60, mins%60)
-		} else {
-			cd = fmt.Sprintf("%dd%dh", mins/1440, (mins%1440)/60)
-		}
-		sb.WriteString(fmt.Sprintf("%s <b>%s</b> %s %s <i>(%s)</i>\n",
-			impactIcon(e.Impact), wt.Format("15:04"), flag(e.Country), e.Title, cd))
-		var dp []string
-		if e.Forecast != "" {
-			dp = append(dp, "F:"+e.Forecast)
-		}
-		if e.Previous != "" {
-			dp = append(dp, "P:"+e.Previous)
-		}
-		if len(dp) > 0 {
-			sb.WriteString("    " + strings.Join(dp, " | ") + "\n")
-		}
-	}
-	sb.WriteString(fmt.Sprintf("\n<i>Updated %s</i>", time.Now().In(WIB).Format("15:04")))
-	return sb.String()
-}
+func (b *Bot) buildNext() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 
-func (b *Bot) fmtAlerts() string {
 	now := time.Now()
-	up := 0
+	type upcoming struct {
+		event FFEvent
+		at    time.Time
+	}
+	var ups []upcoming
+
 	for _, e := range b.events {
 		t, err := parseEventTime(e.Date)
 		if err != nil {
 			continue
 		}
 		if t.After(now) {
-			up++
+			ups = append(ups, upcoming{e, t})
 		}
 	}
-	b.mu.RLock()
-	lf := b.lastFetch.In(WIB).Format("15:04:05")
-	b.mu.RUnlock()
-	st := "\u2705 ON"
-	if !b.alertsOn {
-		st = "\u274C OFF"
+	sort.Slice(ups, func(i, j int) bool { return ups[i].at.Before(ups[j].at) })
+
+	if len(ups) == 0 {
+		return "\u23ED <b>NEXT EVENTS</b>\n\nNo upcoming events."
 	}
-	return fmt.Sprintf(
-		"\u2139\uFE0F <b>Bot Status</b>\n\n"+
-			"Alerts: %s\n"+
-			"Events: %d loaded, %d upcoming\n"+
-			"Refresh: %s WIB\n"+
-			"Target: <code>%s</code>\n"+
-			"Interval: 2min active / 5min idle",
-		st, len(b.events), up, lf, b.chatID)
+
+	limit := 8
+	if len(ups) < limit {
+		limit = len(ups)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\u23ED <b>NEXT EVENTS</b>\n\n")
+
+	for _, u := range ups[:limit] {
+		wt := u.at.In(WIB)
+		diff := u.at.Sub(now)
+		line := fmt.Sprintf("%s <b>%s</b> %s %s  <i>(%s)</i>",
+			impactIcon(u.event.Impact), wt.Format("15:04"), flag(u.event.Country),
+			u.event.Title, fmtDuration(diff))
+		var parts []string
+		if u.event.Forecast != "" {
+			parts = append(parts, "F: "+u.event.Forecast)
+		}
+		if u.event.Previous != "" {
+			parts = append(parts, "P: "+u.event.Previous)
+		}
+		if len(parts) > 0 {
+			line += "\n         " + strings.Join(parts, "  |  ")
+		}
+		sb.WriteString(line + "\n\n")
+	}
+
+	if len(ups) > limit {
+		sb.WriteString(fmt.Sprintf("<i>+%d more events...</i>\n", len(ups)-limit))
+	}
+	return sb.String()
 }
 
-func fmtStart() string {
-	return "\U0001F4B9 <b>FF Economic Calendar</b>\n\n" +
-		"Real-time Forex Factory events\nwith auto-alerts before releases.\n\n" +
-		"Pick an option \u2B07"
-}
-
-// ── ALERT ENGINE ─────────────────────────────────────────────────────────────
+// ============================================================================
+// ALERT ENGINE
+// ============================================================================
 
 func (b *Bot) checkAlerts() {
-	if !b.alertsOn || b.chatID == "" {
+	if !b.alertsOn || b.ownerID == "" {
 		return
 	}
 	b.mu.RLock()
@@ -570,368 +621,614 @@ func (b *Bot) checkAlerts() {
 	now := time.Now()
 
 	for _, e := range events {
+		if !strings.EqualFold(e.Impact, "high") {
+			continue
+		}
 		t, err := parseEventTime(e.Date)
 		if err != nil {
 			continue
 		}
 		key := eventKey(e)
+		minsUntil := int(t.Sub(now).Minutes())
+
 		b.mu.RLock()
-		state, ok := b.eventState[key]
+		state := b.eventState[key]
 		b.mu.RUnlock()
-		if !ok {
+		if state == nil {
 			continue
 		}
 
-		diff := time.Until(t)
-		minsLeft := int(diff.Minutes())
-
 		// Pre-event alerts
-		for _, am := range ALERT_BEFORE {
-			if minsLeft <= am && minsLeft > (am-2) && !state.AlertedMinutes[am] {
-				wt := t.In(WIB).Format("15:04")
-				urgency := "\U0001F514" // bell
-				if am <= 5 {
-					urgency = "\U0001F6A8" // siren
-				} else if am <= 15 {
-					urgency = "\u26A0\uFE0F" // warning
-				}
-
-				msg := fmt.Sprintf(
-					"%s <b>%dm before release</b>\n\n"+
-						"%s %s %s\n"+
-						"\u23F0 %s WIB",
-					urgency, minsLeft,
-					impactIcon(e.Impact), flag(e.Country), e.Title, wt)
-
+		for _, m := range ALERT_MINS {
+			if minsUntil <= m && minsUntil > m-2 && !state.AlertedMins[m] {
+				wt := t.In(WIB)
+				msg := fmt.Sprintf("\u23F0 <b>%d min to go!</b>\n\n%s <b>%s</b> %s %s",
+					m, impactIcon(e.Impact), wt.Format("15:04"), flag(e.Country), e.Title)
 				if e.Forecast != "" {
-					msg += fmt.Sprintf("\nFcst: %s", e.Forecast)
+					msg += "\nForecast: " + e.Forecast
 				}
 				if e.Previous != "" {
-					msg += fmt.Sprintf("\nPrev: %s", e.Previous)
+					msg += "\nPrevious: " + e.Previous
 				}
-
-				if err := b.sendMessage("", msg); err != nil {
-					log.Printf("[ALERT] %v", err)
-				} else {
-					log.Printf("[ALERT] %dm: %s %s", am, e.Country, e.Title)
-				}
+				b.send(b.ownerID, msg)
 				b.mu.Lock()
-				state.AlertedMinutes[am] = true
+				state.AlertedMins[m] = true
 				b.mu.Unlock()
 			}
 		}
-
-		// Result alert
-		if e.Actual != "" && !state.ActualSent && now.After(t) {
-			wt := t.In(WIB).Format("15:04")
-			verdict, vIcon := "", ""
-			if e.Forecast != "" {
-				av := parseNumber(e.Actual)
-				fv := parseNumber(e.Forecast)
-				if av > fv {
-					verdict, vIcon = "BEAT", "\u2705"
-				} else if av < fv {
-					verdict, vIcon = "MISS", "\u274C"
-				} else {
-					verdict, vIcon = "IN LINE", "\u2796"
-				}
-			}
-
-			msg := fmt.Sprintf(
-				"\U0001F4CA <b>RESULT</b>\n\n"+
-					"%s %s %s\n"+
-					"\u23F0 %s WIB\n\n"+
-					"Actual:   <b>%s</b>\n"+
-					"Forecast: %s\n"+
-					"Previous: %s",
-				impactIcon(e.Impact), flag(e.Country), e.Title,
-				wt, e.Actual, e.Forecast, e.Previous)
-
-			if verdict != "" {
-				msg += fmt.Sprintf("\n\n%s <b>%s</b>", vIcon, verdict)
-			}
-
-			if err := b.sendMessage("", msg); err != nil {
-				log.Printf("[RESULT] %v", err)
-			} else {
-				log.Printf("[RESULT] %s %s = %s", e.Country, e.Title, e.Actual)
-			}
-			b.mu.Lock()
-			state.ActualSent = true
-			b.mu.Unlock()
-		}
 	}
 }
 
-// ── COMMAND HANDLER ──────────────────────────────────────────────────────────
+// ============================================================================
+// SETTINGS & HEALTH
+// ============================================================================
 
-func (b *Bot) handleCommand(chatID int64, text string) {
-	cid := fmt.Sprintf("%d", chatID)
+func (b *Bot) buildSettings(chatID string) string {
+	alertStatus := "\U0001F7E2 ON"
+	if !b.alertsOn {
+		alertStatus = "\U0001F534 OFF"
+	}
+	var sb strings.Builder
+	sb.WriteString("\u2699\uFE0F <b>SETTINGS</b>\n\n")
+	sb.WriteString(fmt.Sprintf("\U0001F514 Alerts: %s\n", alertStatus))
+	sb.WriteString(fmt.Sprintf("\U0001F4CA Data source: ForexFactory\n"))
+	sb.WriteString(fmt.Sprintf("\U0001F30D Timezone: WIB (UTC+7)\n"))
+	if chatID == b.ownerID {
+		sb.WriteString("\n\U0001F511 <i>Owner access: VPS Monitor available</i>")
+	}
+	return sb.String()
+}
+
+func (b *Bot) buildHealth() string {
 	b.mu.RLock()
-	events := b.events
-	b.mu.RUnlock()
+	defer b.mu.RUnlock()
 
-	switch {
-	case text == "/start" || text == "/help":
-		b.sendWithKB(cid, fmtStart(), kbMain())
+	uptime := time.Since(BOT_START)
+	var sb strings.Builder
+	sb.WriteString("\U0001F4CA <b>SERVICE HEALTH</b>\n\n")
 
-	case text == "/calendar" || text == "/today":
-		msg := fmtToday(events)
-		if len(msg) > 4000 {
-			for _, c := range splitMessage(msg, 4000) {
-				b.sendMessage(cid, c)
-				time.Sleep(100 * time.Millisecond)
+	// Bot status
+	sb.WriteString("<b>Bot</b>\n")
+	sb.WriteString(fmt.Sprintf("  \U0001F7E2 Status: Running\n"))
+	sb.WriteString(fmt.Sprintf("  \u23F1 Uptime: %s\n", fmtDuration(uptime)))
+	sb.WriteString(fmt.Sprintf("  \U0001F4E6 Go: %s\n\n", runtime.Version()))
+
+	// Data status
+	sb.WriteString("<b>Data Feed</b>\n")
+	sb.WriteString(fmt.Sprintf("  \U0001F4C8 Events loaded: %d\n", len(b.events)))
+	sb.WriteString(fmt.Sprintf("  \U0001F504 Fetch count: %d\n", b.fetchCount))
+	sb.WriteString(fmt.Sprintf("  \u274C Fetch errors: %d\n", b.fetchErrs))
+	if !b.lastFetch.IsZero() {
+		sb.WriteString(fmt.Sprintf("  \U0001F553 Last fetch: %s WIB\n", b.lastFetch.In(WIB).Format("15:04:05")))
+		sb.WriteString(fmt.Sprintf("  \u23F3 Data age: %s\n", fmtDuration(time.Since(b.lastFetch))))
+	}
+
+	// Alert status
+	sb.WriteString("\n<b>Alerts</b>\n")
+	if b.alertsOn {
+		sb.WriteString("  \U0001F7E2 Active\n")
+	} else {
+		sb.WriteString("  \U0001F534 Disabled\n")
+	}
+	sb.WriteString(fmt.Sprintf("  \u23F0 Intervals: %v min", ALERT_MINS))
+
+	return sb.String()
+}
+
+// ============================================================================
+// VPS MONITORING (Owner Only)
+// ============================================================================
+
+func shell(cmd string) string {
+	out, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("error: %v\n%s", err, string(out))
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func (b *Bot) isOwner(chatID string) bool {
+	return chatID == b.ownerID && b.ownerID != ""
+}
+
+func (b *Bot) buildVPSOverview() string {
+	var sb strings.Builder
+	sb.WriteString("\U0001F5A5 <b>VPS MONITOR</b>\n\n")
+
+	// Hostname & OS
+	hostname := shell("hostname")
+	osInfo := shell("cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'\"' -f2")
+	if osInfo == "" {
+		osInfo = shell("uname -o")
+	}
+	kernel := shell("uname -r")
+	uptime := shell("uptime -p 2>/dev/null || uptime")
+
+	sb.WriteString("<b>System</b>\n")
+	sb.WriteString(fmt.Sprintf("  Host: <code>%s</code>\n", hostname))
+	sb.WriteString(fmt.Sprintf("  OS: %s\n", osInfo))
+	sb.WriteString(fmt.Sprintf("  Kernel: %s\n", kernel))
+	sb.WriteString(fmt.Sprintf("  Uptime: %s\n\n", uptime))
+
+	// CPU
+	cpuModel := shell("grep 'model name' /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2 | xargs")
+	cpuCores := shell("nproc 2>/dev/null || echo '?'")
+	loadAvg := shell("cat /proc/loadavg 2>/dev/null | awk '{print $1, $2, $3}'")
+	// CPU usage from /proc/stat snapshot
+	cpuUsage := shell(`top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1`)
+	if cpuUsage == "" {
+		cpuUsage = shell(`grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {printf "%.1f", usage}'`)
+	}
+
+	sb.WriteString("<b>CPU</b>\n")
+	if cpuModel != "" {
+		sb.WriteString(fmt.Sprintf("  Model: %s\n", cpuModel))
+	}
+	sb.WriteString(fmt.Sprintf("  Cores: %s\n", cpuCores))
+	sb.WriteString(fmt.Sprintf("  Usage: %s%%\n", cpuUsage))
+	sb.WriteString(fmt.Sprintf("  Load: %s\n\n", loadAvg))
+
+	// Memory
+	memTotal := shell("free -h | awk '/Mem:/{print $2}'")
+	memUsed := shell("free -h | awk '/Mem:/{print $3}'")
+	memFree := shell("free -h | awk '/Mem:/{print $4}'")
+	memPct := shell("free | awk '/Mem:/{printf \"%.1f\", $3/$2*100}'")
+	swapTotal := shell("free -h | awk '/Swap:/{print $2}'")
+	swapUsed := shell("free -h | awk '/Swap:/{print $3}'")
+
+	sb.WriteString("<b>Memory</b>\n")
+	sb.WriteString(fmt.Sprintf("  RAM: %s / %s (%s%%)\n", memUsed, memTotal, memPct))
+	sb.WriteString(fmt.Sprintf("  Free: %s\n", memFree))
+	sb.WriteString(fmt.Sprintf("  Swap: %s / %s\n\n", swapUsed, swapTotal))
+
+	// Disk summary
+	diskInfo := shell("df -h / | awk 'NR==2{printf \"%s / %s (%s)\", $3, $2, $5}'")
+	sb.WriteString("<b>Disk (/)</b>\n")
+	sb.WriteString(fmt.Sprintf("  Used: %s\n\n", diskInfo))
+
+	// Docker summary
+	dockerCount := shell("docker ps -q 2>/dev/null | wc -l")
+	dockerTotal := shell("docker ps -aq 2>/dev/null | wc -l")
+	sb.WriteString("<b>Docker</b>\n")
+	sb.WriteString(fmt.Sprintf("  Running: %s / %s containers\n\n", dockerCount, dockerTotal))
+
+	// Network - primary interface
+	primaryIP := shell("hostname -I 2>/dev/null | awk '{print $1}'")
+	sb.WriteString("<b>Network</b>\n")
+	sb.WriteString(fmt.Sprintf("  IP: <code>%s</code>\n\n", primaryIP))
+
+	sb.WriteString(fmt.Sprintf("\U0001F553 %s WIB", time.Now().In(WIB).Format("15:04:05")))
+	return sb.String()
+}
+
+func (b *Bot) buildVPSDocker() string {
+	var sb strings.Builder
+	sb.WriteString("\U0001F433 <b>DOCKER CONTAINERS</b>\n\n")
+
+	// Running containers with stats
+	containers := shell(`docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null`)
+	if containers == "" || strings.Contains(containers, "error") {
+		sb.WriteString("Docker not available or no containers running.\n")
+		return sb.String()
+	}
+	sb.WriteString("<b>Running:</b>\n")
+	sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n\n", containers))
+
+	// Resource usage
+	stats := shell(`docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" 2>/dev/null`)
+	if stats != "" {
+		sb.WriteString("<b>Resource Usage:</b>\n")
+		sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n\n", stats))
+	}
+
+	// Stopped containers
+	stopped := shell(`docker ps -f "status=exited" --format "{{.Names}}\t{{.Status}}" 2>/dev/null`)
+	if stopped != "" {
+		sb.WriteString("<b>Stopped:</b>\n")
+		sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n", stopped))
+	}
+
+	sb.WriteString(fmt.Sprintf("\n\U0001F553 %s WIB", time.Now().In(WIB).Format("15:04:05")))
+	return sb.String()
+}
+
+func (b *Bot) buildVPSNetwork() string {
+	var sb strings.Builder
+	sb.WriteString("\U0001F4E1 <b>NETWORK</b>\n\n")
+
+	// Interfaces
+	interfaces := shell(`ip -br addr 2>/dev/null || ifconfig 2>/dev/null | grep -E "^[a-z]|inet "`)
+	sb.WriteString("<b>Interfaces:</b>\n")
+	sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n\n", interfaces))
+
+	// Traffic stats
+	traffic := shell(`cat /proc/net/dev 2>/dev/null | awk 'NR>2{if($2>0) printf "%-10s RX: %10.1f MB  TX: %10.1f MB\n", $1, $2/1048576, $10/1048576}'`)
+	if traffic != "" {
+		sb.WriteString("<b>Traffic:</b>\n")
+		sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n\n", traffic))
+	}
+
+	// Listening ports
+	ports := shell(`ss -tlnp 2>/dev/null | head -15 || netstat -tlnp 2>/dev/null | head -15`)
+	if ports != "" {
+		sb.WriteString("<b>Listening Ports:</b>\n")
+		sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n", ports))
+	}
+
+	sb.WriteString(fmt.Sprintf("\n\U0001F553 %s WIB", time.Now().In(WIB).Format("15:04:05")))
+	return sb.String()
+}
+
+func (b *Bot) buildVPSDisk() string {
+	var sb strings.Builder
+	sb.WriteString("\U0001F4BE <b>DISK USAGE</b>\n\n")
+
+	// Filesystem usage
+	df := shell("df -h --output=target,size,used,avail,pcent 2>/dev/null | head -20")
+	if df == "" {
+		df = shell("df -h | head -20")
+	}
+	sb.WriteString("<b>Filesystems:</b>\n")
+	sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n\n", df))
+
+	// Inode usage
+	inodes := shell("df -ih / | awk 'NR==2{printf \"Used: %s / %s (%s)\", $3, $2, $5}'")
+	sb.WriteString("<b>Inodes (/):</b>\n")
+	sb.WriteString(fmt.Sprintf("  %s\n\n", inodes))
+
+	// Docker disk usage
+	dockerDisk := shell("docker system df 2>/dev/null")
+	if dockerDisk != "" && !strings.Contains(dockerDisk, "error") {
+		sb.WriteString("<b>Docker Disk:</b>\n")
+		sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n", dockerDisk))
+	}
+
+	// Largest dirs
+	largest := shell("du -sh /var/log /tmp /var/lib/docker 2>/dev/null | sort -rh | head -5")
+	if largest != "" {
+		sb.WriteString("\n<b>Large Directories:</b>\n")
+		sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n", largest))
+	}
+
+	sb.WriteString(fmt.Sprintf("\n\U0001F553 %s WIB", time.Now().In(WIB).Format("15:04:05")))
+	return sb.String()
+}
+
+func (b *Bot) buildVPSTop() string {
+	var sb strings.Builder
+	sb.WriteString("\U0001F51D <b>TOP PROCESSES</b>\n\n")
+
+	// Top by CPU
+	topCPU := shell(`ps aux --sort=-%cpu 2>/dev/null | head -11 | awk '{printf "%-6s %5s%% %5s%% %s\n", $2, $3, $4, $11}' | head -11`)
+	sb.WriteString("<b>By CPU:</b>\n")
+	sb.WriteString("<pre>PID    CPU%   MEM%  CMD\n")
+	sb.WriteString(topCPU + "</pre>\n\n")
+
+	// Top by Memory
+	topMem := shell(`ps aux --sort=-%mem 2>/dev/null | head -11 | awk '{printf "%-6s %5s%% %5s%% %s\n", $2, $3, $4, $11}' | head -11`)
+	sb.WriteString("<b>By Memory:</b>\n")
+	sb.WriteString("<pre>PID    CPU%   MEM%  CMD\n")
+	sb.WriteString(topMem + "</pre>\n\n")
+
+	// Process count
+	procCount := shell("ps aux 2>/dev/null | wc -l")
+	sb.WriteString(fmt.Sprintf("Total processes: %s\n", procCount))
+
+	sb.WriteString(fmt.Sprintf("\n\U0001F553 %s WIB", time.Now().In(WIB).Format("15:04:05")))
+	return sb.String()
+}
+
+func (b *Bot) buildVPSLogs() string {
+	var sb strings.Builder
+	sb.WriteString("\U0001F4DD <b>RECENT LOGS</b>\n\n")
+
+	// Bot's own container logs
+	logs := shell("docker logs --tail 25 $(docker ps -q --filter ancestor=$(docker images -q --filter reference='*ff*calendar*' 2>/dev/null | head -1) 2>/dev/null | head -1) 2>&1 | tail -25")
+	if logs == "" || strings.Contains(logs, "error") {
+		// fallback: try by name
+		logs = shell("docker logs --tail 25 ff-calendar-bot 2>&1 || docker logs --tail 25 $(docker ps --format '{{.Names}}' | head -1) 2>&1 | tail -25")
+	}
+	if logs != "" && !strings.Contains(logs, "error") {
+		sb.WriteString("<b>Container Logs:</b>\n")
+		// Truncate long lines
+		lines := strings.Split(logs, "\n")
+		for _, l := range lines {
+			if len(l) > 120 {
+				l = l[:120] + "..."
 			}
-		} else {
-			b.sendWithKB(cid, msg, kbCalendar())
+			sb.WriteString(l + "\n")
 		}
+	} else {
+		sb.WriteString("No container logs available.\n")
+	}
+
+	// System journal (last few)
+	syslog := shell("journalctl --no-pager -n 10 --priority=err 2>/dev/null")
+	if syslog != "" && !strings.Contains(syslog, "No journal") {
+		sb.WriteString("\n<b>System Errors (last 10):</b>\n")
+		sb.WriteString(fmt.Sprintf("<pre>%s</pre>\n", syslog))
+	}
+
+	sb.WriteString(fmt.Sprintf("\n\U0001F553 %s WIB", time.Now().In(WIB).Format("15:04:05")))
+	return sb.String()
+}
+
+// ============================================================================
+// COMMAND HANDLER
+// ============================================================================
+
+func (b *Bot) handleCommand(chatID string, text string) {
+	cid := fmt.Sprintf("%d", 0) // placeholder
+	_ = cid
+	switch {
+	case text == "/start" || text == "/menu":
+		msg := "\U0001F4B9 <b>FF Calendar Bot</b>\n\n"
+		msg += "Forex economic calendar with real-time alerts.\n"
+		msg += "Data from ForexFactory, times in WIB.\n\n"
+		msg += "Choose an option:"
+		b.sendKB(chatID, msg, kbMain())
+
+	case text == "/today" || text == "/calendar":
+		b.sendKB(chatID, b.buildToday(), kbCalendar())
 
 	case text == "/week":
-		msg := fmtWeek(events)
-		if len(msg) > 4000 {
-			chunks := splitMessage(msg, 4000)
-			for i, c := range chunks {
-				if i == len(chunks)-1 {
-					b.sendWithKB(cid, c, kbWeek())
-				} else {
-					b.sendMessage(cid, c)
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
-		} else {
-			b.sendWithKB(cid, msg, kbWeek())
-		}
+		b.sendKB(chatID, b.buildWeek(), kbWeek())
 
 	case text == "/high":
-		b.sendWithKB(cid, fmtHigh(events), kbHigh())
+		b.sendKB(chatID, b.buildHigh(), kbHigh())
 
 	case text == "/next":
-		b.sendWithKB(cid, fmtNext(events, 10), kbNext())
+		b.sendKB(chatID, b.buildNext(), kbNext())
 
-	case text == "/alerts":
-		b.sendWithKB(cid, b.fmtAlerts(), kbAlerts(b.alertsOn))
+	case text == "/settings":
+		b.sendKB(chatID, b.buildSettings(chatID), b.kbSettings(chatID))
 
-	case text == "/refresh":
-		if err := b.fetchEvents(); err != nil {
-			b.sendMessage(cid, fmt.Sprintf("\u274C Refresh failed: %v", err))
-		} else {
-			b.sendWithKB(cid, fmt.Sprintf("\u2705 Refreshed: %d events", len(b.events)), kbBack())
-		}
+	case text == "/health":
+		b.sendKB(chatID, b.buildHealth(), InlineKB{Keyboard: [][]InlineBtn{
+			{{Text: "\u2699\uFE0F Settings", Data: "settings"}, {Text: "\U0001F3E0 Menu", Data: "menu"}},
+		}})
 
-	case text == "/chatid":
-		b.sendWithKB(cid, fmt.Sprintf("\U0001F194 Chat ID: <code>%d</code>", chatID), kbBack())
-	}
-}
-
-// ── CALLBACK HANDLER ─────────────────────────────────────────────────────────
-
-func (b *Bot) handleCallback(cb *TGCallback) {
-	if cb.Message == nil {
-		b.answerCB(cb.ID, "")
-		return
-	}
-	cid := fmt.Sprintf("%d", cb.Message.Chat.ID)
-	mid := cb.Message.MessageID
-
-	b.mu.RLock()
-	events := b.events
-	b.mu.RUnlock()
-
-	var text string
-	var kb *InlineKeyboardMarkup
-
-	switch cb.Data {
-	case "start":
-		text = fmtStart()
-		k := kbMain(); kb = &k
-	case "calendar":
-		text = fmtToday(events)
-		k := kbCalendar(); kb = &k
-	case "week":
-		text = fmtWeek(events)
-		k := kbWeek(); kb = &k
-	case "high":
-		text = fmtHigh(events)
-		k := kbHigh(); kb = &k
-	case "next":
-		text = fmtNext(events, 10)
-		k := kbNext(); kb = &k
-	case "alerts":
-		text = b.fmtAlerts()
-		k := kbAlerts(b.alertsOn); kb = &k
-	case "alerts_on":
-		b.alertsOn = true
-		text = b.fmtAlerts()
-		k := kbAlerts(true); kb = &k
-		b.answerCB(cb.ID, "\u2705 Alerts ON")
-		b.editMsg(cid, mid, text, kb)
-		return
-	case "alerts_off":
-		b.alertsOn = false
-		text = b.fmtAlerts()
-		k := kbAlerts(false); kb = &k
-		b.answerCB(cb.ID, "\u274C Alerts OFF")
-		b.editMsg(cid, mid, text, kb)
-		return
-	case "refresh":
-		if err := b.fetchEvents(); err != nil {
-			b.answerCB(cb.ID, "Refresh failed")
+	case text == "/vps":
+		if !b.isOwner(chatID) {
+			b.send(chatID, "\U0001F512 Owner access only.")
 			return
 		}
-		b.answerCB(cb.ID, fmt.Sprintf("\u2705 %d events", len(b.events)))
-		b.mu.RLock()
-		newEv := b.events
-		b.mu.RUnlock()
-		text = fmtToday(newEv)
-		k := kbCalendar(); kb = &k
-		b.editMsg(cid, mid, text, kb)
-		return
-	case "chatid":
-		text = fmt.Sprintf("\U0001F194 Chat ID: <code>%d</code>", cb.Message.Chat.ID)
-		k := kbBack(); kb = &k
+		b.sendKB(chatID, b.buildVPSOverview(), kbVPS())
+
 	default:
-		b.answerCB(cb.ID, "")
-		return
+		b.sendKB(chatID, "Unknown command. Use /start to see the menu.", kbMain())
 	}
-
-	// Long messages: send new instead of edit
-	if len(text) > 4000 {
-		b.answerCB(cb.ID, "")
-		chunks := splitMessage(text, 4000)
-		for i, c := range chunks {
-			if i == len(chunks)-1 && kb != nil {
-				b.sendWithKB(cid, c, *kb)
-			} else {
-				b.sendMessage(cid, c)
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		return
-	}
-
-	b.answerCB(cb.ID, "")
-	b.editMsg(cid, mid, text, kb)
 }
 
-// ── MAIN LOOP ────────────────────────────────────────────────────────────────
+// ============================================================================
+// CALLBACK HANDLER
+// ============================================================================
 
-func (b *Bot) run() {
-	log.Println("[BOT] Starting FF Calendar Bot...")
+func (b *Bot) handleCallback(cb *TGCallback) {
+	if cb == nil || cb.Message == nil {
+		return
+	}
+	chatID := fmt.Sprintf("%d", cb.Message.Chat.ID)
+	msgID := cb.Message.MessageID
+	data := cb.Data
 
-	if err := b.fetchEvents(); err != nil {
-		log.Printf("[BOT] Initial fetch: %v", err)
+	var text string
+	var kb *InlineKB
+
+	switch data {
+	case "menu":
+		text = "\U0001F4B9 <b>FF Calendar Bot</b>\n\n"
+		text += "Forex economic calendar with real-time alerts.\n"
+		text += "Data from ForexFactory, times in WIB.\n\n"
+		text += "Choose an option:"
+		k := kbMain()
+		kb = &k
+
+	case "today":
+		text = b.buildToday()
+		k := kbCalendar()
+		kb = &k
+
+	case "week":
+		text = b.buildWeek()
+		k := kbWeek()
+		kb = &k
+
+	case "high":
+		text = b.buildHigh()
+		k := kbHigh()
+		kb = &k
+
+	case "next":
+		text = b.buildNext()
+		k := kbNext()
+		kb = &k
+
+	case "settings":
+		text = b.buildSettings(chatID)
+		k := b.kbSettings(chatID)
+		kb = &k
+
+	case "toggle_alerts":
+		b.alertsOn = !b.alertsOn
+		status := "ON \U0001F7E2"
+		if !b.alertsOn {
+			status = "OFF \U0001F534"
+		}
+		b.answerCB(cb.ID, "Alerts: "+status)
+		text = b.buildSettings(chatID)
+		k := b.kbSettings(chatID)
+		kb = &k
+
+	case "health":
+		text = b.buildHealth()
+		k := InlineKB{Keyboard: [][]InlineBtn{
+			{{Text: "\u2699\uFE0F Settings", Data: "settings"}, {Text: "\U0001F3E0 Menu", Data: "menu"}},
+		}}
+		kb = &k
+
+	case "vps":
+		if !b.isOwner(chatID) {
+			b.answerCB(cb.ID, "\U0001F512 Owner only")
+			return
+		}
+		text = b.buildVPSOverview()
+		k := kbVPS()
+		kb = &k
+
+	case "vps_docker":
+		if !b.isOwner(chatID) {
+			b.answerCB(cb.ID, "\U0001F512 Owner only")
+			return
+		}
+		text = b.buildVPSDocker()
+		k := kbVPSSub()
+		kb = &k
+
+	case "vps_net":
+		if !b.isOwner(chatID) {
+			b.answerCB(cb.ID, "\U0001F512 Owner only")
+			return
+		}
+		text = b.buildVPSNetwork()
+		k := kbVPSSub()
+		kb = &k
+
+	case "vps_disk":
+		if !b.isOwner(chatID) {
+			b.answerCB(cb.ID, "\U0001F512 Owner only")
+			return
+		}
+		text = b.buildVPSDisk()
+		k := kbVPSSub()
+		kb = &k
+
+	case "vps_top":
+		if !b.isOwner(chatID) {
+			b.answerCB(cb.ID, "\U0001F512 Owner only")
+			return
+		}
+		text = b.buildVPSTop()
+		k := kbVPSSub()
+		kb = &k
+
+	case "vps_logs":
+		if !b.isOwner(chatID) {
+			b.answerCB(cb.ID, "\U0001F512 Owner only")
+			return
+		}
+		text = b.buildVPSLogs()
+		k := kbVPSSub()
+		kb = &k
+
+	default:
+		b.answerCB(cb.ID, "Unknown action")
+		return
 	}
 
-	// Smart refresh: 2min near events, 5min idle
+	if text != "" {
+		err := b.edit(chatID, msgID, text, kb)
+		if err != nil {
+			// If edit fails (message not modified), send new
+			if kb != nil {
+				b.sendKB(chatID, text, *kb)
+			} else {
+				b.send(chatID, text)
+			}
+		}
+	}
+	b.answerCB(cb.ID, "")
+}
+
+// ============================================================================
+// MAIN LOOP
+// ============================================================================
+
+func (b *Bot) run() {
+	log.Println("[BOT] Starting FF Calendar Bot v3...")
+	log.Printf("[BOT] Owner ID: %s", b.ownerID)
+
+	if err := b.fetchEvents(); err != nil {
+		log.Printf("[BOT] Initial fetch error: %v", err)
+	}
+
+	// Data refresh goroutine
 	go func() {
 		for {
 			interval := 5 * time.Minute
 			b.mu.RLock()
 			for _, e := range b.events {
 				t, err := parseEventTime(e.Date)
-				if err != nil {
-					continue
-				}
-				diff := time.Until(t)
-				if diff > -30*time.Minute && diff < 45*time.Minute {
-					interval = 2 * time.Minute
-					break
+				if err == nil {
+					diff := time.Until(t)
+					if diff > 0 && diff < 35*time.Minute {
+						interval = 2 * time.Minute
+						break
+					}
 				}
 			}
 			b.mu.RUnlock()
 			time.Sleep(interval)
 			if err := b.fetchEvents(); err != nil {
-				log.Printf("[FETCH] %v", err)
+				log.Printf("[FETCH] Error: %v", err)
 			}
 		}
 	}()
 
-	// Alert check every 30s
+	// Alert check goroutine
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			time.Sleep(30 * time.Second)
 			b.checkAlerts()
 		}
 	}()
 
-	// Poll commands + callbacks
-	log.Println("[BOT] Polling...")
+	// Polling loop
 	for {
 		updates, err := b.getUpdates()
 		if err != nil {
-			log.Printf("[POLL] %v", err)
+			log.Printf("[POLL] Error: %v", err)
 			time.Sleep(3 * time.Second)
 			continue
 		}
 		for _, u := range updates {
-			if u.UpdateID >= b.offset {
-				b.offset = u.UpdateID + 1
-			}
-			if u.CallbackQuery != nil {
-				go b.handleCallback(u.CallbackQuery)
+			b.offset = u.UpdateID + 1
+
+			if u.Callback != nil {
+				b.handleCallback(u.Callback)
 				continue
 			}
-			if u.Message != nil && strings.HasPrefix(u.Message.Text, "/") {
-				cmd := u.Message.Text
-				if idx := strings.Index(cmd, "@"); idx != -1 {
-					cmd = cmd[:idx]
+
+			if u.Message != nil && u.Message.Text != "" {
+				chatID := fmt.Sprintf("%d", u.Message.Chat.ID)
+				text := strings.TrimSpace(u.Message.Text)
+				// Strip @botname from commands in groups
+				if i := strings.Index(text, "@"); i > 0 {
+					text = text[:i]
 				}
-				go b.handleCommand(u.Message.Chat.ID, cmd)
+				b.handleCommand(chatID, text)
 			}
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
-// ── HELPERS ──────────────────────────────────────────────────────────────────
-
-func parseNumber(s string) float64 {
-	s = strings.TrimSpace(s)
-	for _, r := range []string{"%", "K", "M", "B", "T", ","} {
-		s = strings.Replace(s, r, "", -1)
-	}
-	var v float64
-	fmt.Sscanf(s, "%f", &v)
-	return v
-}
-
-func splitMessage(text string, maxLen int) []string {
-	var chunks []string
-	lines := strings.Split(text, "\n")
-	cur := ""
-	for _, line := range lines {
-		if len(cur)+len(line)+1 > maxLen {
-			if cur != "" {
-				chunks = append(chunks, cur)
-			}
-			cur = line
-		} else {
-			if cur != "" {
-				cur += "\n"
-			}
-			cur += line
-		}
-	}
-	if cur != "" {
-		chunks = append(chunks, cur)
-	}
-	return chunks
-}
-
-// ── ENTRYPOINT ───────────────────────────────────────────────────────────────
+// ============================================================================
+// ENTRYPOINT
+// ============================================================================
 
 func main() {
-	var err error
-	WIB, err = time.LoadLocation("Asia/Jakarta")
-	if err != nil {
-		WIB = time.FixedZone("WIB", 7*60*60)
-	}
 	if BOT_TOKEN == "" {
-		log.Fatal("[FATAL] BOT_TOKEN required")
+		log.Fatal("[FATAL] BOT_TOKEN not set")
 	}
 	if CHAT_ID == "" {
-		log.Println("[WARN] CHAT_ID not set \u2014 use /chatid to get it")
+		log.Println("[WARN] CHAT_ID not set - alerts & VPS monitor disabled")
 	}
+
+	// Suppress unused import warnings
+	_ = strconv.Itoa
+	_ = sort.Strings
+
 	bot := NewBot(BOT_TOKEN, CHAT_ID)
 	bot.run()
 }
