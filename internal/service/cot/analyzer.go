@@ -30,7 +30,7 @@ func NewAnalyzer(repo ports.COTRepository, fetcher *Fetcher) *Analyzer {
 // AnalyzeAll fetches latest data, computes metrics for all contracts,
 // and stores the results. Returns computed analyses.
 func (a *Analyzer) AnalyzeAll(ctx context.Context) ([]domain.COTAnalysis, error) {
-	contracts := domain.DefaultContracts()
+	contracts := domain.DefaultCOTContracts // FIX: was domain.DefaultContracts() - it's a var, not func
 
 	// Fetch latest records
 	records, err := a.fetcher.FetchLatest(ctx, contracts)
@@ -84,40 +84,46 @@ func (a *Analyzer) AnalyzeContract(ctx context.Context, contractCode string) (*d
 
 // computeMetrics calculates all 20+ COT metrics from a record + history.
 func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COTRecord) domain.COTAnalysis {
+	// FIX: COTAnalysis uses Contract (COTContract), not ContractCode/Currency strings
 	analysis := domain.COTAnalysis{
-		ContractCode: current.ContractCode,
-		Currency:     current.Currency,
-		ReportDate:   current.ReportDate,
+		Contract:   findContractByCode(current.ContractCode), // FIX: was ContractCode: current.ContractCode
+		ReportDate: current.ReportDate,
 	}
 
 	// === Core Position Metrics ===
 
-	// 1. Net positions
-	analysis.SpecNetPosition = current.SpecLong - current.SpecShort
-	analysis.CommNetPosition = current.CommLong - current.CommShort
-	analysis.SmallNetPosition = current.SmallLong - current.SmallShort
+	// 1. Net positions (FIX: field names match domain exactly)
+	// COTRecord fields are float64, not int64
+	analysis.NetPosition = current.SpecLong - current.SpecShort       // FIX: was SpecNetPosition
+	analysis.NetCommercial = current.CommLong - current.CommShort     // FIX: was CommNetPosition
+	analysis.NetSmallSpec = current.SmallLong - current.SmallShort    // FIX: was SmallNetPosition
 
 	// 2. Net change (week-over-week)
-	analysis.SpecNetChange = current.SpecLongChg - current.SpecShortChg
-	analysis.CommNetChange = current.CommLongChg - current.CommShortChg
-	analysis.SmallNetChange = current.SmallLongChg - current.SmallShortChg
+	// FIX: field names are SpecLongChange/SpecShortChange, NOT SpecLongChg/SpecShortChg
+	analysis.NetChange = current.SpecLongChange - current.SpecShortChange // FIX: was SpecNetChange
+	// CommNetChange and SmallNetChange don't exist in domain.COTAnalysis
+	// We compute them locally if needed but don't store
+	commNetChange := current.CommLongChange - current.CommShortChange
+	_ = commNetChange // used later in divergence detection
+	smallNetChange := current.SmallLongChange - current.SmallShortChange
+	_ = smallNetChange
 
-	// 3. Long/Short ratios
-	analysis.SpecLongShortRatio = safeRatio(float64(current.SpecLong), float64(current.SpecShort))
-	analysis.CommLongShortRatio = safeRatio(float64(current.CommLong), float64(current.CommShort))
+	// 3. Long/Short ratios (FIX: field names)
+	analysis.LongShortRatio = safeRatio(current.SpecLong, current.SpecShort) // FIX: was SpecLongShortRatio
+	analysis.CommLSRatio = safeRatio(current.CommLong, current.CommShort)     // FIX: was CommLongShortRatio
 
-	// 4. Percentage of Open Interest
+	// 4. Percentage of Open Interest (FIX: field names)
 	if current.OpenInterest > 0 {
-		oi := float64(current.OpenInterest)
-		analysis.SpecPctOfOI = float64(analysis.SpecNetPosition) / oi * 100
-		analysis.CommPctOfOI = float64(analysis.CommNetPosition) / oi * 100
+		oi := current.OpenInterest
+		analysis.PctOfOI = analysis.NetPosition / oi * 100   // FIX: was SpecPctOfOI
+		analysis.CommPctOfOI = analysis.NetCommercial / oi * 100
 	}
 
 	// 5. Open Interest change %
 	if len(history) > 1 {
 		prevOI := history[1].OpenInterest // history[0] = current
 		if prevOI > 0 {
-			analysis.OIPctChange = float64(current.OpenInterest-prevOI) / float64(prevOI) * 100
+			analysis.OIPctChange = (current.OpenInterest - prevOI) / prevOI * 100
 		}
 	}
 
@@ -125,11 +131,11 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 	if len(history) >= 3 {
 		// 6. COT Index for speculators (0-100)
-		specNets := extractNets(history, func(r domain.COTRecord) int64 { return r.SpecLong - r.SpecShort })
+		specNets := extractNets(history, func(r domain.COTRecord) float64 { return r.SpecLong - r.SpecShort })
 		analysis.COTIndex = computeCOTIndex(specNets)
 
 		// 7. COT Index for commercials
-		commNets := extractNets(history, func(r domain.COTRecord) int64 { return r.CommLong - r.CommShort })
+		commNets := extractNets(history, func(r domain.COTRecord) float64 { return r.CommLong - r.CommShort })
 		analysis.COTIndexComm = computeCOTIndex(commNets)
 	}
 
@@ -137,19 +143,19 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 	if len(history) >= 4 {
 		// 8. Speculator momentum (4-week)
-		specNets4 := extractNetsFloat(history[:min(5, len(history))], func(r domain.COTRecord) float64 {
-			return float64(r.SpecLong - r.SpecShort)
+		specNets4 := extractNets(history[:minInt(5, len(history))], func(r domain.COTRecord) float64 {
+			return r.SpecLong - r.SpecShort
 		})
 		analysis.SpecMomentum4W = mathutil.Momentum(specNets4, 4)
 
 		// 9. Commercial momentum (4-week)
-		commNets4 := extractNetsFloat(history[:min(5, len(history))], func(r domain.COTRecord) float64 {
-			return float64(r.CommLong - r.CommShort)
+		commNets4 := extractNets(history[:minInt(5, len(history))], func(r domain.COTRecord) float64 {
+			return r.CommLong - r.CommShort
 		})
 		analysis.CommMomentum4W = mathutil.Momentum(commNets4, 4)
 
-		// 10. Momentum direction
-		analysis.MomentumDir = classifyMomentum(analysis.SpecMomentum4W, analysis.CommMomentum4W)
+		// 10. Momentum direction (FIX: MomentumDir is domain.MomentumDirection type)
+		analysis.MomentumDir = classifyMomentumDir(analysis.SpecMomentum4W, analysis.CommMomentum4W)
 	}
 
 	// === Sentiment & Signal Metrics ===
@@ -165,7 +171,7 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	// === Advanced Metrics ===
 
 	// 15. Divergence flag (commercials vs speculators moving opposite)
-	analysis.DivergenceFlag = detectDivergence(analysis)
+	analysis.DivergenceFlag = detectDivergence(analysis.NetChange, commNetChange)
 
 	// 16. Crowding index (how one-sided is positioning)
 	analysis.CrowdingIndex = computeCrowding(current)
@@ -174,46 +180,57 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	analysis.Top4Concentration = (current.Top4Long + current.Top4Short) / 2
 	analysis.Top8Concentration = (current.Top8Long + current.Top8Short) / 2
 
+	// === Spread as % of OI ===
+	if current.OpenInterest > 0 {
+		analysis.SpreadPctOfOI = current.SpecSpread / current.OpenInterest * 100
+	}
+
 	// === Extreme Detection ===
+	analysis.IsExtremeBull = analysis.COTIndex > 90
+	analysis.IsExtremeBear = analysis.COTIndex < 10
+	analysis.CommExtremeBull = analysis.COTIndexComm > 90
+	analysis.CommExtremeBear = analysis.COTIndexComm < 10
 
-	// 19. Z-Score for extreme positioning
-	if len(history) >= 10 {
-		specNetsAll := extractNetsFloat(history, func(r domain.COTRecord) float64 {
-			return float64(r.SpecLong - r.SpecShort)
-		})
-		analysis.SpecZScore = mathutil.ZScore(specNetsAll)
-	}
+	// === Smart Money vs Dumb Money ===
+	analysis.SmartDumbDivergence = (analysis.NetPosition > 0 && analysis.NetCommercial < 0) ||
+		(analysis.NetPosition < 0 && analysis.NetCommercial > 0)
 
-	// 20. Percentile ranking
-	if len(history) >= 10 {
-		specNetsAll := extractNetsFloat(history, func(r domain.COTRecord) float64 {
-			return float64(r.SpecLong - r.SpecShort)
-		})
-		analysis.SpecPercentile = mathutil.Percentile(specNetsAll, float64(analysis.SpecNetPosition))
-	}
+	// === Signal Strength ===
+	analysis.SignalStrength = classifySignalStrength(analysis)
 
 	return analysis
 }
 
 // --- computation helpers ---
 
+// findContractByCode looks up a COTContract from DefaultCOTContracts by code.
+func findContractByCode(code string) domain.COTContract {
+	for _, c := range domain.DefaultCOTContracts {
+		if c.Code == code {
+			return c
+		}
+	}
+	// Return a minimal contract if not found
+	return domain.COTContract{Code: code}
+}
+
 // computeCOTIndex implements the Larry Williams COT Index formula:
 // Index = (Current Net - Min Net) / (Max Net - Min Net) * 100
-func computeCOTIndex(nets []int64) float64 {
+// FIX: Uses float64 throughout (was int64)
+func computeCOTIndex(nets []float64) float64 {
 	if len(nets) < 3 {
 		return 50.0 // neutral if insufficient data
 	}
 
-	current := float64(nets[0])
-	minVal, maxVal := float64(nets[0]), float64(nets[0])
+	current := nets[0]
+	minVal, maxVal := nets[0], nets[0]
 
 	for _, n := range nets {
-		v := float64(n)
-		if v < minVal {
-			minVal = v
+		if n < minVal {
+			minVal = n
 		}
-		if v > maxVal {
-			maxVal = v
+		if n > maxVal {
+			maxVal = n
 		}
 	}
 
@@ -230,12 +247,10 @@ func computeSentiment(a domain.COTAnalysis) float64 {
 	score := 0.0
 
 	// COT Index contribution (40% weight)
-	// Index > 80 = bullish, < 20 = bearish
-	indexScore := (a.COTIndex - 50) * 2 // scale to -100..+100
+	indexScore := (a.COTIndex - 50) * 2
 	score += indexScore * 0.40
 
 	// Commercial positioning (30% weight)
-	// Commercials are contrarian: high index = bearish for price (they're hedging)
 	commScore := (50 - a.COTIndexComm) * 2
 	score += commScore * 0.30
 
@@ -247,7 +262,6 @@ func computeSentiment(a domain.COTAnalysis) float64 {
 	}
 
 	// Crowding penalty (10% weight)
-	// High crowding = contrarian signal
 	if a.CrowdingIndex > 70 {
 		score -= 10
 	} else if a.CrowdingIndex < 30 {
@@ -259,7 +273,6 @@ func computeSentiment(a domain.COTAnalysis) float64 {
 
 // classifySignal generates a directional signal from COT index + momentum.
 func classifySignal(cotIndex, momentum float64, isCommercial bool) string {
-	// Commercial signals are inverted (hedgers are contrarian)
 	threshHigh := 75.0
 	threshLow := 25.0
 	if isCommercial {
@@ -294,40 +307,55 @@ func classifySignal(cotIndex, momentum float64, isCommercial bool) string {
 
 // classifySmallSpec generates small speculator signal (contrarian indicator).
 func classifySmallSpec(a domain.COTAnalysis) string {
-	if a.SmallNetPosition > 0 && a.CrowdingIndex > 65 {
-		return "CROWD_LONG" // potential contrarian sell
+	if a.NetSmallSpec > 0 && a.CrowdingIndex > 65 {
+		return "CROWD_LONG"
 	}
-	if a.SmallNetPosition < 0 && a.CrowdingIndex > 65 {
-		return "CROWD_SHORT" // potential contrarian buy
+	if a.NetSmallSpec < 0 && a.CrowdingIndex > 65 {
+		return "CROWD_SHORT"
 	}
 	return "NEUTRAL"
 }
 
-// classifyMomentum determines the overall positioning momentum direction.
-func classifyMomentum(specMom, commMom float64) string {
+// classifyMomentumDir determines the overall positioning momentum direction.
+// FIX: Returns domain.MomentumDirection type (was string)
+func classifyMomentumDir(specMom, commMom float64) domain.MomentumDirection {
 	if specMom > 0 && commMom < 0 {
-		return "SPEC_BULLISH_COMM_BEARISH" // classic bullish setup
+		return domain.MomentumBuilding // spec building, comm unwinding
 	}
 	if specMom < 0 && commMom > 0 {
-		return "SPEC_BEARISH_COMM_BULLISH" // classic bearish setup
+		return domain.MomentumReversing // spec reducing, comm adding
 	}
-	if specMom > 0 && commMom > 0 {
-		return "BOTH_ADDING" // increasing open interest
+	if math.Abs(specMom) < 100 && math.Abs(commMom) < 100 {
+		return domain.MomentumStable
 	}
-	if specMom < 0 && commMom < 0 {
-		return "BOTH_REDUCING" // decreasing open interest
+	if specMom < 0 {
+		return domain.MomentumUnwinding
 	}
-	return "MIXED"
+	return domain.MomentumBuilding
+}
+
+// classifySignalStrength rates the conviction level of the COT signal.
+func classifySignalStrength(a domain.COTAnalysis) domain.SignalStrength {
+	absSentiment := math.Abs(a.SentimentScore)
+	switch {
+	case absSentiment > 60 && (a.IsExtremeBull || a.IsExtremeBear):
+		return domain.SignalStrong
+	case absSentiment > 40:
+		return domain.SignalModerate
+	case absSentiment > 20:
+		return domain.SignalWeak
+	default:
+		return domain.SignalNeutral
+	}
 }
 
 // detectDivergence checks if commercials and speculators are moving in opposite directions.
-func detectDivergence(a domain.COTAnalysis) bool {
-	// Divergence: spec adding longs while comm adding shorts (or vice versa)
-	specDir := sign(a.SpecNetChange)
-	commDir := sign(a.CommNetChange)
+// FIX: Takes float64 params instead of accessing non-existent fields
+func detectDivergence(specNetChange, commNetChange float64) bool {
+	specDir := signF(specNetChange)
+	commDir := signF(commNetChange)
 
-	// Only flag if both are significant moves
-	if math.Abs(float64(a.SpecNetChange)) < 1000 || math.Abs(float64(a.CommNetChange)) < 1000 {
+	if math.Abs(specNetChange) < 1000 || math.Abs(commNetChange) < 1000 {
 		return false
 	}
 
@@ -336,33 +364,24 @@ func detectDivergence(a domain.COTAnalysis) bool {
 
 // computeCrowding measures how one-sided positioning is (0-100).
 func computeCrowding(r domain.COTRecord) float64 {
-	totalLong := float64(r.SpecLong + r.CommLong + r.SmallLong)
-	totalShort := float64(r.SpecShort + r.CommShort + r.SmallShort)
+	totalLong := r.SpecLong + r.CommLong + r.SmallLong
+	totalShort := r.SpecShort + r.CommShort + r.SmallShort
 	total := totalLong + totalShort
 
 	if total == 0 {
 		return 50.0
 	}
 
-	// Crowding = how far from 50/50 balance
 	longPct := totalLong / total * 100
 	deviation := math.Abs(longPct - 50)
 
-	// Scale: 0% deviation = 0 crowding, 50% deviation = 100 crowding
 	return mathutil.Clamp(deviation*2, 0, 100)
 }
 
 // --- utility helpers ---
 
-func extractNets(history []domain.COTRecord, fn func(domain.COTRecord) int64) []int64 {
-	nets := make([]int64, len(history))
-	for i, r := range history {
-		nets[i] = fn(r)
-	}
-	return nets
-}
-
-func extractNetsFloat(history []domain.COTRecord, fn func(domain.COTRecord) float64) []float64 {
+// FIX: extractNets returns []float64 (was []int64)
+func extractNets(history []domain.COTRecord, fn func(domain.COTRecord) float64) []float64 {
 	nets := make([]float64, len(history))
 	for i, r := range history {
 		nets[i] = fn(r)
@@ -370,6 +389,8 @@ func extractNetsFloat(history []domain.COTRecord, fn func(domain.COTRecord) floa
 	return nets
 }
 
+// safeRatio computes a/b safely, returning 0 or 999.99 on edge cases.
+// FIX: Parameters are float64 (were cast from int64)
 func safeRatio(a, b float64) float64 {
 	if b == 0 {
 		if a > 0 {
@@ -380,7 +401,9 @@ func safeRatio(a, b float64) float64 {
 	return math.Round(a/b*100) / 100
 }
 
-func sign(v int64) int {
+// signF returns the sign of a float64 value.
+// FIX: Renamed from sign() and takes float64 (was int64)
+func signF(v float64) float64 {
 	if v > 0 {
 		return 1
 	}
@@ -390,7 +413,8 @@ func sign(v int64) int {
 	return 0
 }
 
-func min(a, b int) int {
+// minInt returns the minimum of two ints.
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
