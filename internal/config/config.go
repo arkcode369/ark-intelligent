@@ -19,7 +19,7 @@ type Config struct {
 
 	// AI (optional — graceful degradation without)
 	GeminiAPIKey string // Google Gemini API key
-	GeminiModel  string // Model name (default: gemini-2.0-flash)
+	GeminiModel  string // Model name (default: gemini-3.1-flash-lite-preview)
 
 	// Storage
 	DataDir string // BadgerDB data directory
