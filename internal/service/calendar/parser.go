@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,7 +23,7 @@ type Parser struct {
 // then converts to WIB for internal storage.
 func NewParser() *Parser {
 	return &Parser{
-		loc: timeutil.WIB(),
+		loc: timeutil.WIB, // FIX: WIB is a var, not a func
 	}
 }
 
@@ -39,11 +40,13 @@ var (
 )
 
 // impactMap converts FF CSS class suffixes to domain impact levels.
-var impactMap = map[string]domain.EventImpactLevel{
+// FIX: Use domain.ImpactLevel (not domain.EventImpactLevel)
+// FIX: "gra" maps to ImpactNone (no ImpactHoliday in domain)
+var impactMap = map[string]domain.ImpactLevel{
 	"red": domain.ImpactHigh,
 	"ora": domain.ImpactMedium,
 	"yel": domain.ImpactLow,
-	"gra": domain.ImpactHoliday,
+	"gra": domain.ImpactNone, // FIX: was domain.ImpactHoliday which doesn't exist
 }
 
 // ParseWeeklyCalendarHTML extracts events from the FF weekly calendar HTML.
@@ -96,224 +99,254 @@ func (p *Parser) parseEventRow(row string, date time.Time) (domain.FFEvent, erro
 			ts, _ := strconv.ParseInt(m[1], 10, 64)
 			if ts > 0 {
 				// FF uses Unix timestamp in ET
-				ev.DateTime = time.Unix(ts, 0).In(p.loc)
+				ev.Date = time.Unix(ts, 0).In(p.loc) // FIX: was ev.DateTime
 			}
 		}
 	}
-	if ev.DateTime.IsZero() && !date.IsZero() {
-		ev.DateTime = date
+	if ev.Date.IsZero() && !date.IsZero() { // FIX: was ev.DateTime
+		ev.Date = date // FIX: was ev.DateTime
 	}
 
 	// Currency
-	ev.Currency = extractBetween(row, `class="calendar__currency">`, `</`)
-	ev.Currency = strings.TrimSpace(ev.Currency)
+	ev.Currency = extractCellText(row, "calendar__currency")
+	if ev.Currency == "" {
+		return ev, fmt.Errorf("no currency")
+	}
 
 	// Impact
 	if m := reImpactClass.FindStringSubmatch(row); len(m) > 1 {
-		ev.Impact = impactMap[m[1]]
+		if imp, ok := impactMap[m[1]]; ok {
+			ev.Impact = imp
+		}
 	}
 
 	// Event name
-	ev.Title = cleanHTML(extractBetween(row, `class="calendar__event-title">`, `</`))
-	ev.Title = strings.TrimSpace(ev.Title)
+	ev.Title = extractCellText(row, "calendar__event")
 	if ev.Title == "" {
-		return ev, fmt.Errorf("no event title")
+		return ev, fmt.Errorf("no title")
 	}
 
-	// Actual, Forecast, Previous values
-	ev.Actual = cleanHTML(extractBetween(row, `class="calendar__actual">`, `</`))
-	ev.Forecast = cleanHTML(extractBetween(row, `class="calendar__forecast">`, `</`))
-	ev.Previous = cleanHTML(extractBetween(row, `class="calendar__previous">`, `</`))
-
-	// Source URL for history scraping
-	ev.SourceURL = extractHref(row, "calendar__event-title")
-
-	// Detect speaker events
+	// Categorization
+	ev.Category = categorizeEvent(ev.Title)
 	if reSpeakerTag.MatchString(ev.Title) {
-		ev.SpeakerName = extractSpeakerName(ev.Title)
+		ev.Category = domain.CategorySpeech
+		ev.SpeakerName = extractSpeaker(ev.Title)
 	}
 
-	// Detect preliminary flag
-	ev.IsPreliminary = strings.Contains(strings.ToLower(row), "preliminary") ||
-		strings.Contains(strings.ToLower(row), "flash")
+	// Data values
+	ev.Actual = extractCellText(row, "calendar__actual")
+	ev.Forecast = extractCellText(row, "calendar__forecast")
+	ev.Previous = extractCellText(row, "calendar__previous")
+
+	// Detect revision in previous (FF strikes through original value)
+	if strings.Contains(row, "revised") || strings.Contains(row, "<s>") {
+		ev.Revision = extractRevision(row, ev.Previous)
+	}
+
+	// Source metadata
+	ev.ScrapedAt = time.Now()
+	ev.Source = "forexfactory"
 
 	return ev, nil
 }
 
-// ParseEventHistoryHTML extracts historical data points from an event detail page.
-// Returns up to 24 months of Actual/Forecast/Previous data for surprise calculation.
-func (p *Parser) ParseEventHistoryHTML(html string) ([]domain.FFEventDetail, error) {
+// ---------------------------------------------------------------------------
+// History Parser
+// ---------------------------------------------------------------------------
+
+// ParseEventHistoryHTML extracts historical data points from an FF event detail page.
+func (p *Parser) ParseEventHistoryHTML(html string, eventName, currency string) ([]domain.FFEventDetail, error) {
 	if html == "" {
 		return nil, fmt.Errorf("empty HTML")
 	}
 
 	rows := reHistoryRow.FindAllString(html, -1)
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("no history rows found")
+	}
+
 	var details []domain.FFEventDetail
 
 	for _, row := range rows {
-		d := p.parseHistoryRow(row)
-		if d.Date.IsZero() {
-			continue
+		d := domain.FFEventDetail{
+			EventName: eventName,
+			Currency:  currency,
 		}
-		details = append(details, d)
-	}
 
-	// Limit to 24 months max
-	if len(details) > 24 {
-		details = details[:24]
+		// Date
+		dateStr := extractCellText(row, "calendar__date")
+		if t, err := timeutil.ParseFFDate(dateStr); err == nil {
+			d.Date = t
+		} else {
+			continue // skip rows without valid dates
+		}
+
+		// Numeric values
+		d.Actual = parseNumeric(extractCellText(row, "calendar__actual"))
+		d.Forecast = parseNumeric(extractCellText(row, "calendar__forecast"))
+		d.Previous = parseNumeric(extractCellText(row, "calendar__previous"))
+		d.Surprise = d.Actual - d.Forecast
+
+		// Revision detection
+		if strings.Contains(row, "revised") {
+			d.Revised = parseNumeric(extractRevisedValue(row))
+		}
+
+		details = append(details, d)
 	}
 
 	return details, nil
 }
 
-// parseHistoryRow extracts a single historical data point.
-func (p *Parser) parseHistoryRow(row string) domain.FFEventDetail {
-	d := domain.FFEventDetail{}
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
 
-	// Date extraction from history table
-	dateStr := cleanHTML(extractBetween(row, `class="calendar__date">`, `</`))
-	dateStr = strings.TrimSpace(dateStr)
-	if t, err := time.Parse("Jan 02, 2006", dateStr); err == nil {
-		d.Date = t
-	} else if t, err := time.Parse("Jan 2, 2006", dateStr); err == nil {
-		d.Date = t
-	}
-
-	d.Actual = cleanNumeric(extractBetween(row, `class="calendar__actual">`, `</`))
-	d.Forecast = cleanNumeric(extractBetween(row, `class="calendar__forecast">`, `</`))
-	d.Previous = cleanNumeric(extractBetween(row, `class="calendar__previous">`, `</`))
-
-	// Mark preliminary/revised data
-	rowLower := strings.ToLower(row)
-	d.IsPreliminary = strings.Contains(rowLower, "preliminary") || strings.Contains(rowLower, "flash")
-	d.IsRevised = strings.Contains(rowLower, "revised")
-
-	return d
-}
-
-// --- HTML utility helpers ---
-
-// splitCalendarRows splits the calendar HTML into individual table rows.
+// splitCalendarRows splits the calendar HTML into individual row strings.
 func splitCalendarRows(html string) []string {
-	var rows []string
-	parts := strings.Split(html, "<tr")
-	for _, part := range parts[1:] { // skip content before first <tr
-		idx := strings.Index(part, "</tr>")
-		if idx > 0 {
-			rows = append(rows, "<tr"+part[:idx+5])
-		}
-	}
-	return rows
+	re := regexp.MustCompile(`<tr[^>]*class="[^"]*calendar__row[^"]*"[^>]*>(.*?)</tr>`)
+	matches := re.FindAllString(html, -1)
+	return matches
 }
 
-// extractDate tries to parse a date from a date-separator row.
+// extractDate extracts a date from a date row header.
 func extractDate(row string) time.Time {
-	// FF date rows have class "calendar__row--day-breaker"
-	if !strings.Contains(row, "day-breaker") && !strings.Contains(row, "calendar__date") {
-		return time.Time{}
-	}
-
-	dateStr := cleanHTML(extractBetween(row, `class="calendar__date">`, `</`))
-	dateStr = strings.TrimSpace(dateStr)
-
-	// FF uses formats like "Mon Mar 10" (no year)
-	now := time.Now()
-	year := now.Year()
-
-	formats := []string{
-		"Mon Jan 2",
-		"Monday, January 2",
-		"Jan 2",
-	}
-
-	for _, fmt := range formats {
-		if t, err := time.Parse(fmt, dateStr); err == nil {
-			return time.Date(year, t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	re := regexp.MustCompile(`data[-_]date="([^"]+)"`)
+	m := re.FindStringSubmatch(row)
+	if len(m) > 1 {
+		t, err := timeutil.ParseFFDate(m[1])
+		if err == nil {
+			return t
 		}
 	}
-
 	return time.Time{}
 }
 
-// extractBetween extracts text between a start marker and end marker.
-func extractBetween(html, startMarker, endMarker string) string {
-	idx := strings.Index(html, startMarker)
-	if idx < 0 {
-		return ""
-	}
-	start := idx + len(startMarker)
-	end := strings.Index(html[start:], endMarker)
-	if end < 0 {
-		return ""
-	}
-	return html[start : start+end]
-}
-
-// extractHref finds the href in a link near the given class.
-func extractHref(html, nearClass string) string {
-	idx := strings.Index(html, nearClass)
-	if idx < 0 {
-		return ""
-	}
-
-	// Search backwards for href
-	chunk := html[:idx]
-	hrefIdx := strings.LastIndex(chunk, `href="`)
-	if hrefIdx < 0 {
-		// Search forwards
-		chunk = html[idx:]
-		hrefIdx = strings.Index(chunk, `href="`)
-		if hrefIdx < 0 {
-			return ""
-		}
-		chunk = chunk[hrefIdx:]
-	} else {
-		chunk = chunk[hrefIdx:]
-	}
-
-	start := strings.Index(chunk, `"`) + 1
-	end := strings.Index(chunk[start:], `"`)
-	if end < 0 {
-		return ""
-	}
-
-	url := chunk[start : start+end]
-	if strings.HasPrefix(url, "/") {
-		return "https://www.forexfactory.com" + url
-	}
-	return url
-}
-
-// extractSpeakerName tries to extract a person's name from an event title.
-// e.g., "Fed Chair Powell Speaks" -> "Powell"
-func extractSpeakerName(title string) string {
-	words := strings.Fields(title)
-	for i, w := range words {
-		if reSpeakerTag.MatchString(w) && i > 0 {
-			return words[i-1]
-		}
-	}
-	// Fallback: second word is usually the name
-	if len(words) >= 2 {
-		return words[len(words)-2]
+// extractCellText extracts the text content from a <td> with the given CSS class.
+func extractCellText(row, className string) string {
+	pattern := fmt.Sprintf(`<td[^>]*class="[^"]*%s[^1]*"[^>]*>(.*?)</td>`, regexp.QuoteMeta(className))
+	re := regexp.MustCompile(pattern)
+	m := re.FindStringSubmatch(row)
+	if len(m) > 1 {
+		// Strip HTML tags
+		text := reHTMLTag.ReplaceAllString(m[1], "")
+		return strings.TrimSpace(text)
 	}
 	return ""
 }
 
-// cleanHTML strips HTML tags from a string.
-func cleanHTML(s string) string {
-	return strings.TrimSpace(reHTMLTag.ReplaceAllString(s, ""))
+// extractSpeaker extracts the speaker name from an event title.
+// Example: "FED Chair Powell Speaks" -> "Powell"
+func extractSpeaker(title string) string {
+	re := regexp.MustCompile(`(<i)(\w+)\s+(speaks?|testimony|conference|remarks)`)
+	m := re.FindStringSubmatch(title)
+	if len(m) > 2 {
+		return m[2]
+	}
+	return ""
 }
 
-// cleanNumeric extracts numeric value, stripping HTML and whitespace.
-func cleanNumeric(s string) string {
-	s = cleanHTML(s)
-	s = strings.TrimSpace(s)
-	if reNumericValue.MatchString(s) {
-		return s
+// extractRevision detects and extracts a previous value revision.
+func extractRevision(row string, currentPrev string) *domain.EventRevision {
+	// Look for strikethrough tag containing original value
+	re := regexp.MustCompile(`<s>([^<]+)</s>`)
+	m := re.FindStringSubmatch(row)
+	if len(m) > 1 {
+		original := strings.TrimSpace(m[1])
+		rev := &domain.EventRevision{
+			OriginalValue: original,
+			RevisedValue:  currentPrev,
+			Direction:     detectRevisionDirection(original, currentPrev),
+		}
+		rev.Magnitude = math.Abs(parseNumeric(currentPrev) - parseNumeric(original)) // FIX: added "math" import
+		return rev
 	}
-	// Try extracting just the number
-	s = strings.ReplaceAll(s, ",", "")
+	return nil
+}
+
+// extractRevisedValue extracts the revised value from a history row.
+func extractRevisedValue(row string) string {
+	// Look for value after strikethrough
+	re := regexp.MustCompile(`<s>[^<]+</s>\s*([^ <]+)`)
+	m := re.FindStringSubmatch(row)
+	if len(m) > 1 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+// detectRevisionDirection compares original and revised values.
+func detectRevisionDirection(original, revised string) domain.RevisionDirection {
+	origNum := parseNumeric(original)
+	revNum := parseNumeric(revised)
+	if revNum > origNum {
+		return domain.RevisionUp
+	}
+	if revNum < origNum {
+		return domain.RevisionDown
+	}
+	return domain.RevisionFlat
+}
+
+// parseNumeric converts a formatted numeric string to float64.
+// Handles: "450K" (450000), "2.5%" (2.5), "-3.2M" (-3200000), "1,235" (1235)
+func parseNumeric(s string) float64 {
 	s = strings.TrimSpace(s)
-	return s
+	if s == "" || s == "N/A" {
+		return 0
+	}
+
+	// Remove percent and commas
+	s = strings.ReplaceAll(s, "%", "")
+	s = strings.ReplaceAll(s, ",", "")
+
+	// Check for suffix multipliers
+	multiplier := 1.0
+	if strings.HasSuffix(s, "K") || strings.HasSuffix(s, "k") {
+		multiplier = 1000
+		s = s[:len(s)-1]
+	} else if strings.HasSuffix(s, "M") || strings.HasSuffix(s, "m") {
+		multiplier = 1000000
+		s = s[:len(s)-1]
+	} else if strings.HasSuffix(s, "B") || strings.HasSuffix(s, "b") {
+		multiplier = 1000000000
+		s = s[:len(s)-1]
+	} else if strings.HasSuffix(s, "T") || strings.HasSuffix(s, "t") {
+		multiplier = 1000000000000
+		s = s[:len(s)-1]
+	}
+
+	n, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return n * multiplier
+}
+
+// categorizeEvent returns the event category based on the title keywords.
+func categorizeEvent(title string) domain.EventCategory {
+	lower := strings.ToLower(title)
+
+	switch {
+	case containsAny(lower, "rate decision", "ministers meeting", "ministres", "minintes", "mpc", "fomc", "statement rate"):
+		return domain.CategoryCentralBank
+	case containsAny(lower, "speak", "speech", "testimony", "conference", "remarks"):
+		return domain.CategorySpeech
+	case containsAny(lower, "auction", "bond"):
+		return domain.CategoryAuction
+	case containsAny(lower, "holiday", "bank holiday"):
+		return domain.CategoryHoliday
+	default:
+		return domain.CategoryEconomicIndicator
+	}
+}
+
+// containsAny checks if s contains any of the substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
