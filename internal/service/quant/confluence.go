@@ -42,11 +42,24 @@ func NewConfluenceScorer(
 	}
 }
 
+// currencyToContract maps a currency code to a COT contract code
+// using the DefaultCOTContracts list.
+func currencyToContract(currency string) string {
+	for _, c := range domain.DefaultCOTContracts {
+		if c.Currency == currency {
+			return c.Code
+		}
+	}
+	return ""
+}
+
 // ComputeForPair calculates the confluence score for a currency pair.
 func (cs *ConfluenceScorer) ComputeForPair(ctx context.Context, base, quote string) (*domain.ConfluenceScore, error) {
 	score := &domain.ConfluenceScore{
-		CurrencyPair: base + quote,
-		UpdatedAt:    timeutil.NowWIB(),
+		CurrencyPair:  base + quote,
+		BaseCurrency:  base,
+		QuoteCurrency: quote,
+		Timestamp:     timeutil.NowWIB(), // FIX: was UpdatedAt
 	}
 
 	// Compute each factor
@@ -68,18 +81,43 @@ func (cs *ConfluenceScorer) ComputeForPair(ctx context.Context, base, quote stri
 	}
 	score.TotalScore = mathutil.Clamp(totalScore, 0, 100)
 
-	// Determine direction
+	// FIX: Use Bias (ConfluenceBias type) instead of Direction (string)
 	switch {
 	case score.TotalScore >= 65:
-		score.Direction = "BULLISH"
+		score.Bias = domain.BiasBullish
 	case score.TotalScore <= 35:
-		score.Direction = "BEARISH"
+		score.Bias = domain.BiasBearish
 	default:
-		score.Direction = "NEUTRAL"
+		score.Bias = domain.BiasNeutral
 	}
 
-	// Confidence based on factor agreement
-	score.Confidence = computeConfidence(factors)
+	// FIX: Use AgreementPct instead of Confidence
+	score.AgreementPct = computeConfidence(factors)
+
+	// Compute strongest/weakest factors
+	if len(factors) > 0 {
+		strongest := factors[0]
+		weakest := factors[0]
+		for _, f := range factors[1:] {
+			if f.WeightedScore > strongest.WeightedScore {
+				strongest = f
+			}
+			if f.WeightedScore < weakest.WeightedScore {
+				weakest = f
+			}
+		}
+		score.StrongestFactor = string(strongest.Name)
+		score.WeakestFactor = string(weakest.Name)
+	}
+
+	// Count aligned factors
+	aligned := 0
+	for _, f := range factors {
+		if (score.TotalScore >= 50 && f.RawScore >= 50) || (score.TotalScore < 50 && f.RawScore < 50) {
+			aligned++
+		}
+	}
+	score.FactorsAligned = aligned
 
 	// Save
 	if err := cs.surpriseRepo.SaveConfluence(ctx, *score); err != nil {
@@ -117,13 +155,12 @@ func (cs *ConfluenceScorer) ComputeAllMajorPairs(ctx context.Context) ([]domain.
 // Factor 1: COT Positioning (25%)
 func (cs *ConfluenceScorer) computeCOTFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   "COT Positioning",
+		Name:   domain.FactorName("COT Positioning"), // FIX: FactorName type
 		Weight: 0.25,
 	}
 
-	// Get COT analysis for base and quote currencies
-	baseContract := domain.CurrencyToContract(base)
-	quoteContract := domain.CurrencyToContract(quote)
+	baseContract := currencyToContract(base)   // FIX: was domain.CurrencyToContract
+	quoteContract := currencyToContract(quote)
 
 	baseScore := 50.0
 	quoteScore := 50.0
@@ -139,7 +176,6 @@ func (cs *ConfluenceScorer) computeCOTFactor(ctx context.Context, base, quote st
 		}
 	}
 
-	// Differential: higher base COT vs quote = bullish for pair
 	f.RawScore = mathutil.Clamp(50+(baseScore-quoteScore)/2, 0, 100)
 	f.WeightedScore = f.RawScore * f.Weight
 	f.Signal = classifyFactorSignal(f.RawScore)
@@ -150,12 +186,13 @@ func (cs *ConfluenceScorer) computeCOTFactor(ctx context.Context, base, quote st
 // Factor 2: Economic Surprise (20%)
 func (cs *ConfluenceScorer) computeSurpriseFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   "Economic Surprise",
+		Name:   domain.FactorName("Economic Surprise"),
 		Weight: 0.20,
 	}
 
-	baseIdx, _ := cs.surpriseRepo.GetSurpriseIndex(ctx, base, 30)
-	quoteIdx, _ := cs.surpriseRepo.GetSurpriseIndex(ctx, quote, 30)
+	// FIX: GetSurpriseIndex takes 2 args (ctx, currency), not 3
+	baseIdx, _ := cs.surpriseRepo.GetSurpriseIndex(ctx, base)
+	quoteIdx, _ := cs.surpriseRepo.GetSurpriseIndex(ctx, quote)
 
 	baseSurprise := 0.0
 	quoteSurprise := 0.0
@@ -166,7 +203,6 @@ func (cs *ConfluenceScorer) computeSurpriseFactor(ctx context.Context, base, quo
 		quoteSurprise = quoteIdx.RollingScore
 	}
 
-	// Differential: base beating expectations more than quote = bullish
 	diff := baseSurprise - quoteSurprise
 	f.RawScore = mathutil.Clamp(50+diff*2, 0, 100)
 	f.WeightedScore = f.RawScore * f.Weight
@@ -176,14 +212,12 @@ func (cs *ConfluenceScorer) computeSurpriseFactor(ctx context.Context, base, quo
 }
 
 // Factor 3: Interest Rate Trajectory (20%)
-// Uses recent rate-sensitive event data as proxy for rate expectations.
 func (cs *ConfluenceScorer) computeRateFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   "Rate Trajectory",
+		Name:   domain.FactorName("Rate Trajectory"),
 		Weight: 0.20,
 	}
 
-	// Look at rate-related events in last 30 days
 	now := timeutil.NowWIB()
 	start := now.AddDate(0, 0, -30)
 
@@ -210,7 +244,7 @@ func (cs *ConfluenceScorer) computeRateFactor(ctx context.Context, base, quote s
 // Factor 4: Revision Momentum (15%)
 func (cs *ConfluenceScorer) computeRevisionFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   "Revision Momentum",
+		Name:   domain.FactorName("Revision Momentum"),
 		Weight: 0.15,
 	}
 
@@ -230,19 +264,18 @@ func (cs *ConfluenceScorer) computeRevisionFactor(ctx context.Context, base, quo
 // Factor 5: Crowd Sentiment (10%) - Contrarian
 func (cs *ConfluenceScorer) computeCrowdFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   "Crowd Sentiment",
+		Name:   domain.FactorName("Crowd Sentiment"),
 		Weight: 0.10,
 	}
 
-	baseContract := domain.CurrencyToContract(base)
-	quoteContract := domain.CurrencyToContract(quote)
+	baseContract := currencyToContract(base)   // FIX: was domain.CurrencyToContract
+	quoteContract := currencyToContract(quote)
 
 	baseCrowd := 50.0
 	quoteCrowd := 50.0
 
 	if baseContract != "" {
 		if analysis, err := cs.cotRepo.GetLatestAnalysis(ctx, baseContract); err == nil && analysis != nil {
-			// Invert crowding: high crowd long = contrarian bearish
 			baseCrowd = 100 - analysis.CrowdingIndex
 		}
 	}
@@ -262,11 +295,10 @@ func (cs *ConfluenceScorer) computeCrowdFactor(ctx context.Context, base, quote 
 // Factor 6: Event Risk Premium (10%)
 func (cs *ConfluenceScorer) computeEventRiskFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   "Event Risk Premium",
+		Name:   domain.FactorName("Event Risk Premium"),
 		Weight: 0.10,
 	}
 
-	// Count upcoming high-impact events in next 7 days
 	now := timeutil.NowWIB()
 	end := now.AddDate(0, 0, 7)
 
@@ -292,9 +324,7 @@ func (cs *ConfluenceScorer) computeEventRiskFactor(ctx context.Context, base, qu
 		}
 	}
 
-	// More events = more uncertainty = slight negative
-	// But also opportunity for surprise
-	riskDiff := float64(quoteHighCount - baseHighCount) // positive if quote has more risk
+	riskDiff := float64(quoteHighCount - baseHighCount)
 	f.RawScore = mathutil.Clamp(50+riskDiff*5, 0, 100)
 	f.WeightedScore = f.RawScore * f.Weight
 	f.Signal = classifyFactorSignal(f.RawScore)
@@ -320,7 +350,6 @@ func classifyFactorSignal(rawScore float64) string {
 }
 
 func computeConfidence(factors []domain.ConfluenceFactor) float64 {
-	// Confidence = how much factors agree
 	bullish := 0
 	bearish := 0
 	for _, f := range factors {
@@ -336,7 +365,6 @@ func computeConfidence(factors []domain.ConfluenceFactor) float64 {
 		return 50
 	}
 
-	// Max agreement = max confidence
 	maxAgree := bullish
 	if bearish > maxAgree {
 		maxAgree = bearish
@@ -413,13 +441,15 @@ func FormatConfluenceScore(score *domain.ConfluenceScore) string {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("=== %s CONFLUENCE ===\n", score.CurrencyPair))
-	b.WriteString(fmt.Sprintf("Score: %s/100 | %s | Confidence: %.0f%%\n\n",
-		fmtutil.FmtNum(score.TotalScore, 1), score.Direction, score.Confidence))
+	// FIX: Use Bias instead of Direction, AgreementPct instead of Confidence
+	b.WriteString(fmt.Sprintf("Score: %s/100 | %s | Agreement: %.0f%%\n\n",
+		fmtutil.FmtNum(score.TotalScore, 1), string(score.Bias), score.AgreementPct))
 
 	for _, f := range score.Factors {
-		bar := fmtutil.COTIndexBar(f.RawScore)
+		// FIX: COTIndexBar takes 2 args (score, width)
+		bar := fmtutil.COTIndexBar(f.RawScore, 10)
 		b.WriteString(fmt.Sprintf("  %s (%.0f%%): %s %s [%s]\n",
-			f.Name, f.Weight*100,
+			string(f.Name), f.Weight*100,
 			fmtutil.FmtNum(f.RawScore, 1), bar, f.Signal))
 	}
 
