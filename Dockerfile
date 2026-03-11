@@ -14,9 +14,9 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /build
 
-# Copy go.mod and go.sum first for better layer caching
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy go.mod first (go.sum generated via go mod tidy at build time)
+COPY go.mod ./
+RUN go mod tidy && go mod download
 
 # Copy source code
 COPY . .
