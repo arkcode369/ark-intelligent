@@ -11,7 +11,7 @@
 # Data persists in the 'botdata' volume across restarts.
 # ===========================================================================
 
-version: "3.8"
+
 
 services:
   ff-calendar-bot:
