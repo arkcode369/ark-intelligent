@@ -120,13 +120,12 @@ func main() {
 	// 9. Background scheduler
 	// -----------------------------------------------------------------------
 	sched := scheduler.New(&scheduler.Deps{
-		COTAnalyzer:      cotAnalyzer,
-		AIAnalyzer:       aiAnalyzer,
-		Bot:              bot,
-		EventRepo:        eventRepo,
-		COTRepo:          cotRepo,
-		PrefsRepo:        prefsRepo,
-		ChatID:           cfg.ChatID,
+		COTAnalyzer: cotAnalyzer,
+		AIAnalyzer:  aiAnalyzer,
+		Bot:         bot,
+		COTRepo:     cotRepo,
+		PrefsRepo:   prefsRepo,
+		ChatID:      cfg.ChatID,
 	})
 
 	sched.Start(ctx, &scheduler.Intervals{

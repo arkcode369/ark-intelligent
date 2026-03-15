@@ -22,7 +22,6 @@ import (
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
-	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
 	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
 	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"
 )
@@ -33,10 +32,12 @@ import (
 
 // Deps holds all service dependencies the scheduler needs.
 type Deps struct {
-	COTAnalyzer      *cotsvc.Analyzer
-	COTRepo          ports.COTRepository
-	PrefsRepo        ports.PrefsRepository
-	ChatID           string
+	COTAnalyzer *cotsvc.Analyzer
+	AIAnalyzer  ports.AIAnalyzer
+	Bot         ports.Messenger
+	COTRepo     ports.COTRepository
+	PrefsRepo   ports.PrefsRepository
+	ChatID      string
 }
 
 // Intervals configures how often each job runs.
