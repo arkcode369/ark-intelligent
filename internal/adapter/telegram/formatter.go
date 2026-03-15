@@ -99,29 +99,38 @@ func (f *Formatter) FormatCOTOverview(analyses []domain.COTAnalysis) string {
 func (f *Formatter) FormatCOTDetail(a domain.COTAnalysis) string {
 	var b strings.Builder
 
+	rt := a.Contract.ReportType
+	smartMoneyLabel := "Speculator"
+	hedgerLabel := "Hedger"
+	if rt == "TFF" {
+		smartMoneyLabel = "Lev Funds"
+		hedgerLabel = "Dealers"
+	} else if rt == "DISAGGREGATED" {
+		smartMoneyLabel = "Managed Money"
+		hedgerLabel = "Prod/Swap"
+	}
+
 	b.WriteString(fmt.Sprintf("<b>COT Analysis: %s</b>\n", a.Contract.Name))
-	b.WriteString(fmt.Sprintf("<i>Report: %s</i>\n\n", a.ReportDate.Format("Jan 2, 2006")))
+	b.WriteString(fmt.Sprintf("<i>Report: %s (%s)</i>\n\n", a.ReportDate.Format("Jan 2, 2006"), rt))
 
 	// Positioning
-	b.WriteString("<b>Positioning:</b>\n")
-	b.WriteString(fmt.Sprintf("<code>  Net Position:   %s</code>\n", fmtutil.FmtNum(a.NetPosition, 0)))
+	b.WriteString(fmt.Sprintf("<b>%s (Smart Money):</b>\n", smartMoneyLabel))
+	b.WriteString(fmt.Sprintf("<code>  Net Position:   %s</code>\n", fmtutil.FmtNumSigned(a.NetPosition, 0)))
 	b.WriteString(fmt.Sprintf("<code>  Net Change:     %s</code>\n", fmtutil.FmtNumSigned(a.NetChange, 0)))
 	b.WriteString(fmt.Sprintf("<code>  L/S Ratio:      %.2f</code>\n", a.LongShortRatio))
 
+	b.WriteString(fmt.Sprintf("\n<b>%s:</b>\n", hedgerLabel))
+	b.WriteString(fmt.Sprintf("<code>  Net Position:   %s</code>\n", fmtutil.FmtNumSigned(a.CommercialNet, 0)))
+
 	// COT Index
-	b.WriteString(fmt.Sprintf("\n<b>COT Index:</b>\n"))
+	b.WriteString(fmt.Sprintf("\n<b>COT Index (%s):</b>\n", smartMoneyLabel))
 	b.WriteString(fmt.Sprintf("<code>  52-Week:        %.1f%%</code>\n", a.COTIndex))
 	b.WriteString(f.formatProgressBar(a.COTIndex, 20))
 
 	// Momentum
 	b.WriteString(fmt.Sprintf("\n<b>Momentum:</b>\n"))
-	b.WriteString(fmt.Sprintf("<code>  1-Week:         %s</code>\n", fmtutil.FmtNumSigned(a.NetChange, 0)))
+	b.WriteString(fmt.Sprintf("<code>  Sentiment:      %.1f</code>\n", a.SentimentScore))
 	b.WriteString(fmt.Sprintf("<code>  Trend:          %s</code>\n", f.momentumLabel(a.MomentumDir)))
-
-	// Sentiment
-	b.WriteString(fmt.Sprintf("\n<b>Sentiment Score:</b>\n"))
-	b.WriteString(fmt.Sprintf("<code>  Overall:        %.2f</code>\n", a.SentimentScore))
-	b.WriteString(fmt.Sprintf("<code>  Crowding:       %.2f</code>\n", a.CrowdingIndex))
 
 	return b.String()
 }

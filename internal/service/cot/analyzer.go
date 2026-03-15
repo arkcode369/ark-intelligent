@@ -84,41 +84,52 @@ func (a *Analyzer) AnalyzeContract(ctx context.Context, contractCode string) (*d
 
 // computeMetrics calculates all 20+ COT metrics from a record + history.
 func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COTRecord) domain.COTAnalysis {
-	// FIX: COTAnalysis uses Contract (COTContract), not ContractCode/Currency strings
+	contract := findContractByCode(current.ContractCode)
+	rt := contract.ReportType
+
 	analysis := domain.COTAnalysis{
-		Contract:   findContractByCode(current.ContractCode), // FIX: was ContractCode: current.ContractCode
+		Contract:   contract,
 		ReportDate: current.ReportDate,
 	}
 
-	// === Core Position Metrics ===
+	// === Core Position Metrics (Modern) ===
 
-	// 1. Net positions (FIX: field names match domain exactly)
-	// COTRecord fields are float64, not int64
-	analysis.NetPosition = current.SpecLong - current.SpecShort       // FIX: was SpecNetPosition
-	analysis.NetCommercial = current.CommLong - current.CommShort     // FIX: was CommNetPosition
-	analysis.NetSmallSpec = current.SmallLong - current.SmallShort    // FIX: was SmallNetPosition
+	// 1. Smart Money Net (Leveraged Funds or Managed Money)
+	analysis.NetPosition = current.GetSmartMoneyNet(rt)
+	analysis.CommercialNet = current.GetCommercialNet(rt)
+	analysis.SmallSpecNet = current.GetSmallSpecNet()
+
+	// Specific breakdowns
+	if rt == "TFF" {
+		analysis.LevFundNet = current.LevFundLong - current.LevFundShort
+	} else {
+		analysis.ManagedMoneyNet = current.ManagedMoneyLong - current.ManagedMoneyShort
+	}
 
 	// 2. Net change (week-over-week)
-	analysis.NetChange = current.SpecLongChange - current.SpecShortChange
-	analysis.CommNetChange = current.CommLongChange - current.CommShortChange
-	commNetChange := analysis.CommNetChange
-	smallNetChange := current.SmallLongChange - current.SmallShortChange
-	_ = smallNetChange
+	if len(history) > 1 {
+		prev := history[1]
+		analysis.NetChange = analysis.NetPosition - prev.GetSmartMoneyNet(rt)
+		analysis.CommNetChange = analysis.CommercialNet - prev.GetCommercialNet(rt)
+	}
 
-	// 3. Long/Short ratios (FIX: field names)
-	analysis.LongShortRatio = safeRatio(current.SpecLong, current.SpecShort) // FIX: was SpecLongShortRatio
-	analysis.CommLSRatio = safeRatio(current.CommLong, current.CommShort)     // FIX: was CommLongShortRatio
+	// 3. Long/Short ratios
+	if rt == "TFF" {
+		analysis.LongShortRatio = safeRatio(current.LevFundLong, current.LevFundShort)
+	} else {
+		analysis.LongShortRatio = safeRatio(current.ManagedMoneyLong, current.ManagedMoneyShort)
+	}
 
-	// 4. Percentage of Open Interest (FIX: field names)
+	// 4. Percentage of Open Interest
 	if current.OpenInterest > 0 {
 		oi := current.OpenInterest
-		analysis.PctOfOI = analysis.NetPosition / oi * 100   // FIX: was SpecPctOfOI
-		analysis.CommPctOfOI = analysis.NetCommercial / oi * 100
+		analysis.PctOfOI = analysis.NetPosition / oi * 100
+		analysis.CommPctOfOI = analysis.CommercialNet / oi * 100
 	}
 
 	// 5. Open Interest change %
 	if len(history) > 1 {
-		prevOI := history[1].OpenInterest // history[0] = current
+		prevOI := history[1].OpenInterest
 		if prevOI > 0 {
 			analysis.OIPctChange = (current.OpenInterest - prevOI) / prevOI * 100
 		}
@@ -127,31 +138,31 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	// === Index Metrics (Larry Williams COT Index) ===
 
 	if len(history) >= 3 {
-		// 6. COT Index for speculators (0-100)
-		specNets := extractNets(history, func(r domain.COTRecord) float64 { return r.SpecLong - r.SpecShort })
-		analysis.COTIndex = computeCOTIndex(specNets)
+		// 6. COT Index for smart money (0-100)
+		smartNets := extractNets(history, func(r domain.COTRecord) float64 { return r.GetSmartMoneyNet(rt) })
+		analysis.COTIndex = computeCOTIndex(smartNets)
 
 		// 7. COT Index for commercials
-		commNets := extractNets(history, func(r domain.COTRecord) float64 { return r.CommLong - r.CommShort })
+		commNets := extractNets(history, func(r domain.COTRecord) float64 { return r.GetCommercialNet(rt) })
 		analysis.COTIndexComm = computeCOTIndex(commNets)
 	}
 
 	// === Momentum Metrics ===
 
 	if len(history) >= 4 {
-		// 8. Speculator momentum (4-week)
-		specNets4 := extractNets(history[:minInt(5, len(history))], func(r domain.COTRecord) float64 {
-			return r.SpecLong - r.SpecShort
+		// 8. Smart Money momentum (4-week)
+		smartNets4 := extractNets(history[:minInt(5, len(history))], func(r domain.COTRecord) float64 {
+			return r.GetSmartMoneyNet(rt)
 		})
-		analysis.SpecMomentum4W = mathutil.Momentum(specNets4, 4)
+		analysis.SpecMomentum4W = mathutil.Momentum(smartNets4, 4)
 
 		// 9. Commercial momentum (4-week)
 		commNets4 := extractNets(history[:minInt(5, len(history))], func(r domain.COTRecord) float64 {
-			return r.CommLong - r.CommShort
+			return r.GetCommercialNet(rt)
 		})
 		analysis.CommMomentum4W = mathutil.Momentum(commNets4, 4)
 
-		// 10. Momentum direction (FIX: MomentumDir is domain.MomentumDirection type)
+		// 10. Momentum direction
 		analysis.MomentumDir = classifyMomentumDir(analysis.SpecMomentum4W, analysis.CommMomentum4W)
 	}
 
@@ -167,20 +178,15 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 	// === Advanced Metrics ===
 
-	// 15. Divergence flag (commercials vs speculators moving opposite)
-	analysis.DivergenceFlag = detectDivergence(analysis.NetChange, commNetChange)
+	// 15. Divergence flag (commercials vs smart money moving opposite)
+	analysis.DivergenceFlag = detectDivergence(analysis.NetChange, analysis.CommNetChange)
 
-	// 16. Crowding index (how one-sided is positioning)
-	analysis.CrowdingIndex = computeCrowding(current)
+	// 16. Crowding index
+	analysis.CrowdingIndex = computeCrowding(current, rt)
 
 	// 17-18. Concentration (top 4/8 traders)
 	analysis.Top4Concentration = (current.Top4Long + current.Top4Short) / 2
 	analysis.Top8Concentration = (current.Top8Long + current.Top8Short) / 2
-
-	// === Spread as % of OI ===
-	if current.OpenInterest > 0 {
-		analysis.SpreadPctOfOI = current.SpecSpread / current.OpenInterest * 100
-	}
 
 	// === Extreme Detection ===
 	analysis.IsExtremeBull = analysis.COTIndex > 90
@@ -189,8 +195,8 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	analysis.CommExtremeBear = analysis.COTIndexComm < 10
 
 	// === Smart Money vs Dumb Money ===
-	analysis.SmartDumbDivergence = (analysis.NetPosition > 0 && analysis.NetCommercial < 0) ||
-		(analysis.NetPosition < 0 && analysis.NetCommercial > 0)
+	analysis.SmartDumbDivergence = (analysis.NetPosition > 0 && analysis.CommercialNet < 0) ||
+		(analysis.NetPosition < 0 && analysis.CommercialNet > 0)
 
 	// === Signal Strength ===
 	analysis.SignalStrength = classifySignalStrength(analysis)
@@ -360,11 +366,18 @@ func detectDivergence(specNetChange, commNetChange float64) bool {
 }
 
 // computeCrowding measures how one-sided positioning is (0-100).
-func computeCrowding(r domain.COTRecord) float64 {
-	totalLong := r.SpecLong + r.CommLong + r.SmallLong
-	totalShort := r.SpecShort + r.CommShort + r.SmallShort
-	total := totalLong + totalShort
+func computeCrowding(r domain.COTRecord, reportType string) float64 {
+	var totalLong, totalShort float64
 
+	if reportType == "TFF" {
+		totalLong = r.DealerLong + r.AssetMgrLong + r.LevFundLong + r.OtherLong + r.SmallLong
+		totalShort = r.DealerShort + r.AssetMgrShort + r.LevFundShort + r.OtherShort + r.SmallShort
+	} else {
+		totalLong = r.ProdMercLong + r.SwapDealerLong + r.ManagedMoneyLong + r.OtherLong + r.SmallLong
+		totalShort = r.ProdMercShort + r.SwapDealerShort + r.ManagedMoneyShort + r.OtherShort + r.SmallShort
+	}
+
+	total := totalLong + totalShort
 	if total == 0 {
 		return 50.0
 	}

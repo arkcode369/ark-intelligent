@@ -19,17 +19,20 @@ import (
 // Primary: CFTC Socrata Open Data API (JSON)
 // Fallback: CFTC bulk CSV download from cftc.gov
 type Fetcher struct {
-	httpClient *http.Client
-	socrataURL string // e.g., "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
-	csvURL     string // e.g., "https://www.cftc.gov/dea/newcot/deafut.txt"
+	httpClient  *http.Client
+	endpoints   map[string]string // reportType -> url
+	defaultCSV  string
 }
 
-// NewFetcher creates a COT fetcher with default CFTC endpoints.
+// NewFetcher creates a COT fetcher with modern CFTC endpoints.
 func NewFetcher() *Fetcher {
 	return &Fetcher{
 		httpClient: &http.Client{Timeout: 60 * time.Second},
-		socrataURL: "https://publicreporting.cftc.gov/resource/6dca-aqww.json",
-		csvURL:     "https://www.cftc.gov/dea/newcot/deafut.txt",
+		endpoints: map[string]string{
+			"TFF":           "https://publicreporting.cftc.gov/resource/yw9f-hn96.json", // TFF Combined
+			"DISAGGREGATED": "https://publicreporting.cftc.gov/resource/kh3c-gbw2.json", // Disaggregated Combined
+		},
+		defaultCSV: "https://www.cftc.gov/dea/newcot/deafut.txt", // Legacy fallback (still useful)
 	}
 }
 
@@ -76,9 +79,13 @@ func getLatestDate(records []domain.COTRecord) time.Time {
 }
 
 // FetchHistory retrieves historical COT data for a specific contract.
-// Uses Socrata with $where and $order for efficient server-side filtering.
 func (f *Fetcher) FetchHistory(ctx context.Context, contract domain.COTContract, weeks int) ([]domain.COTRecord, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.socrataURL, nil)
+	url, ok := f.endpoints[contract.ReportType]
+	if !ok {
+		return nil, fmt.Errorf("no endpoint for report type %s", contract.ReportType)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -114,18 +121,49 @@ func (f *Fetcher) FetchHistory(ctx context.Context, contract domain.COTContract,
 	return records, nil
 }
 
-// fetchFromSocrata queries the CFTC Socrata API for latest data.
+// fetchFromSocrata queries the CFTC Socrata API for latest data from multiple reports.
 func (f *Fetcher) fetchFromSocrata(ctx context.Context, contracts []domain.COTContract) ([]domain.COTRecord, error) {
-	// Build $where clause for all tracked contracts
+	// Group contracts by report type
+	byReport := make(map[string][]domain.COTContract)
+	for _, c := range contracts {
+		byReport[c.ReportType] = append(byReport[c.ReportType], c)
+	}
+
+	var allRecords []domain.COTRecord
+	var errs []error
+
+	for reportType, reportContracts := range byReport {
+		url, ok := f.endpoints[reportType]
+		if !ok {
+			log.Printf("[cot] warn: no endpoint for report type %s", reportType)
+			continue
+		}
+
+		records, err := f.fetchReport(ctx, url, reportContracts)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", reportType, err))
+			continue
+		}
+		allRecords = append(allRecords, records...)
+	}
+
+	if len(allRecords) == 0 && len(errs) > 0 {
+		return nil, fmt.Errorf("all socrata reports failed: %v", errs)
+	}
+
+	return allRecords, nil
+}
+
+func (f *Fetcher) fetchReport(ctx context.Context, url string, contracts []domain.COTContract) ([]domain.COTRecord, error) {
 	codes := make([]string, len(contracts))
 	for i, c := range contracts {
 		codes[i] = fmt.Sprintf("'%s'", c.Code)
 	}
 	where := fmt.Sprintf("cftc_contract_market_code in(%s)", strings.Join(codes, ","))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.socrataURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, err
 	}
 
 	q := req.URL.Query()
@@ -138,32 +176,30 @@ func (f *Fetcher) fetchFromSocrata(ctx context.Context, contracts []domain.COTCo
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("socrata request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("socrata status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
 	var raw []domain.SocrataRecord
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("decode socrata: %w", err)
+		return nil, err
 	}
 
-	// Convert and deduplicate: keep only latest per contract
-	contractMap := buildContractMap(contracts)
+	contractMap := make(map[string]domain.COTContract)
+	for _, c := range contracts {
+		contractMap[c.Code] = c
+	}
+
 	seen := make(map[string]bool)
 	var records []domain.COTRecord
-
 	for _, sr := range raw {
 		contract, ok := contractMap[sr.ContractCode]
-		if !ok {
+		if !ok || seen[sr.ContractCode] {
 			continue
-		}
-		if seen[sr.ContractCode] {
-			continue // already have latest for this contract
 		}
 		seen[sr.ContractCode] = true
 		records = append(records, socrataToRecord(sr, contract))
@@ -233,7 +269,6 @@ func socrataFloat(s string) float64 {
 	return v
 }
 
-// socrataToRecord converts a Socrata JSON record to our domain model.
 func socrataToRecord(sr domain.SocrataRecord, contract domain.COTContract) domain.COTRecord {
 	reportDate, _ := time.Parse("2006-01-02T15:04:05.000", sr.ReportDate)
 	if reportDate.IsZero() && len(sr.ReportDate) >= 10 {
@@ -244,22 +279,31 @@ func socrataToRecord(sr domain.SocrataRecord, contract domain.COTContract) domai
 		ContractCode: contract.Code,
 		ContractName: contract.Name,
 		ReportDate:   reportDate,
-
-		CommLong:   socrataFloat(sr.CommLong),
-		CommShort:  socrataFloat(sr.CommShort),
-		SpecLong:   socrataFloat(sr.SpecLong),
-		SpecShort:  socrataFloat(sr.SpecShort),
-		SmallLong:  socrataFloat(sr.SmallLong),
-		SmallShort: socrataFloat(sr.SmallShort),
 		OpenInterest: socrataFloat(sr.OpenInterest),
 
-		CommLongChange:  socrataFloat(sr.CommLongChange),
-		CommShortChange: socrataFloat(sr.CommShortChange),
-		SpecLongChange:  socrataFloat(sr.SpecLongChange),
-		SpecShortChange: socrataFloat(sr.SpecShortChange),
-		SmallLongChange: socrataFloat(sr.SmallLongChange),
-		SmallShortChange: socrataFloat(sr.SmallShortChange),
+		// TFF
+		DealerLong:   socrataFloat(sr.DealerPositionsLong),
+		DealerShort:  socrataFloat(sr.DealerPositionsShort),
+		AssetMgrLong: socrataFloat(sr.AssetMgrPositionsLong),
+		AssetMgrShort: socrataFloat(sr.AssetMgrPositionsShort),
+		LevFundLong:  socrataFloat(sr.LevMoneyPositionsLong),
+		LevFundShort: socrataFloat(sr.LevMoneyPositionsShort),
 
+		// Disaggregated
+		ProdMercLong:   socrataFloat(sr.ProdMercPositionsLong),
+		ProdMercShort:  socrataFloat(sr.ProdMercPositionsShort),
+		SwapDealerLong: socrataFloat(sr.SwapPositionsLong),
+		SwapDealerShort: socrataFloat(sr.SwapPositionsShort),
+		ManagedMoneyLong: socrataFloat(sr.MMoneyPositionsLong),
+		ManagedMoneyShort: socrataFloat(sr.MMoneyPositionsShort),
+
+		// Shared
+		SmallLong:  socrataFloat(sr.NonReptPositionsLong),
+		SmallShort: socrataFloat(sr.NonReptPositionsShort),
+		OtherLong:  socrataFloat(sr.OtherReptPositionsLong),
+		OtherShort: socrataFloat(sr.OtherReptPositionsShort),
+
+		// Concentration
 		Top4Long:  socrataFloat(sr.Top4Long),
 		Top4Short: socrataFloat(sr.Top4Short),
 		Top8Long:  socrataFloat(sr.Top8Long),

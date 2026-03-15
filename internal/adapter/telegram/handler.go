@@ -263,6 +263,7 @@ func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, a
 	placeholderID, _ := h.bot.SendHTML(ctx, chatID, "Generating weekly outlook... (this may take 10-15s)")
 
 	// Gather all data
+	now := timeutil.NowWIB()
 	cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
 	confluenceScores, _ := h.surpriseRepo.GetAllConfluences(ctx)
 	ranking, _ := h.surpriseRepo.GetLatestRanking(ctx)

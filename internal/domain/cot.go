@@ -8,26 +8,26 @@ import "time"
 
 // COTContract defines a tracked CFTC futures contract.
 type COTContract struct {
-	Code     string `json:"code"`     // CFTC contract market code
-	Name     string `json:"name"`     // Human-readable name (e.g., "Euro FX")
-	Symbol   string `json:"symbol"`   // Trading symbol (e.g., "EURUSD")
-	Currency string `json:"currency"` // Related currency code (e.g., "EUR")
-	Inverse  bool   `json:"inverse"`  // True if contract is inverse to currency (e.g., USD Index)
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Symbol     string `json:"symbol"`
+	Currency   string `json:"currency"`
+	Inverse    bool   `json:"inverse"`
+	ReportType string `json:"report_type"` // "TFF" or "DISAGGREGATED"
 }
 
-// DefaultCOTContracts returns the 7 core tracked contracts plus expandable extras.
 var DefaultCOTContracts = []COTContract{
-	{Code: "099741", Name: "Euro FX", Symbol: "6E", Currency: "EUR", Inverse: false},
-	{Code: "096742", Name: "British Pound", Symbol: "6B", Currency: "GBP", Inverse: false},
-	{Code: "097741", Name: "Japanese Yen", Symbol: "6J", Currency: "JPY", Inverse: false},
-	{Code: "092741", Name: "Swiss Franc", Symbol: "6S", Currency: "CHF", Inverse: false},
-	{Code: "232741", Name: "Australian Dollar", Symbol: "6A", Currency: "AUD", Inverse: false},
-	{Code: "090741", Name: "Canadian Dollar", Symbol: "6C", Currency: "CAD", Inverse: false},
-	{Code: "112741", Name: "NZ Dollar", Symbol: "6N", Currency: "NZD", Inverse: false},
-	{Code: "098662", Name: "US Dollar Index", Symbol: "DX", Currency: "USD", Inverse: true},
-	{Code: "088691", Name: "Gold", Symbol: "GC", Currency: "XAU", Inverse: false},
-	{Code: "067651", Name: "Crude Oil WTI", Symbol: "CL", Currency: "OIL", Inverse: false},
-	{Code: "043602", Name: "10-Year T-Note", Symbol: "ZN", Currency: "BOND", Inverse: false},
+	{Code: "099741", Name: "Euro FX", Symbol: "6E", Currency: "EUR", Inverse: false, ReportType: "TFF"},
+	{Code: "096742", Name: "British Pound", Symbol: "6B", Currency: "GBP", Inverse: false, ReportType: "TFF"},
+	{Code: "097741", Name: "Japanese Yen", Symbol: "6J", Currency: "JPY", Inverse: false, ReportType: "TFF"},
+	{Code: "092741", Name: "Swiss Franc", Symbol: "6S", Currency: "CHF", Inverse: false, ReportType: "TFF"},
+	{Code: "232741", Name: "Australian Dollar", Symbol: "6A", Currency: "AUD", Inverse: false, ReportType: "TFF"},
+	{Code: "090741", Name: "Canadian Dollar", Symbol: "6C", Currency: "CAD", Inverse: false, ReportType: "TFF"},
+	{Code: "112741", Name: "NZ Dollar", Symbol: "6N", Currency: "NZD", Inverse: false, ReportType: "TFF"},
+	{Code: "098662", Name: "US Dollar Index", Symbol: "DX", Currency: "USD", Inverse: true, ReportType: "TFF"},
+	{Code: "088691", Name: "Gold", Symbol: "GC", Currency: "XAU", Inverse: false, ReportType: "DISAGGREGATED"},
+	{Code: "067651", Name: "Crude Oil WTI", Symbol: "CL", Currency: "OIL", Inverse: false, ReportType: "DISAGGREGATED"},
+	{Code: "043602", Name: "10-Year T-Note", Symbol: "ZN", Currency: "BOND", Inverse: false, ReportType: "TFF"},
 }
 
 // ---------------------------------------------------------------------------
@@ -45,46 +45,59 @@ type COTRecord struct {
 	OpenInterest    float64 `json:"open_interest"`
 	OpenInterestOld float64 `json:"open_interest_old"` // Previous week for change calc
 
-	// Commercial (Hedger) positions
-	CommLong  float64 `json:"comm_long"`
-	CommShort float64 `json:"comm_short"`
+	// --- A. TFF (Financials: Currencies/Bonds) ---
+	DealerLong   float64 `json:"dealer_long"`
+	DealerShort  float64 `json:"dealer_short"`
+	AssetMgrLong float64 `json:"asset_mgr_long"`
+	AssetMgrShort float64 `json:"asset_mgr_short"`
+	LevFundLong  float64 `json:"lev_fund_long"`
+	LevFundShort float64 `json:"lev_fund_short"`
 
-	// Non-Commercial (Large Speculator) positions
-	SpecLong  float64 `json:"spec_long"`
-	SpecShort float64 `json:"spec_short"`
-	SpecSpread float64 `json:"spec_spread"` // Spread positions (calendar spreads)
+	// --- B. Disaggregated (Physicals: Gold/Oil) ---
+	ProdMercLong float64 `json:"prod_merc_long"`
+	ProdMercShort float64 `json:"prod_merc_short"`
+	SwapDealerLong float64 `json:"swap_dealer_long"`
+	SwapDealerShort float64 `json:"swap_dealer_short"`
+	ManagedMoneyLong float64 `json:"managed_money_long"`
+	ManagedMoneyShort float64 `json:"managed_money_short"`
 
-	// Non-Reportable (Small Speculator) positions
+	// --- C. Non-Reportable (Small Specs - common across all) ---
 	SmallLong  float64 `json:"small_long"`
 	SmallShort float64 `json:"small_short"`
 
+	// Other Reportables (common)
+	OtherLong  float64 `json:"other_long"`
+	OtherShort float64 `json:"other_short"`
+
 	// Concentration data (Top traders)
-	Top4Long  float64 `json:"top4_long"`  // % of OI held by top 4 longs
-	Top4Short float64 `json:"top4_short"` // % of OI held by top 4 shorts
-	Top8Long  float64 `json:"top8_long"`  // % of OI held by top 8 longs
-	Top8Short float64 `json:"top8_short"` // % of OI held by top 8 shorts
+	Top4Long  float64 `json:"top4_long"`
+	Top4Short float64 `json:"top4_short"`
+	Top8Long  float64 `json:"top8_long"`
+	Top8Short float64 `json:"top8_short"`
 
-	// Changes from previous week (pre-calculated if available)
-	CommLongChange  float64 `json:"comm_long_change"`
-	CommShortChange float64 `json:"comm_short_change"`
-	SpecLongChange  float64 `json:"spec_long_change"`
-	SpecShortChange float64 `json:"spec_short_change"`
-	SmallLongChange  float64 `json:"small_long_change"`
-	SmallShortChange float64 `json:"small_short_change"`
+	// Changes from previous week (for the primary Speculator/Managed Money/Lev Funds category)
+	NetChange float64 `json:"net_change"`
 }
 
-// NetCommercial returns Commercial net position (Long - Short).
-func (r *COTRecord) NetCommercial() float64 {
-	return r.CommLong - r.CommShort
+// GetSmartMoneyNet returns the primary speculative position (Lev Funds for TFF, Managed Money for Disaggregated).
+func (r *COTRecord) GetSmartMoneyNet(reportType string) float64 {
+	if reportType == "TFF" {
+		return r.LevFundLong - r.LevFundShort
+	}
+	// DISAGGREGATED or default
+	return r.ManagedMoneyLong - r.ManagedMoneyShort
 }
 
-// NetSpeculator returns Large Speculator net position.
-func (r *COTRecord) NetSpeculator() float64 {
-	return r.SpecLong - r.SpecShort
+// GetCommercialNet returns the primary commercial/hedging position.
+func (r *COTRecord) GetCommercialNet(reportType string) float64 {
+	if reportType == "TFF" {
+		return r.DealerLong - r.DealerShort
+	}
+	return r.ProdMercLong - r.ProdMercShort + r.SwapDealerLong - r.SwapDealerShort
 }
 
-// NetSmallSpec returns Small Speculator net position.
-func (r *COTRecord) NetSmallSpec() float64 {
+// GetSmallSpecNet returns the non-reportable position.
+func (r *COTRecord) GetSmallSpecNet() float64 {
 	return r.SmallLong - r.SmallShort
 }
 
@@ -137,15 +150,19 @@ type COTAnalysis struct {
 	ReportDate time.Time   `json:"report_date"`
 
 	// --- A. Core Positioning ---
-	NetPosition     float64 `json:"net_position"`      // Speculator net (primary signal)
-	NetChange       float64 `json:"net_change"`        // Week-over-week change in spec net
-	CommNetChange   float64 `json:"comm_net_change"`   // Week-over-week change in commercial net
-	NetCommercial   float64 `json:"net_commercial"`    // Commercial net position
-	NetSmallSpec    float64 `json:"net_small_spec"`    // Small speculator net
-	LongShortRatio  float64 `json:"long_short_ratio"`  // Spec Long / Spec Short
-	CommLSRatio     float64 `json:"comm_ls_ratio"`     // Comm Long / Comm Short
+	// --- A. Core Positioning (Focused on "Smart Money") ---
+	// Large Speculator equivalent: Lev Funds (TFF) or Managed Money (Disaggregated)
+	NetPosition     float64 `json:"net_position"`      // Smart Money net
+	NetChange       float64 `json:"net_change"`        // WoW change in smart net
+	
+	// Breakdown
+	LevFundNet      float64 `json:"lev_fund_net"`      // TFF only
+	ManagedMoneyNet float64 `json:"managed_money_net"` // Disaggregated only
+	CommercialNet   float64 `json:"commercial_net"`    // Dealers (TFF) or Prod/Swap (Disaggregated)
+	SmallSpecNet    float64 `json:"small_spec_net"`    // Non-reportable
+	
+	LongShortRatio  float64 `json:"long_short_ratio"`  // Smart Money Ratio
 	PctOfOI         float64 `json:"pct_of_oi"`         // Net as % of Open Interest
-	CommPctOfOI     float64 `json:"comm_pct_of_oi"`    // Commercial net as % of OI
 
 	// --- B. COT Index & Extremes ---
 	COTIndex        float64 `json:"cot_index"`         // Williams COT Index (0-100) for specs
@@ -192,25 +209,36 @@ type COTAnalysis struct {
 // SocrataRecord maps the CFTC Socrata JSON response fields.
 // Used to parse the raw API response before converting to COTRecord.
 type SocrataRecord struct {
-	ReportDate        string `json:"report_date_as_yyyy_mm_dd"`
-	MarketName        string `json:"market_and_exchange_names"`
-	ContractCode      string `json:"cftc_contract_market_code"`
-	OpenInterest      string `json:"open_interest_all"`
-	CommLong          string `json:"comm_positions_long_all"`
-	CommShort         string `json:"comm_positions_short_all"`
-	SpecLong          string `json:"noncomm_positions_long_all"`
-	SpecShort         string `json:"noncomm_positions_short_all"`
-	SpecSpread        string `json:"noncomm_positions_spread_all"`
-	SmallLong         string `json:"nonrept_positions_long_all"`
-	SmallShort        string `json:"nonrept_positions_short_all"`
-	CommLongChange    string `json:"change_in_comm_long_all"`
-	CommShortChange   string `json:"change_in_comm_short_all"`
-	SpecLongChange    string `json:"change_in_noncomm_long_all"`
-	SpecShortChange   string `json:"change_in_noncomm_short_all"`
-	SmallLongChange   string `json:"change_in_nonrept_long_all"`
-	SmallShortChange  string `json:"change_in_nonrept_short_all"`
-	Top4Long          string `json:"pct_of_oi_4_or_less_long_all"`
-	Top4Short         string `json:"pct_of_oi_4_or_less_short_all"`
-	Top8Long          string `json:"pct_of_oi_8_or_less_long_all"`
-	Top8Short         string `json:"pct_of_oi_8_or_less_short_all"`
+	ReportDate   string `json:"report_date_as_yyyy_mm_dd"`
+	MarketName   string `json:"market_and_exchange_names"`
+	ContractCode string `json:"cftc_contract_market_code"`
+	OpenInterest string `json:"open_interest_all"`
+
+	// --- A. TFF (Financials) ---
+	DealerPositionsLong   string `json:"dealer_positions_long_all"`
+	DealerPositionsShort  string `json:"dealer_positions_short_all"`
+	AssetMgrPositionsLong string `json:"asset_mgr_positions_long"`    // TFF format
+	AssetMgrPositionsShort string `json:"asset_mgr_positions_short"`  // TFF format
+	LevMoneyPositionsLong  string `json:"lev_money_positions_long"`  // TFF format
+	LevMoneyPositionsShort string `json:"lev_money_positions_short"` // TFF format
+
+	// --- B. Disaggregated (Physicals) ---
+	ProdMercPositionsLong  string `json:"prod_merc_positions_long_all"`
+	ProdMercPositionsShort string `json:"prod_merc_positions_short_all"`
+	SwapPositionsLong      string `json:"swap_positions_long_all"`
+	SwapPositionsShort     string `json:"swap_positions_short_all"`
+	MMoneyPositionsLong    string `json:"m_money_positions_long_all"`
+	MMoneyPositionsShort   string `json:"m_money_positions_short_all"`
+
+	// --- C. Shared ---
+	OtherReptPositionsLong  string `json:"other_rept_positions_long_all"`
+	OtherReptPositionsShort string `json:"other_rept_positions_short_all"`
+	NonReptPositionsLong    string `json:"nonrept_positions_long_all"`
+	NonReptPositionsShort   string `json:"nonrept_positions_short_all"`
+
+	// Concentration
+	Top4Long  string `json:"pct_of_oi_4_or_less_long_all"`
+	Top4Short string `json:"pct_of_oi_4_or_less_short_all"`
+	Top8Long  string `json:"pct_of_oi_8_or_less_long_all"`
+	Top8Short string `json:"pct_of_oi_8_or_less_short_all"`
 }
