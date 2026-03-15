@@ -15,11 +15,9 @@ import (
 // for generating weekly outlooks. It mirrors ports.WeeklyData but with
 // types that are more convenient for prompt building.
 type WeeklyOutlookData struct {
-	COTAnalyses      []domain.COTAnalysis
-	HighImpactEvents []domain.FFEvent
-	SurpriseIndices  map[string]*domain.SurpriseIndex
-	Rankings         *domain.CurrencyRanking
-	Confluences      []domain.ConfluenceScore
+	COTAnalyses []domain.COTAnalysis
+	Rankings    *domain.CurrencyRanking
+	Confluences []domain.ConfluenceScore
 }
 
 // Interpreter orchestrates AI-powered narrative generation for all analysis types.
@@ -66,18 +64,6 @@ func (ip *Interpreter) AnalyzeCOT(ctx context.Context, analyses []domain.COTAnal
 	return formatResponse("COT ANALYSIS", result), nil
 }
 
-// PredictEventImpact generates an AI interpretation of an upcoming event.
-func (ip *Interpreter) PredictEventImpact(ctx context.Context, event domain.FFEvent, history []domain.FFEventDetail) (string, error) {
-	prompt := BuildEventImpactPrompt(event, history)
-
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
-	if err != nil {
-		log.Printf("[ai] event impact failed: %v", err)
-		return ip.fallbackEventSummary(event, history), nil
-	}
-
-	return formatResponse(fmt.Sprintf("%s %s IMPACT", event.Currency, event.Title), result), nil
-}
 
 // SynthesizeConfluence generates an AI interpretation of confluence scoring.
 func (ip *Interpreter) SynthesizeConfluence(ctx context.Context, score domain.ConfluenceScore) (string, error) {
@@ -96,21 +82,10 @@ func (ip *Interpreter) SynthesizeConfluence(ctx context.Context, score domain.Co
 
 // GenerateWeeklyOutlook creates a comprehensive weekly market outlook.
 func (ip *Interpreter) GenerateWeeklyOutlook(ctx context.Context, data ports.WeeklyData) (string, error) {
-	// FIX: Convert ports.WeeklyData to internal WeeklyOutlookData
-	// ports.WeeklyData uses: UpcomingEvents, SurpriseIndices ([]domain.SurpriseIndex),
-	// CurrencyRanking, ConfluenceScores
-	surpriseMap := make(map[string]*domain.SurpriseIndex)
-	for i := range data.SurpriseIndices {
-		idx := data.SurpriseIndices[i]
-		surpriseMap[idx.Currency] = &idx
-	}
-
 	outlookData := WeeklyOutlookData{
-		COTAnalyses:      data.COTAnalyses,
-		HighImpactEvents: data.UpcomingEvents,     // FIX: was data.HighImpactEvents
-		SurpriseIndices:  surpriseMap,              // FIX: convert slice to map
-		Rankings:         data.CurrencyRanking,     // FIX: was data.Rankings
-		Confluences:      data.ConfluenceScores,    // FIX: was data.Confluences
+		COTAnalyses: data.COTAnalyses,
+		Rankings:    data.CurrencyRanking,
+		Confluences: data.ConfluenceScores,
 	}
 
 	prompt := BuildWeeklyOutlookPrompt(outlookData)
@@ -155,20 +130,10 @@ func (ip *Interpreter) GenerateAllInsights(ctx context.Context, data WeeklyOutlo
 	}
 
 	// 2. Weekly Outlook - FIX: Convert WeeklyOutlookData back to ports.WeeklyData
-	// Convert surprise map back to slice
-	var surpriseSlice []domain.SurpriseIndex
-	for _, idx := range data.SurpriseIndices {
-		if idx != nil {
-			surpriseSlice = append(surpriseSlice, *idx)
-		}
-	}
-
 	weeklyData := ports.WeeklyData{
 		COTAnalyses:      data.COTAnalyses,
-		UpcomingEvents:   data.HighImpactEvents,   // FIX: was HighImpactEvents
-		SurpriseIndices:  surpriseSlice,            // FIX: convert map to slice
-		CurrencyRanking:  data.Rankings,            // FIX: was Rankings
-		ConfluenceScores: data.Confluences,         // FIX: was Confluences
+		CurrencyRanking:  data.Rankings,
+		Confluences:      data.Confluences,
 	}
 	weeklyResult, err := ip.GenerateWeeklyOutlook(ctx, weeklyData)
 	if err != nil {
@@ -195,26 +160,6 @@ func (ip *Interpreter) GenerateAllInsights(ctx context.Context, data WeeklyOutlo
 		throttle()
 	}
 
-	// 4. Top 3 event impacts
-	eventCount := 0
-	for _, ev := range data.HighImpactEvents {
-		if eventCount >= 3 {
-			break
-		}
-		if ev.Impact != domain.ImpactHigh {
-			continue
-		}
-
-		history, _ := ip.eventRepo.GetEventHistory(ctx, ev.Title, ev.Currency, 12)
-		eventResult, err := ip.PredictEventImpact(ctx, ev, history)
-		if err != nil {
-			log.Printf("[ai] batch event %s: %v", ev.Title, err)
-			continue
-		}
-		results[fmt.Sprintf("event_%s_%s", ev.Currency, ev.Title)] = eventResult
-		eventCount++
-		throttle()
-	}
 
 	log.Printf("[ai] generated %d insights", len(results))
 	return results, nil
@@ -248,30 +193,6 @@ func (ip *Interpreter) fallbackCOTSummary(analyses []domain.COTAnalysis) string 
 	return b.String()
 }
 
-func (ip *Interpreter) fallbackEventSummary(event domain.FFEvent, history []domain.FFEventDetail) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("=== %s %s ===\n", event.Currency, event.Title))
-
-	if event.Forecast != "" {
-		b.WriteString(fmt.Sprintf("Forecast: %s", event.Forecast))
-		if event.Previous != "" {
-			b.WriteString(fmt.Sprintf(" | Previous: %s", event.Previous))
-		}
-		b.WriteString("\n")
-	}
-
-	if len(history) > 0 {
-		beats := 0
-		for _, h := range history {
-			if h.Surprise > 0 {
-				beats++
-			}
-		}
-		b.WriteString(fmt.Sprintf("History: Beat %d/%d releases\n", beats, len(history)))
-	}
-
-	return b.String()
-}
 
 func (ip *Interpreter) fallbackWeeklyOutlook(data WeeklyOutlookData) string {
 	var b strings.Builder
@@ -279,9 +200,6 @@ func (ip *Interpreter) fallbackWeeklyOutlook(data WeeklyOutlookData) string {
 
 	if len(data.COTAnalyses) > 0 {
 		b.WriteString(fmt.Sprintf("COT: %d contracts analyzed\n", len(data.COTAnalyses)))
-	}
-	if len(data.HighImpactEvents) > 0 {
-		b.WriteString(fmt.Sprintf("Events: %d high-impact events upcoming\n", len(data.HighImpactEvents)))
 	}
 	if len(data.Confluences) > 0 {
 		b.WriteString(fmt.Sprintf("Confluence: %d pairs scored\n", len(data.Confluences)))

@@ -186,78 +186,36 @@ func (cs *ConfluenceScorer) computeCOTFactor(ctx context.Context, base, quote st
 // Factor 2: Economic Surprise (20%)
 func (cs *ConfluenceScorer) computeSurpriseFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   domain.FactorName("Economic Surprise"),
-		Weight: 0.20,
+		Name:          domain.FactorName("Economic Surprise"),
+		Weight:        0.20,
+		RawScore:      50,
+		WeightedScore: 50 * 0.20,
+		Signal:        "NEUTRAL",
 	}
-
-	// FIX: GetSurpriseIndex takes 2 args (ctx, currency), not 3
-	baseIdx, _ := cs.surpriseRepo.GetSurpriseIndex(ctx, base)
-	quoteIdx, _ := cs.surpriseRepo.GetSurpriseIndex(ctx, quote)
-
-	baseSurprise := 0.0
-	quoteSurprise := 0.0
-	if baseIdx != nil {
-		baseSurprise = baseIdx.RollingScore
-	}
-	if quoteIdx != nil {
-		quoteSurprise = quoteIdx.RollingScore
-	}
-
-	diff := baseSurprise - quoteSurprise
-	f.RawScore = mathutil.Clamp(50+diff*2, 0, 100)
-	f.WeightedScore = f.RawScore * f.Weight
-	f.Signal = classifyFactorSignal(f.RawScore)
-
 	return f
 }
 
 // Factor 3: Interest Rate Trajectory (20%)
 func (cs *ConfluenceScorer) computeRateFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   domain.FactorName("Rate Trajectory"),
-		Weight: 0.20,
+		Name:          domain.FactorName("Rate Trajectory"),
+		Weight:        0.20,
+		RawScore:      50,
+		WeightedScore: 50 * 0.20,
+		Signal:        "NEUTRAL",
 	}
-
-	now := timeutil.NowWIB()
-	start := now.AddDate(0, 0, -30)
-
-	events, err := cs.eventRepo.GetEventsByDateRange(ctx, start, now)
-	if err != nil {
-		f.RawScore = 50
-		f.WeightedScore = f.RawScore * f.Weight
-		f.Signal = "NEUTRAL"
-		return f
-	}
-
-	rateKeywords := []string{"rate", "interest", "monetary", "policy", "fed fund", "bank rate", "cash rate"}
-
-	baseRateScore := computeRateScore(events, base, rateKeywords)
-	quoteRateScore := computeRateScore(events, quote, rateKeywords)
-
-	f.RawScore = mathutil.Clamp(50+(baseRateScore-quoteRateScore)*10, 0, 100)
-	f.WeightedScore = f.RawScore * f.Weight
-	f.Signal = classifyFactorSignal(f.RawScore)
-
 	return f
 }
 
 // Factor 4: Revision Momentum (15%)
 func (cs *ConfluenceScorer) computeRevisionFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   domain.FactorName("Revision Momentum"),
-		Weight: 0.15,
+		Name:          domain.FactorName("Revision Momentum"),
+		Weight:        0.15,
+		RawScore:      50,
+		WeightedScore: 50 * 0.15,
+		Signal:        "NEUTRAL",
 	}
-
-	baseRevs, _ := cs.eventRepo.GetRevisions(ctx, base, 30)
-	quoteRevs, _ := cs.eventRepo.GetRevisions(ctx, quote, 30)
-
-	baseRevScore := revisionDirectionScore(baseRevs)
-	quoteRevScore := revisionDirectionScore(quoteRevs)
-
-	f.RawScore = mathutil.Clamp(50+(baseRevScore-quoteRevScore)*25, 0, 100)
-	f.WeightedScore = f.RawScore * f.Weight
-	f.Signal = classifyFactorSignal(f.RawScore)
-
 	return f
 }
 
@@ -295,40 +253,12 @@ func (cs *ConfluenceScorer) computeCrowdFactor(ctx context.Context, base, quote 
 // Factor 6: Event Risk Premium (10%)
 func (cs *ConfluenceScorer) computeEventRiskFactor(ctx context.Context, base, quote string) domain.ConfluenceFactor {
 	f := domain.ConfluenceFactor{
-		Name:   domain.FactorName("Event Risk Premium"),
-		Weight: 0.10,
+		Name:          domain.FactorName("Event Risk Premium"),
+		Weight:        0.10,
+		RawScore:      50,
+		WeightedScore: 50 * 0.10,
+		Signal:        "NEUTRAL",
 	}
-
-	now := timeutil.NowWIB()
-	end := now.AddDate(0, 0, 7)
-
-	events, err := cs.eventRepo.GetEventsByDateRange(ctx, now, end)
-	if err != nil {
-		f.RawScore = 50
-		f.WeightedScore = f.RawScore * f.Weight
-		f.Signal = "NEUTRAL"
-		return f
-	}
-
-	baseHighCount := 0
-	quoteHighCount := 0
-	for _, ev := range events {
-		if ev.Impact != domain.ImpactHigh {
-			continue
-		}
-		if ev.Currency == base {
-			baseHighCount++
-		}
-		if ev.Currency == quote {
-			quoteHighCount++
-		}
-	}
-
-	riskDiff := float64(quoteHighCount - baseHighCount)
-	f.RawScore = mathutil.Clamp(50+riskDiff*5, 0, 100)
-	f.WeightedScore = f.RawScore * f.Weight
-	f.Signal = classifyFactorSignal(f.RawScore)
-
 	return f
 }
 

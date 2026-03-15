@@ -81,21 +81,6 @@ type COTRepository interface {
 
 // SurpriseRepository defines storage for quantitative calculations.
 type SurpriseRepository interface {
-	// SaveSurprise persists a single surprise score.
-	SaveSurprise(ctx context.Context, score domain.SurpriseScore) error
-
-	// GetSurpriseScores retrieves surprise scores for a currency in the last N days.
-	GetSurpriseScores(ctx context.Context, currency string, days int) ([]domain.SurpriseScore, error)
-
-	// SaveSurpriseIndex persists a computed surprise index.
-	SaveSurpriseIndex(ctx context.Context, index domain.SurpriseIndex) error
-
-	// GetSurpriseIndex retrieves the latest surprise index for a currency.
-	GetSurpriseIndex(ctx context.Context, currency string) (*domain.SurpriseIndex, error)
-
-	// GetAllSurpriseIndices retrieves latest indices for all currencies.
-	GetAllSurpriseIndices(ctx context.Context) ([]domain.SurpriseIndex, error)
-
 	// SaveConfluence persists a confluence score.
 	SaveConfluence(ctx context.Context, score domain.ConfluenceScore) error
 
@@ -110,12 +95,6 @@ type SurpriseRepository interface {
 
 	// GetLatestRanking retrieves the most recent currency ranking.
 	GetLatestRanking(ctx context.Context) (*domain.CurrencyRanking, error)
-
-	// SaveVolatilityForecast persists a volatility forecast.
-	SaveVolatilityForecast(ctx context.Context, forecast domain.VolatilityForecast) error
-
-	// GetLatestVolatilityForecast retrieves the most recent forecast.
-	GetLatestVolatilityForecast(ctx context.Context) (*domain.VolatilityForecast, error)
 }
 
 // ---------------------------------------------------------------------------

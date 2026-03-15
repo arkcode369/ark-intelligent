@@ -23,7 +23,6 @@ import (
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
 	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
-	calsvc "github.com/arkcode369/ff-calendar-bot/internal/service/calendar"
 	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
 	quantsvc "github.com/arkcode369/ff-calendar-bot/internal/service/quant"
 	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"

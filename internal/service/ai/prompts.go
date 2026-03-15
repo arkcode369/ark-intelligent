@@ -9,8 +9,7 @@ import (
 )
 
 // SystemPrompt is the base system instruction for all financial analysis.
-const SystemPrompt = `You are a senior forex fundamental analyst specializing in G8 currencies.
-You analyze COT (Commitments of Traders) data, economic indicators, and news events.
+const SystemPrompt = `You are a senior institutional analyst specializing in COT (Commitments of Traders) data and macro positioning.
 
 Rules:
 - Be concise and actionable. Use bullet points.
@@ -61,38 +60,6 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 	return b.String()
 }
 
-// BuildEventImpactPrompt creates a prompt for predicting event impact.
-func BuildEventImpactPrompt(event domain.FFEvent, history []domain.FFEventDetail) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Analyze the upcoming %s event for %s.\n\n", event.Title, event.Currency))
-	b.WriteString(fmt.Sprintf("Event: %s\n", event.Title))
-	b.WriteString(fmt.Sprintf("Currency: %s\n", event.Currency))
-	b.WriteString(fmt.Sprintf("Time: %s WIB\n", event.Date.Format("2006-01-02 15:04")))
-	b.WriteString(fmt.Sprintf("Forecast: %s | Previous: %s\n\n", event.Forecast, event.Previous))
-
-	if len(history) > 0 {
-		b.WriteString("Historical data (last 12 releases):\n")
-		for i, h := range history {
-			if i >= 12 {
-				break
-			}
-			surprise := ""
-			if h.Actual != 0 && h.Forecast != 0 {
-				surprise = fmt.Sprintf(" (surprise: %.4g vs %.4g)", h.Actual, h.Forecast)
-			}
-			b.WriteString(fmt.Sprintf("  %s: A=%.4g F=%.4g P=%.4g%s\n",
-				h.Date.Format("Jan 2006"), h.Actual, h.Forecast, h.Previous, surprise))
-		}
-	}
-
-	b.WriteString("\nProvide:\n")
-	b.WriteString("1. What the consensus expects and why\n")
-	b.WriteString("2. Upside/downside scenarios with expected pip impact\n")
-	b.WriteString("3. Historical surprise pattern (does this event tend to beat/miss?)\n")
-	b.WriteString("4. Key levels to watch and recommended positioning\n")
-
-	return b.String()
-}
 
 // BuildConfluencePrompt creates a prompt for confluence score interpretation.
 func BuildConfluencePrompt(score domain.ConfluenceScore) string {
@@ -133,28 +100,6 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData) string {
 		b.WriteString("\n")
 	}
 
-	// Economic calendar
-	if len(data.HighImpactEvents) > 0 {
-		b.WriteString("=== KEY EVENTS THIS WEEK ===\n")
-		for _, ev := range data.HighImpactEvents {
-			b.WriteString(fmt.Sprintf("%s %s: %s (F:%s P:%s)\n",
-				ev.Date.Format("Mon 15:04"), ev.Currency, ev.Title,
-				ev.Forecast, ev.Previous))
-		}
-		b.WriteString("\n")
-	}
-
-	// Surprise indices
-	if len(data.SurpriseIndices) > 0 {
-		b.WriteString("=== ECONOMIC SURPRISE ===\n")
-		for _, idx := range data.SurpriseIndices {
-			if idx == nil {
-				continue
-			}
-			b.WriteString(fmt.Sprintf("%s: %s\n", idx.Currency, fmtutil.FmtNumSigned(idx.RollingScore, 1)))
-		}
-		b.WriteString("\n")
-	}
 
 	// Currency rankings
 	if data.Rankings != nil && len(data.Rankings.Rankings) > 0 {
@@ -169,8 +114,7 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData) string {
 	b.WriteString("1. MACRO THEME: Dominant narrative driving FX this week\n")
 	b.WriteString("2. CURRENCY OUTLOOK: Bullish/Bearish bias for each G8 currency with reasons\n")
 	b.WriteString("3. TOP TRADES: 3 highest-conviction pair trades with entry logic\n")
-	b.WriteString("4. KEY RISKS: Events or scenarios that could invalidate the thesis\n")
-	b.WriteString("5. CALENDAR FOCUS: Top 3 events to watch and expected market reaction\n")
+	b.WriteString("4. KEY RISKS: Scenarios that could invalidate the thesis\n")
 
 	return b.String()
 }

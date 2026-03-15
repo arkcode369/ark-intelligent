@@ -31,21 +31,14 @@ type Config struct {
 	COTHistoryWeeks  int           // How many weeks of COT history to maintain
 
 	// Quantitative
-	SurpriseCalcInterval    time.Duration // Surprise index recalculation interval
-	ConfluenceCalcInterval  time.Duration // Confluence score recalculation interval
-	SurpriseDecayHalfLife   float64       // Half-life in days for surprise decay
-	SurpriseWindowDays      int           // Lookback window for surprise index
+	ConfluenceCalcInterval time.Duration // Confluence score recalculation interval
 
 	// AI
-	AICacheTTL    time.Duration // How long to cache AI responses
-	AIMaxRPM      int           // Max requests per minute to Gemini
+	AICacheTTL time.Duration // How long to cache AI responses
+	AIMaxRPM   int           // Max requests per minute to Gemini
 
 	// Logging
 	LogLevel string // "debug", "info", "warn", "error"
-
-	// Alerts
-	DefaultAlertMinutes []int    // Default alert minutes before event
-	DefaultAlertImpacts []string // Default impact levels to alert
 }
 
 // MustLoad loads configuration from environment variables.
@@ -70,10 +63,7 @@ func MustLoad() *Config {
 		COTHistoryWeeks:  getInt("COT_HISTORY_WEEKS", 52),
 
 		// Quantitative
-		SurpriseCalcInterval:   getDuration("SURPRISE_CALC_INTERVAL", 1*time.Hour),
 		ConfluenceCalcInterval: getDuration("CONFLUENCE_CALC_INTERVAL", 2*time.Hour),
-		SurpriseDecayHalfLife:  getFloat("SURPRISE_DECAY_HALFLIFE", 30.0),
-		SurpriseWindowDays:     getInt("SURPRISE_WINDOW_DAYS", 90),
 
 		// AI
 		AICacheTTL: getDuration("AI_CACHE_TTL", 1*time.Hour),
@@ -81,10 +71,6 @@ func MustLoad() *Config {
 
 		// Logging
 		LogLevel: getEnv("LOG_LEVEL", "info"),
-
-		// Alerts
-		DefaultAlertMinutes: getIntSlice("DEFAULT_ALERT_MINUTES", []int{60, 15, 5, 1}),
-		DefaultAlertImpacts: getStringSlice("DEFAULT_ALERT_IMPACTS", []string{"High", "Medium"}),
 	}
 
 	cfg.validate()
@@ -100,9 +86,6 @@ func (c *Config) HasGemini() bool {
 func (c *Config) validate() {
 	if c.COTHistoryWeeks < 4 {
 		log.Fatal("[CONFIG] COT_HISTORY_WEEKS must be >= 4")
-	}
-	if c.SurpriseDecayHalfLife <= 0 {
-		log.Fatal("[CONFIG] SURPRISE_DECAY_HALFLIFE must be > 0")
 	}
 }
 

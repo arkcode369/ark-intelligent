@@ -12,13 +12,9 @@ import (
 
 // WeeklyData bundles all available data for AI weekly outlook generation.
 type WeeklyData struct {
-	COTAnalyses      []domain.COTAnalysis       `json:"cot_analyses"`
-	SurpriseIndices  []domain.SurpriseIndex     `json:"surprise_indices"`
-	ConfluenceScores []domain.ConfluenceScore   `json:"confluence_scores"`
-	CurrencyRanking  *domain.CurrencyRanking    `json:"currency_ranking"`
-	UpcomingEvents   []domain.FFEvent           `json:"upcoming_events"`
-	VolatilityForecast *domain.VolatilityForecast `json:"volatility_forecast"`
-	RecentRevisions  []domain.EventRevision     `json:"recent_revisions"`
+	COTAnalyses      []domain.COTAnalysis     `json:"cot_analyses"`
+	ConfluenceScores []domain.ConfluenceScore `json:"confluence_scores"`
+	CurrencyRanking  *domain.CurrencyRanking  `json:"currency_ranking"`
 }
 
 // ---------------------------------------------------------------------------
@@ -34,10 +30,6 @@ type AIAnalyzer interface {
 	// Output: 3-4 sentence institutional positioning narrative.
 	AnalyzeCOT(ctx context.Context, analyses []domain.COTAnalysis) (string, error)
 
-	// PredictEventImpact generates an expected market reaction narrative.
-	// Input: upcoming event + historical deviation data.
-	// Output: expected pip range and directional bias.
-	PredictEventImpact(ctx context.Context, event domain.FFEvent, history []domain.FFEventDetail) (string, error)
 
 	// SynthesizeConfluence generates an actionable trading bias paragraph.
 	// Input: multi-factor confluence score with all factor breakdowns.
