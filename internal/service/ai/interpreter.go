@@ -133,7 +133,7 @@ func (ip *Interpreter) GenerateAllInsights(ctx context.Context, data WeeklyOutlo
 	weeklyData := ports.WeeklyData{
 		COTAnalyses:      data.COTAnalyses,
 		CurrencyRanking:  data.Rankings,
-		Confluences:      data.Confluences,
+		ConfluenceScores: data.Confluences,
 	}
 	weeklyResult, err := ip.GenerateWeeklyOutlook(ctx, weeklyData)
 	if err != nil {

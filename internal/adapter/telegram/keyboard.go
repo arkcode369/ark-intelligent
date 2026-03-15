@@ -197,6 +197,7 @@ func (kb *KeyboardBuilder) BackToOverview(section string) ports.InlineKeyboard {
 }
 
 // MainMenu builds a quick-access keyboard for the main bot features.
+func (kb *KeyboardBuilder) MainMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{

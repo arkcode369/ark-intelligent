@@ -24,21 +24,18 @@ import (
 //   5. Crowd Sentiment      (10%) - Contrarian signal from retail positioning
 //   6. Event Risk Premium   (10%) - Upcoming high-impact event density
 type ConfluenceScorer struct {
-	eventRepo    ports.EventRepository
-	cotRepo      ports.COTRepository
-	surpriseRepo ports.SurpriseRepository
+	eventRepo ports.EventRepository
+	cotRepo   ports.COTRepository
 }
 
 // NewConfluenceScorer creates a confluence scorer with all dependencies.
 func NewConfluenceScorer(
 	eventRepo ports.EventRepository,
 	cotRepo ports.COTRepository,
-	surpriseRepo ports.SurpriseRepository,
 ) *ConfluenceScorer {
 	return &ConfluenceScorer{
-		eventRepo:    eventRepo,
-		cotRepo:      cotRepo,
-		surpriseRepo: surpriseRepo,
+		eventRepo: eventRepo,
+		cotRepo:   cotRepo,
 	}
 }
 
@@ -301,43 +298,6 @@ func computeConfidence(factors []domain.ConfluenceFactor) float64 {
 	}
 
 	return float64(maxAgree) / float64(total) * 100
-}
-
-func computeRateScore(events []domain.FFEvent, currency string, keywords []string) float64 {
-	score := 0.0
-	count := 0
-
-	for _, ev := range events {
-		if ev.Currency != currency || ev.Actual == "" {
-			continue
-		}
-
-		titleLower := strings.ToLower(ev.Title)
-		isRate := false
-		for _, kw := range keywords {
-			if strings.Contains(titleLower, kw) {
-				isRate = true
-				break
-			}
-		}
-		if !isRate {
-			continue
-		}
-
-		actual := parseNumericValue(ev.Actual)
-		previous := parseNumericValue(ev.Previous)
-		if actual > previous {
-			score += 1
-		} else if actual < previous {
-			score -= 1
-		}
-		count++
-	}
-
-	if count == 0 {
-		return 0
-	}
-	return score / float64(count)
 }
 
 func revisionDirectionScore(revisions []domain.EventRevision) float64 {

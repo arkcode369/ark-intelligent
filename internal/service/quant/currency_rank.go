@@ -25,21 +25,18 @@ import (
 // Each dimension is scored 0-100, then weighted into a composite.
 // Currencies are ranked strongest-to-weakest for pair selection.
 type CurrencyRanker struct {
-	eventRepo    ports.EventRepository
-	cotRepo      ports.COTRepository
-	surpriseRepo ports.SurpriseRepository
+	eventRepo ports.EventRepository
+	cotRepo   ports.COTRepository
 }
 
 // NewCurrencyRanker creates a currency ranker.
 func NewCurrencyRanker(
 	eventRepo ports.EventRepository,
 	cotRepo ports.COTRepository,
-	surpriseRepo ports.SurpriseRepository,
 ) *CurrencyRanker {
 	return &CurrencyRanker{
-		eventRepo:    eventRepo,
-		cotRepo:      cotRepo,
-		surpriseRepo: surpriseRepo,
+		eventRepo: eventRepo,
+		cotRepo:   cotRepo,
 	}
 }
 
@@ -127,39 +124,15 @@ func (cr *CurrencyRanker) computeScore(ctx context.Context, currency string) (*d
 		Code: domain.CurrencyCode(currency),
 	}
 
-	now := timeutil.NowWIB()
-	start := now.AddDate(0, -2, 0) // 2 months of data
+	// Dimensions 1-4 & 6 are now neutral (50) due to removal of calendar data
+	score.InterestRateScore = 50
+	score.InflationScore = 50
+	score.GDPScore = 50
+	score.EmploymentScore = 50
+	score.SurpriseScore = 50
 
-	events, err := cr.eventRepo.GetEventsByDateRange(ctx, start, now)
-	if err != nil {
-		return nil, fmt.Errorf("get events: %w", err)
-	}
-
-	// Filter to this currency
-	var ccyEvents []domain.FFEvent
-	for _, ev := range events {
-		if ev.Currency == currency && ev.Actual != "" {
-			ccyEvents = append(ccyEvents, ev)
-		}
-	}
-
-	// Dimension 1: Interest Rate Score (20% weight)
-	score.InterestRateScore = cr.computeRateDimension(ccyEvents)
-
-	// Dimension 2: Inflation Score (15% weight)
-	score.InflationScore = cr.computeInflationDimension(ccyEvents)
-
-	// Dimension 3: GDP/Growth Score (20% weight)
-	score.GDPScore = cr.computeGrowthDimension(ccyEvents)
-
-	// Dimension 4: Employment Score (15% weight)
-	score.EmploymentScore = cr.computeEmploymentDimension(ccyEvents)
-
-	// Dimension 5: COT Score (15% weight)
+	// Dimension 5: COT Score (15% weight) - STILL FUNCTIONAL
 	score.COTScore = cr.computeCOTDimension(ctx, currency)
-
-	// Dimension 6: Surprise Score (15% weight)
-	score.SurpriseScore = cr.computeSurpriseDimension(ctx, currency)
 
 	// Weighted composite
 	score.CompositeScore = score.InterestRateScore*0.20 +
@@ -176,73 +149,6 @@ func (cr *CurrencyRanker) computeScore(ctx context.Context, currency string) (*d
 
 // --- Dimension Calculations ---
 
-// computeRateDimension scores interest rate trajectory.
-func (cr *CurrencyRanker) computeRateDimension(events []domain.FFEvent) float64 {
-	keywords := []string{"rate decision", "interest rate", "bank rate", "cash rate", "fed fund", "policy rate"}
-	return cr.dimensionFromEvents(events, keywords)
-}
-
-// computeInflationDimension scores inflation trajectory.
-func (cr *CurrencyRanker) computeInflationDimension(events []domain.FFEvent) float64 {
-	keywords := []string{"cpi", "inflation", "ppi", "producer price", "consumer price"}
-	return cr.dimensionFromEvents(events, keywords)
-}
-
-// computeGrowthDimension scores GDP/growth trajectory.
-func (cr *CurrencyRanker) computeGrowthDimension(events []domain.FFEvent) float64 {
-	keywords := []string{"gdp", "pmi", "purchasing", "manufacturing", "services", "industrial", "retail sales"}
-	return cr.dimensionFromEvents(events, keywords)
-}
-
-// computeEmploymentDimension scores labor market trajectory.
-func (cr *CurrencyRanker) computeEmploymentDimension(events []domain.FFEvent) float64 {
-	keywords := []string{"employment", "unemployment", "nonfarm", "non-farm", "jobs", "payroll", "labor", "labour", "jobless"}
-
-	// For unemployment: lower actual vs forecast = good (inverted)
-	// For employment/jobs: higher actual vs forecast = good
-	score := 50.0
-	count := 0
-
-	for _, ev := range events {
-		titleLower := strings.ToLower(ev.Title)
-		matched := false
-		for _, kw := range keywords {
-			if strings.Contains(titleLower, kw) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			continue
-		}
-
-		actual := parseNumericValue(ev.Actual)
-		forecast := parseNumericValue(ev.Forecast)
-		if isNaN(actual) || isNaN(forecast) {
-			continue
-		}
-
-		diff := actual - forecast
-
-		// Invert for unemployment-type indicators
-		if strings.Contains(titleLower, "unemploy") || strings.Contains(titleLower, "jobless") {
-			diff = -diff
-		}
-
-		if diff > 0 {
-			score += 8
-		} else if diff < 0 {
-			score -= 8
-		}
-		count++
-	}
-
-	if count == 0 {
-		return 50 // neutral if no data
-	}
-
-	return mathutil.Clamp(score, 0, 100)
-}
 
 // computeCOTDimension uses COT Index as positioning score.
 func (cr *CurrencyRanker) computeCOTDimension(ctx context.Context, currency string) float64 {
@@ -260,57 +166,7 @@ func (cr *CurrencyRanker) computeCOTDimension(ctx context.Context, currency stri
 	return analysis.COTIndex
 }
 
-// computeSurpriseDimension uses rolling surprise index.
-func (cr *CurrencyRanker) computeSurpriseDimension(ctx context.Context, currency string) float64 {
-	idx, err := cr.surpriseRepo.GetSurpriseIndex(ctx, currency)
-	if err != nil || idx == nil {
-		return 50
-	}
 
-	// Map surprise score to 0-100
-	// Typical range: -20 to +20
-	normalized := mathutil.Clamp(50+idx.RollingScore*2.5, 0, 100)
-	return normalized
-}
-
-// dimensionFromEvents is a generic scorer for event categories.
-func (cr *CurrencyRanker) dimensionFromEvents(events []domain.FFEvent, keywords []string) float64 {
-	score := 50.0
-	count := 0
-
-	for _, ev := range events {
-		titleLower := strings.ToLower(ev.Title)
-		matched := false
-		for _, kw := range keywords {
-			if strings.Contains(titleLower, kw) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			continue
-		}
-
-		actual := parseNumericValue(ev.Actual)
-		forecast := parseNumericValue(ev.Forecast)
-		if isNaN(actual) || isNaN(forecast) {
-			continue
-		}
-
-		if actual > forecast {
-			score += 8 // beat expectations
-		} else if actual < forecast {
-			score -= 8 // missed expectations
-		}
-		count++
-	}
-
-	if count == 0 {
-		return 50
-	}
-
-	return mathutil.Clamp(score, 0, 100)
-}
 
 // --- Formatting ---
 

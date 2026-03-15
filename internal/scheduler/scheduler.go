@@ -37,12 +37,12 @@ type Deps struct {
 	COTAnalyzer      *cotsvc.Analyzer
 	ConfluenceScorer *quantsvc.ConfluenceScorer
 	CurrencyRanker   *quantsvc.CurrencyRanker
-	AIAnalyzer          *aisvc.Interpreter
-	Bot                 ports.Messenger
-	EventRepo           ports.EventRepository
-	COTRepo             ports.COTRepository
-	SurpriseRepo        ports.SurpriseRepository
-	ChatID              string
+	AIAnalyzer       *aisvc.Interpreter
+	Bot              ports.Messenger
+	EventRepo        ports.EventRepository
+	COTRepo          ports.COTRepository
+	SurpriseRepo     ports.SurpriseRepository
+	ChatID           string
 }
 
 // Intervals configures how often each job runs.

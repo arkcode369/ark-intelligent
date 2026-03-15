@@ -106,8 +106,8 @@ func main() {
 	cotSignals := cotsvc.NewSignalDetector()
 
 	// Quant services
-	confluenceScorer := quantsvc.NewConfluenceScorer(eventRepo, cotRepo, surpriseRepo)
-	currencyRanker := quantsvc.NewCurrencyRanker(eventRepo, cotRepo, surpriseRepo)
+	confluenceScorer := quantsvc.NewConfluenceScorer(eventRepo, cotRepo)
+	currencyRanker := quantsvc.NewCurrencyRanker(eventRepo, cotRepo)
 
 	log.Println("[MAIN] Service layer initialized")
 
