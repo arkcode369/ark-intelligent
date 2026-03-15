@@ -157,17 +157,27 @@ func (kb *KeyboardBuilder) ConfluencePairSelector(scores []domain.ConfluenceScor
 func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyboard {
 	var rows [][]ports.InlineButton
 
-	// Row 1: Alert toggle
-	alertLabel := "Alerts: OFF -> Turn ON"
+	// Row 1: News News/Event Alert toggle
+	newsLabel := "News Alerts: OFF -> Turn ON"
 	if prefs.AlertsEnabled {
-		alertLabel = "Alerts: ON -> Turn OFF"
+		newsLabel = "News Alerts: ON -> Turn OFF"
 	}
 	rows = append(rows, []ports.InlineButton{{
-		Text:         alertLabel,
+		Text:         newsLabel,
 		CallbackData: "set:alerts_toggle",
 	}})
 
-	// Row 2: AI Reports toggle
+	// Row 2: COT Release Alerts toggle
+	cotLabel := "COT Alerts: OFF -> Turn ON"
+	if prefs.COTAlertsEnabled {
+		cotLabel = "COT Alerts: ON -> Turn OFF"
+	}
+	rows = append(rows, []ports.InlineButton{{
+		Text:         cotLabel,
+		CallbackData: "set:cot_toggle",
+	}})
+
+	// Row 3: AI Reports toggle
 	aiLabel := "AI Reports: OFF -> Turn ON"
 	if prefs.AIReportsEnabled {
 		aiLabel = "AI Reports: ON -> Turn OFF"

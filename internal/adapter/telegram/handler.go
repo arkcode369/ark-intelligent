@@ -321,6 +321,8 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 	switch action {
 	case "alerts_toggle":
 		prefs.AlertsEnabled = !prefs.AlertsEnabled
+	case "cot_toggle":
+		prefs.COTAlertsEnabled = !prefs.COTAlertsEnabled
 	case "ai_toggle":
 		prefs.AIReportsEnabled = !prefs.AIReportsEnabled
 	case "impact_high_only":

@@ -225,7 +225,10 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 		date.Format("Monday, 02 Jan 2006"))
 
 	count := 0
-	for userID := range activeUsers {
+	for userID, prefs := range activeUsers {
+		if !prefs.COTAlertsEnabled {
+			continue
+		}
 		chatID := fmt.Sprintf("%d", userID)
 		if _, err := s.deps.Bot.SendHTML(ctx, chatID, msg); err == nil {
 			count++

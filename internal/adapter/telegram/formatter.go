@@ -273,27 +273,33 @@ func (f *Formatter) FormatAIInsight(label, narrative string) string {
 func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 	var b strings.Builder
 
-	alertsLabel := "OFF"
+	newsAlerts := "OFF"
 	if prefs.AlertsEnabled {
-		alertsLabel = "ON"
+		newsAlerts = "ON"
 	}
 
-	aiLabel := "OFF"
+	aiReports := "OFF"
 	if prefs.AIReportsEnabled {
-		aiLabel = "ON"
+		aiReports = "ON"
+	}
+
+	cotAlerts := "OFF"
+	if prefs.COTAlertsEnabled {
+		cotAlerts = "ON"
 	}
 
 	b.WriteString("<b>Settings</b>\n\n")
-	b.WriteString(fmt.Sprintf("<code>Alerts:     %s</code>\n", alertsLabel))
-	b.WriteString(fmt.Sprintf("<code>AI Reports: %s</code>\n", aiLabel))
-	b.WriteString(fmt.Sprintf("<code>Impacts:    %s</code>\n", strings.Join(prefs.AlertImpacts, ", ")))
-	b.WriteString(fmt.Sprintf("<code>Timing:     %s min before</code>\n",
+	b.WriteString(fmt.Sprintf("<code>[News] Notifications: %s</code>\n", newsAlerts))
+	b.WriteString(fmt.Sprintf("<code>[COT] Release Alerts: %s</code>\n", cotAlerts))
+	b.WriteString(fmt.Sprintf("<code>[AI] Weekly Reports: %s</code>\n", aiReports))
+	b.WriteString(fmt.Sprintf("<code>News Impacts:        %s</code>\n", strings.Join(prefs.AlertImpacts, ", ")))
+	b.WriteString(fmt.Sprintf("<code>News Timing:         %s min</code>\n",
 		f.formatIntSlice(prefs.AlertMinutes)))
 
 	if len(prefs.CurrencyFilter) > 0 {
-		b.WriteString(fmt.Sprintf("<code>Currencies: %s</code>\n", strings.Join(prefs.CurrencyFilter, ", ")))
+		b.WriteString(fmt.Sprintf("<code>Currencies filter:    %s</code>\n", strings.Join(prefs.CurrencyFilter, ", ")))
 	} else {
-		b.WriteString("<code>Currencies: All</code>\n")
+		b.WriteString("<code>Currencies filter:    All</code>\n")
 	}
 
 	b.WriteString("\n<i>Use the buttons below to adjust settings</i>")
