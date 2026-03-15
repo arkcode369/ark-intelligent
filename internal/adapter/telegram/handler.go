@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
@@ -264,26 +263,14 @@ func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, a
 	placeholderID, _ := h.bot.SendHTML(ctx, chatID, "Generating weekly outlook... (this may take 10-15s)")
 
 	// Gather all data
-	now := timeutil.NowWIB()
-	start := timeutil.StartOfWeek(now)
-	end := start.AddDate(0, 0, 7)
-
 	cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
-	surpriseIndices, _ := h.surpriseRepo.GetAllSurpriseIndices(ctx)
 	confluenceScores, _ := h.surpriseRepo.GetAllConfluences(ctx)
 	ranking, _ := h.surpriseRepo.GetLatestRanking(ctx)
-	forecast, _ := h.surpriseRepo.GetLatestVolatilityForecast(ctx)
-	upcomingEvents, _ := h.eventRepo.GetHighImpactEvents(ctx, start, end)
-	revisions, _ := h.eventRepo.GetAllRevisions(ctx, 7)
 
 	weeklyData := ports.WeeklyData{
-		COTAnalyses:        cotAnalyses,
-		SurpriseIndices:    surpriseIndices,
-		ConfluenceScores:   confluenceScores,
-		CurrencyRanking:    ranking,
-		UpcomingEvents:     upcomingEvents,
-		VolatilityForecast: forecast,
-		RecentRevisions:    revisions,
+		COTAnalyses:      cotAnalyses,
+		ConfluenceScores: confluenceScores,
+		CurrencyRanking:  ranking,
 	}
 
 	outlook, err := h.aiAnalyzer.GenerateWeeklyOutlook(ctx, weeklyData)

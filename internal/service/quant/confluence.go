@@ -116,10 +116,7 @@ func (cs *ConfluenceScorer) ComputeForPair(ctx context.Context, base, quote stri
 	}
 	score.FactorsAligned = aligned
 
-	// Save
-	if err := cs.surpriseRepo.SaveConfluence(ctx, *score); err != nil {
-		log.Printf("[confluence] warn: save: %v", err)
-	}
+	score.FactorsAligned = aligned
 
 	return score, nil
 }

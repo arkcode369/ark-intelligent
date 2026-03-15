@@ -34,19 +34,45 @@ func NewFetcher() *Fetcher {
 }
 
 // FetchLatest retrieves the most recent COT records for all tracked contracts.
-// It tries the Socrata API first, falling back to CSV if that fails.
+// It compares Socrata API and CSV fallback and picks the one with the more recent data.
 func (f *Fetcher) FetchLatest(ctx context.Context, contracts []domain.COTContract) ([]domain.COTRecord, error) {
-	records, err := f.fetchFromSocrata(ctx, contracts)
-	if err != nil {
-		log.Printf("[cot] Socrata API failed: %v, falling back to CSV", err)
-		records, err = f.fetchFromCSV(ctx, contracts)
-		if err != nil {
-			return nil, fmt.Errorf("both Socrata and CSV failed: %w", err)
-		}
+	socrataRecords, sErr := f.fetchFromSocrata(ctx, contracts)
+	csvRecords, cErr := f.fetchFromCSV(ctx, contracts)
+
+	if sErr != nil && cErr != nil {
+		return nil, fmt.Errorf("both Socrata (%v) and CSV (%v) failed", sErr, cErr)
 	}
 
-	log.Printf("[cot] fetched %d records for %d contracts", len(records), len(contracts))
-	return records, nil
+	if sErr != nil {
+		log.Printf("[cot] Socrata failed, using CSV: %v", sErr)
+		return csvRecords, nil
+	}
+	if cErr != nil {
+		log.Printf("[cot] CSV failed, using Socrata: %v", cErr)
+		return socrataRecords, nil
+	}
+
+	// Compare dates to pick the freshest data
+	sDate := getLatestDate(socrataRecords)
+	cDate := getLatestDate(csvRecords)
+
+	if cDate.After(sDate) {
+		log.Printf("[cot] CSV data (%s) is newer than Socrata (%s), using CSV",
+			cDate.Format("2006-01-02"), sDate.Format("2006-01-02"))
+		return csvRecords, nil
+	}
+
+	return socrataRecords, nil
+}
+
+func getLatestDate(records []domain.COTRecord) time.Time {
+	var latest time.Time
+	for _, r := range records {
+		if r.ReportDate.After(latest) {
+			latest = r.ReportDate
+		}
+	}
+	return latest
 }
 
 // FetchHistory retrieves historical COT data for a specific contract.
