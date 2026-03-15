@@ -1,7 +1,5 @@
 package domain
 
-import "time"
-
 // UserPrefs stores per-user notification preferences.
 type UserPrefs struct {
 	AlertMinutes    []int    `json:"alert_minutes"`    // Minutes before event to alert (e.g., [60, 15, 5])
