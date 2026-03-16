@@ -13,6 +13,7 @@ import (
 // WeeklyData bundles all available data for AI weekly outlook generation.
 type WeeklyData struct {
 	COTAnalyses []domain.COTAnalysis `json:"cot_analyses"`
+	NewsEvents  []domain.NewsEvent   `json:"news_events"`
 	Language    string               `json:"language"` // "id" or "en"
 }
 
@@ -40,6 +41,17 @@ type AIAnalyzer interface {
 	// Input: COT data across Gold, USD, Bonds, Oil.
 	// Output: cross-market correlation analysis.
 	AnalyzeCrossMarket(ctx context.Context, cotData map[string]*domain.COTAnalysis) (string, error)
+
+	// AnalyzeNewsOutlook generates a calendar-focused weekly intelligence report.
+	// Input: array of the week's economic events.
+	AnalyzeNewsOutlook(ctx context.Context, events []domain.NewsEvent, lang string) (string, error)
+
+	// AnalyzeCombinedOutlook fuses COT macro positioning with upcoming calendar catalysts.
+	// Input: WeeklyData containing both COT and News.
+	AnalyzeCombinedOutlook(ctx context.Context, data WeeklyData) (string, error)
+
+	// AnalyzeActualRelease evaluates a single economic release against its forecast.
+	AnalyzeActualRelease(ctx context.Context, event domain.NewsEvent, lang string) (string, error)
 
 	// IsAvailable returns true if the AI service is configured and reachable.
 	IsAvailable() bool

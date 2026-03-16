@@ -47,7 +47,7 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 		b.WriteString(fmt.Sprintf("Intraday Context: OITrend=%s STBias=%s\n", a.OITrend, a.ShortTermBias))
 		b.WriteString(fmt.Sprintf("Sentiment: %.1f | Crowding: %.1f | Divergence: %v\n",
 			a.SentimentScore, a.CrowdingIndex, a.DivergenceFlag))
-		b.WriteString(fmt.Sprintf("Signals: Comm=%s Spec=%s SmallSpec=%s\n",
+		b.WriteString(fmt.Sprintf("Signals: Comm=%s Spec=%s SmallSpec=%s\n",	
 			a.CommercialSignal, a.SpeculatorSignal, a.SmallSpecSignal))
 		b.WriteString(fmt.Sprintf("Concentration: Top4=%.1f%% Top8=%.1f%%\n\n",
 			a.Top4Concentration, a.Top8Concentration))
@@ -61,8 +61,6 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 
 	return b.String()
 }
-
-
 
 // BuildWeeklyOutlookPrompt creates a prompt for weekly market outlook.
 func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string) string {
@@ -126,6 +124,91 @@ func BuildCrossMarketPrompt(cotData map[string]*domain.COTAnalysis) string {
 	b.WriteString("2. Safe-haven demand signals (JPY, CHF, USD)\n")
 	b.WriteString("3. Commodity currency alignment (AUD, NZD, CAD)\n")
 	b.WriteString("4. Any unusual cross-market divergences\n")
+
+	return b.String()
+}
+
+// BuildNewsOutlookPrompt creates a prompt for analyzing the weekly economic calendar.
+func BuildNewsOutlookPrompt(events []domain.NewsEvent, lang string) string {
+	var b strings.Builder
+	b.WriteString("Analyze the following economic calendar events for the week.\n")
+	
+	if lang == "en" {
+		b.WriteString("PLEASE RESPOND IN ENGLISH.\n\n")
+	} else {
+		b.WriteString("PLEASE RESPOND IN INDONESIAN (Bahasa Indonesia).\n\n")
+	}
+
+	b.WriteString("=== ECONOMIC CALENDAR ===\n")
+	for _, e := range events {
+		if e.Impact == "high" || e.Impact == "medium" {
+			b.WriteString(fmt.Sprintf("%s | %s - %s | Impact: %s | Fcast: %s | Prev: %s | Act: %s\n",
+				e.Date, e.Currency, e.Event, e.Impact,
+				e.Forecast, e.Previous, e.Actual))
+		}
+	}
+
+	b.WriteString("\nProvide a structured outlook:\n")
+	b.WriteString("1. Currency Strength Context: Discuss which pairs will be most volatile based on event density.\n")
+	b.WriteString("2. Storm Days Detection: Identify days with multiple clustered high-impact events across countries.\n")
+	b.WriteString("3. Fundamental Tracking: Analyze the trajectory of repeating data (e.g. CPI/NFP trends) based on Forecast vs Previous.\n")
+	b.WriteString("4. Central Bank Watch: Highlight any rate decisions, speeches, or minutes acting as macro catalysts.\n")
+
+	return b.String()
+}
+
+// BuildCombinedOutlookPrompt creates a prompt for fusing COT positioning and calendar news.
+func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
+	var b strings.Builder
+	b.WriteString("Generate a fused analysis combining COT Speculator Positioning and Upcoming Economic Catalysts.\n")
+	
+	if data.Language == "en" {
+		b.WriteString("PLEASE RESPOND IN ENGLISH.\n\n")
+	} else {
+		b.WriteString("PLEASE RESPOND IN INDONESIAN (Bahasa Indonesia).\n\n")
+	}
+
+	b.WriteString("=== 1. COT POSITIONING ===\n")
+	for _, a := range data.COTAnalyses {
+		b.WriteString(fmt.Sprintf("%s: SpecNet=%s COTIdx=%.0f CommSignal=%s Crowding=%.1f\n",
+			a.Contract.Currency,
+			fmtutil.FmtNumSigned(a.NetPosition, 0),
+			a.COTIndex, a.CommercialSignal, a.CrowdingIndex))
+	}
+
+	b.WriteString("\n=== 2. UPCOMING CATALYSTS (HIGH IMPACT) ===\n")
+	for _, e := range data.NewsEvents {
+		if e.Impact == "high" {
+			b.WriteString(fmt.Sprintf("%s | %s - %s | Fcast: %s | Act: %s\n",
+				e.Date, e.Currency, e.Event, e.Forecast, e.Actual))
+		}
+	}
+
+	b.WriteString("\nProvide a structured fused outlook:\n")
+	b.WriteString("1. Positioning Extreme + Catalyst Alignment: Identify 'Crowded exit risks'. e.g., if EUR is heavily net long and ECB is upcoming, what is the fragility risk?\n")
+	b.WriteString("2. The Volatility Window: Highlight which pairs will experience liquidity compression before their respective events.\n")
+	b.WriteString("3. Surprise Factor Scenarios: For the top 2 events, model what happens if Actual significantly beats or misses Forecast against the current COT positioning.\n")
+
+	return b.String()
+}
+
+// BuildActualReleasePrompt evaluates a single economic release.
+func BuildActualReleasePrompt(event domain.NewsEvent, lang string) string {
+	var b strings.Builder
+	b.WriteString("Analyze this specific economic data release and its immediate currency impact.\n")
+	if lang == "en" {
+		b.WriteString("PLEASE RESPOND IN ENGLISH.\n\n")
+	} else {
+		b.WriteString("PLEASE RESPOND IN INDONESIAN (Bahasa Indonesia).\n\n")
+	}
+
+	b.WriteString(fmt.Sprintf("Event: %s\nCurrency: %s\nImpact: %s\n", event.Event, event.Currency, event.Impact))
+	b.WriteString(fmt.Sprintf("Previous: %s\nForecast: %s\nActual: %s\n\n", event.Previous, event.Forecast, event.Actual))
+
+	b.WriteString("Provide a 3-sentence maximum flash analysis covering:\n")
+	b.WriteString("1. The deviation (did it beat or miss expectations?).\n")
+	b.WriteString(fmt.Sprintf("2. Immediate directional bias for %s pairs (Bullish/Bearish).\n", event.Currency))
+	b.WriteString("3. The likely macro narrative traders will adopt based on this number.\n")
 
 	return b.String()
 }

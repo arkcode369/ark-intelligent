@@ -22,6 +22,7 @@ import (
 	"github.com/arkcode369/ff-calendar-bot/internal/scheduler"
 	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
 	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
+	newssvc "github.com/arkcode369/ff-calendar-bot/internal/service/news"
 )
 
 const banner = `
@@ -64,6 +65,7 @@ func main() {
 	eventRepo := storage.NewEventRepo(db)
 	cotRepo := storage.NewCOTRepo(db)
 	prefsRepo := storage.NewPrefsRepo(db)
+	newsRepo := storage.NewNewsRepo(db)
 
 	log.Println("[MAIN] Storage layer initialized")
 	logStorageSize(db)
@@ -101,6 +103,14 @@ func main() {
 	cotFetcher := cotsvc.NewFetcher()
 	cotAnalyzer := cotsvc.NewAnalyzer(cotRepo, cotFetcher)
 
+	// News services
+	var newsFetcher *newssvc.FirecrawlFetcher
+	if cfg.FirecrawlAPIKey != "" {
+		newsFetcher = newssvc.NewFirecrawlFetcher(cfg.FirecrawlAPIKey)
+	} else {
+		log.Println("[MAIN] WARNING: FIRECRAWL_API_KEY missing, Calendar syncing disabled")
+	}
+
 	log.Println("[MAIN] Service layer initialized")
 
 	// -----------------------------------------------------------------------
@@ -111,6 +121,8 @@ func main() {
 		eventRepo,
 		cotRepo,
 		prefsRepo,
+		newsRepo,
+		newsFetcher,
 		aiAnalyzer, // nil-safe: handler checks IsAvailable()
 	)
 
@@ -132,7 +144,14 @@ func main() {
 		COTFetch: cfg.COTFetchInterval,
 	})
 
-	log.Println("[MAIN] Background scheduler started")
+	// Setup News Scheduler if fetcher is available
+	if newsFetcher != nil {
+		newsSched := newssvc.NewScheduler(newsRepo, newsFetcher, aiAnalyzer, bot, prefsRepo)
+		newsSched.Start(ctx)
+		log.Println("[MAIN] News Background scheduler (Firecrawl) started")
+	}
+
+	log.Println("[MAIN] Background schedulers started")
 
 	// -----------------------------------------------------------------------
 	// 10. Initial data load (non-blocking)

@@ -37,14 +37,93 @@ func impactIcon(impact domain.ImpactLevel) string {
 	}
 }
 
-// Direction arrow for numeric values.
-func directionArrow(actual, forecast float64) string {
-	if actual > forecast {
-		return "🟢"
-	} else if actual < forecast {
-		return "🔴"
+// directionArrow checks if Actual beats Forecast.
+func directionArrow(actual, forecast string) string {
+	// Need numeric logic if you want to be precise, but since FF returns strings like "3.5%", 
+	// we'll just return a neutral dot if it's not easily parsed.
+	if actual != "" && forecast != "" {
+		if actual > forecast {
+			return "🟢"
+		} else if actual < forecast {
+			return "🔴"
+		}
 	}
-	return "⚪️"
+	return "⚪"
+}
+
+// ---------------------------------------------------------------------------
+// Calendar Formatting
+// ---------------------------------------------------------------------------
+
+// FormatCalendarDay builds a message for a single day of events.
+func (f *Formatter) FormatCalendarDay(dateStr string, events []domain.NewsEvent, filter string) string {
+	var b strings.Builder
+	
+	// Format title
+	b.WriteString(fmt.Sprintf("📅 <b>Economic Calendar</b>\n<i>Date: %s</i>\n\n", dateStr))
+
+	if len(events) == 0 {
+		b.WriteString("No events found for this filter.")
+		return b.String()
+	}
+
+	for _, e := range events {
+		// Apply filters before writing lines
+		if filter == "high" && e.Impact != "high" { continue }
+		if filter == "usd" && e.Currency != "USD" { continue }
+		if filter == "eur" && e.Currency != "EUR" { continue }
+
+		timeDisplay := e.Time
+		if !e.TimeWIB.IsZero() {
+			timeDisplay = e.TimeWIB.Format("15:04 WIB")
+		}
+
+		b.WriteString(fmt.Sprintf("%s <b>%s - %s</b>\n", e.FormatImpactColor(), timeDisplay, e.Currency))
+		b.WriteString(fmt.Sprintf("↳ <i>%s</i>\n", e.Event))
+		
+		if e.Actual != "" {
+			b.WriteString(fmt.Sprintf("   Actual: <b>%s</b> %s (Fcast: %s | Prev: %s)\n", e.Actual, directionArrow(e.Actual, e.Forecast), e.Forecast, e.Previous))
+		} else {
+			b.WriteString(fmt.Sprintf("   Fcast: %s | Prev: %s\n", e.Forecast, e.Previous))
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// FormatCalendarWeek summarizes all events in a week based on the filter.
+func (f *Formatter) FormatCalendarWeek(weekStart string, events []domain.NewsEvent, filter string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("📅 <b>Weekly Economic Calendar</b>\n<i>Week starting: %s</i>\n\n", weekStart))
+
+	if len(events) == 0 {
+		b.WriteString("No events found.")
+		return b.String()
+	}
+
+	lastDate := ""
+	for _, e := range events {
+		// Apply filters
+		if filter == "high" && e.Impact != "high" { continue }
+		if filter == "usd" && e.Currency != "USD" { continue }
+		if filter == "eur" && e.Currency != "EUR" { continue }
+
+		// Print date header if it changed
+		if e.Date != lastDate {
+			b.WriteString(fmt.Sprintf("<b>--- %s ---</b>\n", e.Date))
+			lastDate = e.Date
+		}
+
+		timeDisplay := e.Time
+		if !e.TimeWIB.IsZero() {
+			timeDisplay = e.TimeWIB.Format("15:04 WIB")
+		}
+
+		b.WriteString(fmt.Sprintf("%s %s %s: <i>%s</i>\n", e.FormatImpactColor(), timeDisplay, e.Currency, e.Event))
+	}
+
+	return b.String()
 }
 
 

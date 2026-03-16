@@ -59,7 +59,38 @@ func (kb *KeyboardBuilder) COTCurrencySelector(analyses []domain.COTAnalysis) po
 		}
 	}
 
-	// Add cross-market row if we have gold/oil
+	return ports.InlineKeyboard{InlineKeyboard: rows}
+}
+
+// ---------------------------------------------------------------------------
+// Calendar Keyboards
+// ---------------------------------------------------------------------------
+
+// CalendarFilter builds the filter keyboard for the /calendar command.
+func (kb *KeyboardBuilder) CalendarFilter(activeFilter string) ports.InlineKeyboard {
+	var rows [][]ports.InlineButton
+
+	// Helper to add checkmark
+	btnText := func(label, filterKey string) string {
+		if activeFilter == filterKey {
+			return "✅ " + label
+		}
+		return label
+	}
+
+	rows = append(rows, []ports.InlineButton{
+		{Text: btnText("High Only", "high"), CallbackData: "cal:filter:high"},
+		{Text: btnText("Medium+", "med"), CallbackData: "cal:filter:med"},
+	})
+
+	rows = append(rows, []ports.InlineButton{
+		{Text: btnText("🇺🇸 USD", "usd"), CallbackData: "cal:filter:usd"},
+		{Text: btnText("🇪🇺 EUR", "eur"), CallbackData: "cal:filter:eur"},
+		{Text: btnText("📋 All", "all"), CallbackData: "cal:filter:all"},
+	})
+
+	return ports.InlineKeyboard{InlineKeyboard: rows}
+}
 	crossRow := kb.crossMarketRow(analyses)
 	if len(crossRow) > 0 {
 		rows = append(rows, crossRow)

@@ -26,6 +26,8 @@ type Handler struct {
 	eventRepo    ports.EventRepository
 	cotRepo      ports.COTRepository
 	prefsRepo    ports.PrefsRepository
+	newsRepo     ports.NewsRepository
+	newsFetcher  ports.NewsFetcher
 
 	aiAnalyzer ports.AIAnalyzer
 }
@@ -36,6 +38,8 @@ func NewHandler(
 	eventRepo ports.EventRepository,
 	cotRepo ports.COTRepository,
 	prefsRepo ports.PrefsRepository,
+	newsRepo ports.NewsRepository,
+	newsFetcher ports.NewsFetcher,
 	aiAnalyzer ports.AIAnalyzer,
 ) *Handler {
 	h := &Handler{
@@ -45,6 +49,8 @@ func NewHandler(
 		eventRepo:    eventRepo,
 		cotRepo:      cotRepo,
 		prefsRepo:    prefsRepo,
+		newsRepo:     newsRepo,
+		newsFetcher:  newsFetcher,
 		aiAnalyzer:   aiAnalyzer,
 	}
 
@@ -55,13 +61,15 @@ func NewHandler(
 	bot.RegisterCommand("/status", h.cmdStatus)
 	bot.RegisterCommand("/cot", h.cmdCOT)
 	bot.RegisterCommand("/outlook", h.cmdOutlook)
+	bot.RegisterCommand("/calendar", h.cmdCalendar)
 
 	// Register callback handlers
 	bot.RegisterCallback("cot:", h.cbCOTDetail)
 	bot.RegisterCallback("alert:", h.cbAlertToggle)
 	bot.RegisterCallback("set:", h.cbSettings)
+	bot.RegisterCallback("cal:filter:", h.cbNewsFilter)
 
-	log.Printf("[HANDLER] Registered 13 commands and 4 callback prefixes")
+	log.Printf("[HANDLER] Registered 14 commands and 5 callback prefixes")
 	return h
 }
 
@@ -236,16 +244,53 @@ func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, a
 		return err
 	}
 
+	subcmd := strings.ToLower(strings.TrimSpace(args))
 	prefs, err := h.prefsRepo.Get(ctx, userID)
 	if err != nil {
 		prefs = domain.DefaultPrefs() // fallback
 	}
 
-	// Send "generating..." placeholder
-	placeholderID, _ := h.bot.SendHTML(ctx, chatID, "Generating weekly outlook... (this may take 10-15s)")
+	placeholderID, _ := h.bot.SendHTML(ctx, chatID, "Generating intelligence report... (10-15s) ⏳")
 
-	// Gather all data
 	now := timeutil.NowWIB()
+	
+	if subcmd == "news" {
+		weekEvts, err := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
+		if err != nil {
+			_ = h.bot.EditMessage(ctx, chatID, placeholderID, "Failed to load news for analysis.")
+			return err
+		}
+		
+		result, err := h.aiAnalyzer.AnalyzeNewsOutlook(ctx, weekEvts, prefs.Language)
+		if err != nil {
+			_ = h.bot.EditMessage(ctx, chatID, placeholderID, fmt.Sprintf("AI Generation failed: %v", err))
+			return err
+		}
+		_ = h.bot.DeleteMessage(ctx, chatID, placeholderID)
+		_, err = h.bot.SendHTML(ctx, chatID, h.fmt.FormatWeeklyOutlook(result, now))
+		return err
+		
+	} else if subcmd == "combine" {
+		cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
+		weekEvts, _ := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
+
+		weeklyData := ports.WeeklyData{
+			COTAnalyses: cotAnalyses,
+			NewsEvents:  weekEvts,
+			Language:    prefs.Language,
+		}
+
+		result, err := h.aiAnalyzer.AnalyzeCombinedOutlook(ctx, weeklyData)
+		if err != nil {
+			_ = h.bot.EditMessage(ctx, chatID, placeholderID, fmt.Sprintf("AI Generation failed: %v", err))
+			return err
+		}
+		_ = h.bot.DeleteMessage(ctx, chatID, placeholderID)
+		_, err = h.bot.SendHTML(ctx, chatID, h.fmt.FormatWeeklyOutlook(result, now))
+		return err
+	}
+
+	// Default COT standard outlook
 	cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
 	weeklyData := ports.WeeklyData{
 		COTAnalyses: cotAnalyses,
@@ -260,8 +305,6 @@ func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, a
 	}
 
 	html := h.fmt.FormatWeeklyOutlook(outlook, now)
-
-	// Delete placeholder and send full outlook
 	_ = h.bot.DeleteMessage(ctx, chatID, placeholderID)
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err

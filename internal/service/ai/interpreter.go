@@ -94,6 +94,48 @@ func (ip *Interpreter) AnalyzeCrossMarket(ctx context.Context, cotData map[strin
 	return formatResponse("CROSS-MARKET ANALYSIS", result), nil
 }
 
+// AnalyzeNewsOutlook generates a calendar-focused weekly intelligence report.
+func (ip *Interpreter) AnalyzeNewsOutlook(ctx context.Context, events []domain.NewsEvent, lang string) (string, error) {
+	if len(events) == 0 {
+		return "No upcoming economic events found for the week.", nil
+	}
+	
+	prompt := BuildNewsOutlookPrompt(events, lang)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	if err != nil {
+		log.Printf("[ai] news outlook failed: %v", err)
+		return "News outlook unavailable.", nil
+	}
+	
+	return formatResponse("NEWS OUTLOOK", result), nil
+}
+
+// AnalyzeCombinedOutlook fuses COT macro positioning with upcoming calendar catalysts.
+func (ip *Interpreter) AnalyzeCombinedOutlook(ctx context.Context, data ports.WeeklyData) (string, error) {
+	prompt := BuildCombinedOutlookPrompt(data)
+	
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	if err != nil {
+		log.Printf("[ai] combined outlook failed: %v", err)
+		return "Combined outlook unavailable.", nil
+	}
+	
+	return formatResponse("FUSED OUTLOOK (COT + NEWS)", result), nil
+}
+
+// AnalyzeActualRelease evaluates a single economic release against its forecast.
+func (ip *Interpreter) AnalyzeActualRelease(ctx context.Context, event domain.NewsEvent, lang string) (string, error) {
+	prompt := BuildActualReleasePrompt(event, lang)
+	
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	if err != nil {
+		log.Printf("[ai] actual release flash failed: %v", err)
+		return "", err
+	}
+	
+	return result, nil // no header needed for inline alert
+}
+
 // --- Batch Operations ---
 
 // GenerateAllInsights runs all AI analyses and returns combined output.
