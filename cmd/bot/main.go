@@ -173,9 +173,11 @@ func main() {
 
 		// Send startup notification
 		startupMsg := fmt.Sprintf(
-			"<b>\xF0\x9F\x9F\xA2 FF Calendar Bot v2.0 Online</b>\n\n"+
-				"AI: %s\n"+
-				"Type /help for commands",
+			"🦅 <b>ARK Intelligence Online</b>\n"+
+			"<i>Neural Grid synchronized. Operational.</i>\n\n"+
+			"<code>AI Diagnostics:</code> %s\n"+
+			"<code>Data Terminals:</code> COT, Economics\n\n"+
+			"Type /help to initialize interface",
 			aiStatus(aiAnalyzer),
 		)
 		if _, err := bot.SendHTML(initCtx, cfg.ChatID, startupMsg); err != nil {

@@ -41,6 +41,9 @@ func NewScheduler(
 func (s *Scheduler) Start(ctx context.Context) {
 	log.Println("[NEWS SCHEDULER] Starting background monitors...")
 
+	// 0. Initial Sync (Run once on startup if empty)
+	go s.runInitialSync(ctx)
+
 	// 1. Weekly Sync Monitor (Runs every Sunday at 23:00 WIB)
 	go s.runWeeklySyncLoop(ctx)
 
@@ -258,4 +261,28 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 	}
 
 	_, _ = s.messenger.SendHTML(ctx, "", html)
+}
+
+func (s *Scheduler) runInitialSync(ctx context.Context) {
+	now := timeutil.NowWIB()
+	dateStr := now.Format("20060102")
+	
+	events, _ := s.repo.GetByDate(ctx, dateStr)
+	if len(events) > 0 {
+		log.Println("[NEWS SCHEDULER] Initial sync skipped: data already exists for today.")
+		return
+	}
+
+	log.Println("[NEWS SCHEDULER] Triggering Initial Sync Scrape for current week")
+	newEvents, err := s.fetcher.ScrapeCalendar(ctx, "this")
+	if err != nil {
+		log.Printf("[NEWS SCHEDULER] Initial sync failed: %v", err)
+		return
+	}
+
+	if err := s.repo.SaveEvents(ctx, newEvents); err != nil {
+		log.Printf("[NEWS SCHEDULER] Failed to save initial events: %v", err)
+	} else {
+		log.Printf("[NEWS SCHEDULER] Initial sync successful, saved %d events for the week", len(newEvents))
+	}
 }

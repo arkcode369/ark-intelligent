@@ -78,21 +78,24 @@ func NewHandler(
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, args string) error {
-	html := `🦅 <b>ARK Community Intelligent</b>
-<i>Premium Institutional Intelligence & Macro Analytics</i>
+	html := `🦅 <b>ARK Intelligence Terminal</b>
+<i>Premium Institutional Flow & Macro Analytics</i>
 
-Welcome to the ARK ecosystem. We deliver level-2 institutional flow diagnostics (COT) and AI-powered narrative intelligence for high-conviction traders.
+Welcome to the ARK ecosystem. We fuse level-2 COT Positioning diagnostics with real-time Economic Calendars for high-conviction decision making.
 
 <b>⚡ Intelligence Terminals:</b>
-/cot - COT positioning diagnostics & scalper metrics
-/outlook - AI-driven weekly market structural outlook
+/cot - COT Positioning diagnostics & Spec Net metrics
+/calendar - Today's Economic Calendar (use <code>/calendar week</code> for full week)
+/outlook - AI Weekly Market Structural Outlook (COT standard)
+/outlook news - AI News catalysts, Storm Days & Central Bank Watch
+/outlook combine - AI Fused COT crowding vs Catalyst triggers
 
 <b>⚙️ Operations:</b>
 /settings - Preference management
 /status - Neural grid status
 /help - Visual guide
 
-<code>System Grid: v1.0.0</code>`
+<code>ARK Interface: v2.0.0</code>`
 
 	_, err := h.bot.SendHTML(ctx, chatID, html)
 	return err
