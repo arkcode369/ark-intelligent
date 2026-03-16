@@ -162,6 +162,7 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 		prevOI := history[1].OpenInterest
 		if prevOI > 0 {
 			analysis.OIPctChange = (current.OpenInterest - prevOI) / prevOI * 100
+			analysis.OpenInterestChg = current.OpenInterest - prevOI
 		}
 	}
 
@@ -230,6 +231,41 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 	// === Signal Strength ===
 	analysis.SignalStrength = classifySignalStrength(analysis)
+
+	// === SCALPER INTEL / SHORT-TERM BIAS ===
+	// 1. Determine OI Trend
+	if analysis.OIPctChange > 1.0 {
+		analysis.OITrend = "RISING"
+	} else if analysis.OIPctChange < -1.0 {
+		analysis.OITrend = "FALLING"
+	} else {
+		analysis.OITrend = "FLAT"
+	}
+
+	// 2. Determine Bias based on NetChange & OI
+	if analysis.NetChange > 0 {
+		if analysis.OITrend == "RISING" {
+			// New buying
+			analysis.ShortTermBias = "STRONG BUY (BUY DIPS)"
+		} else if analysis.OITrend == "FALLING" {
+			// Short covering
+			analysis.ShortTermBias = "WEAK BUY (SELL RALLIES)"
+		} else {
+			analysis.ShortTermBias = "NEUTRAL BUY"
+		}
+	} else if analysis.NetChange < 0 {
+		if analysis.OITrend == "RISING" {
+			// New selling
+			analysis.ShortTermBias = "STRONG SELL (SELL RALLIES)"
+		} else if analysis.OITrend == "FALLING" {
+			// Long liquidation
+			analysis.ShortTermBias = "WEAK SELL (BUY DIPS)"
+		} else {
+			analysis.ShortTermBias = "NEUTRAL SELL"
+		}
+	} else {
+		analysis.ShortTermBias = "NEUTRAL"
+	}
 
 	return analysis
 }

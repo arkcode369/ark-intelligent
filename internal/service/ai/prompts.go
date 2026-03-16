@@ -72,10 +72,12 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData) string {
 	if len(data.COTAnalyses) > 0 {
 		b.WriteString("=== COT POSITIONING ===\n")
 		for _, a := range data.COTAnalyses {
-			b.WriteString(fmt.Sprintf("%s: SpecNet=%s COTIdx=%.0f CommSignal=%s\n",
+			b.WriteString(fmt.Sprintf("%s: SpecNet=%s COTIdx=%.0f CommSignal=%s 4WMom=%s OITrend=%s STBias=%s\n",
 				a.Contract.Currency,
 				fmtutil.FmtNumSigned(a.NetPosition, 0),
-				a.COTIndex, a.CommercialSignal))
+				a.COTIndex, a.CommercialSignal,
+				fmtutil.FmtNumSigned(a.SpecMomentum4W, 0),
+				a.OITrend, a.ShortTermBias))
 		}
 		b.WriteString("\n")
 	}
@@ -87,6 +89,7 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData) string {
 	b.WriteString("2. CURRENCY OUTLOOK: Bias Bullish/Bearish untuk mata uang G8 beserta alasannya\n")
 	b.WriteString("3. TOP TRADES: 3 ide trading dengan keyakinan tertinggi beserta logikanya\n")
 	b.WriteString("4. KEY RISKS: Skenario yang dapat membatalkan analisis ini\n")
+	b.WriteString("5. SCALPER INTEL: Rekomendasi taktis intraday/swing pendek (misal BUY on DIPS / SELL on RALLIES) berdasarkan 4W Momentum, Open Interest, dan ShortTermBias.\n")
 
 	return b.String()
 }

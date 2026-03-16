@@ -200,6 +200,9 @@ type COTAnalysis struct {
 
 	// --- D. Open Interest Analysis ---
 	OIPctChange      float64 `json:"oi_pct_change"`      // OI % change week-over-week
+	OpenInterestChg  float64 `json:"open_interest_chg"`  // Absolute change in open interest
+	OITrend          string  `json:"oi_trend"`           // Trend of OI: RISING, FALLING, FLAT
+	ShortTermBias    string  `json:"short_term_bias"`    // Scalper Intel bias (e.g. STRONG BUY, AVOID BUYING)
 	Top4Concentration float64 `json:"top4_concentration"` // Top 4 trader dominance %
 	Top8Concentration float64 `json:"top8_concentration"` // Top 8 trader dominance %
 	SpreadPctOfOI    float64 `json:"spread_pct_of_oi"`   // Spread positions as % of OI
