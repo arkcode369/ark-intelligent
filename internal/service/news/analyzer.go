@@ -1,9 +1,6 @@
 package news
 
 import (
-	"context"
-
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
 )
 

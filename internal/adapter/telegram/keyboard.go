@@ -59,6 +59,12 @@ func (kb *KeyboardBuilder) COTCurrencySelector(analyses []domain.COTAnalysis) po
 		}
 	}
 
+	// Add cross-market row if we have gold/oil
+	crossRow := kb.crossMarketRow(analyses)
+	if len(crossRow) > 0 {
+		rows = append(rows, crossRow)
+	}
+
 	return ports.InlineKeyboard{InlineKeyboard: rows}
 }
 
@@ -90,13 +96,6 @@ func (kb *KeyboardBuilder) CalendarFilter(activeFilter string) ports.InlineKeybo
 	})
 
 	return ports.InlineKeyboard{InlineKeyboard: rows}
-}
-	crossRow := kb.crossMarketRow(analyses)
-	if len(crossRow) > 0 {
-		rows = append(rows, crossRow)
-	}
-
-	return ports.InlineKeyboard{Rows: rows}
 }
 
 // crossMarketRow adds quick-access buttons for Gold and Oil if available.
