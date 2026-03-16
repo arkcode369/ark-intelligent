@@ -65,7 +65,7 @@ func (kb *KeyboardBuilder) COTCurrencySelector(analyses []domain.COTAnalysis) po
 		rows = append(rows, crossRow)
 	}
 
-	return ports.InlineKeyboard{InlineKeyboard: rows}
+	return ports.InlineKeyboard{Rows: rows}
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ func (kb *KeyboardBuilder) CalendarFilter(activeFilter string) ports.InlineKeybo
 		{Text: btnText("📋 All", "all"), CallbackData: "cal:filter:all"},
 	})
 
-	return ports.InlineKeyboard{InlineKeyboard: rows}
+	return ports.InlineKeyboard{Rows: rows}
 }
 
 // crossMarketRow adds quick-access buttons for Gold and Oil if available.

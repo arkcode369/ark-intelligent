@@ -472,3 +472,50 @@ func currencyToContractCode(currency string) string {
 	}
 	return currency // Return as-is if not mapped
 }
+
+// ---------------------------------------------------------------------------
+// /calendar & Callbacks — Economic Calendar
+// ---------------------------------------------------------------------------
+
+func (h *Handler) cmdCalendar(ctx context.Context, chatID string, userID int64, args string) error {
+	now := timeutil.NowWIB()
+	
+	if strings.ToLower(strings.TrimSpace(args)) == "week" {
+		events, err := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
+		if err != nil {
+			_, err = h.bot.SendHTML(ctx, chatID, "Failed to get weekly calendar")
+			return err
+		}
+		html := h.fmt.FormatCalendarWeek(now.Format("Jan 02, 2006"), events, "med")
+		kb := h.kb.CalendarFilter("med")
+		_, err = h.bot.SendWithKeyboard(ctx, chatID, html, kb)
+		return err
+	}
+
+	dateStr := now.Format("20060102")
+	events, err := h.newsRepo.GetByDate(ctx, dateStr)
+	if err != nil {
+		_, err = h.bot.SendHTML(ctx, chatID, "Failed to get today's calendar")
+		return err
+	}
+
+	html := h.fmt.FormatCalendarDay(now.Format("Mon Jan 02, 2006"), events, "med")
+	kb := h.kb.CalendarFilter("med")
+	_, err = h.bot.SendWithKeyboard(ctx, chatID, html, kb)
+	return err
+}
+
+func (h *Handler) cbNewsFilter(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
+	action := strings.TrimPrefix(data, "cal:filter:")
+	now := timeutil.NowWIB()
+	dateStr := now.Format("20060102")
+
+	events, err := h.newsRepo.GetByDate(ctx, dateStr)
+	if err != nil {
+		return h.bot.EditMessage(ctx, chatID, msgID, "Failed to refresh calendar")
+	}
+
+	html := h.fmt.FormatCalendarDay(now.Format("Mon Jan 02, 2006"), events, action)
+	kb := h.kb.CalendarFilter(action)
+	return h.bot.EditWithKeyboard(ctx, chatID, msgID, html, kb)
+}
