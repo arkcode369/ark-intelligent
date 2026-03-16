@@ -3,14 +3,12 @@ package renderer
 import (
 	"bytes"
 	"fmt"
-	"image"
-	"image/color"
 	"image/png"
 
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
-	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/goregular"
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/pkg/fmtutil"
@@ -132,11 +130,11 @@ func GenerateCOTRawImage(analysis domain.COTAnalysis) ([]byte, error) {
 
 	dc.SetFontFace(faceRegular)
 	dc.SetHexColor("#BAC2DE")
-	dc.DrawStringCentered("Intraday / Scalper Bias", width/2, 440)
+	dc.DrawStringAnchored("Intraday / Scalper Bias", width/2, 440, 0.5, 0.5)
 
 	dc.SetFontFace(faceTitle)
 	dc.SetHexColor(biasColor)
-	dc.DrawStringCentered(analysis.ShortTermBias, width/2, 480)
+	dc.DrawStringAnchored(analysis.ShortTermBias, width/2, 480, 0.5, 0.5)
 
 	// Render to PNG
 	var buf bytes.Buffer
