@@ -70,6 +70,7 @@ func (f *Formatter) FormatCalendarDay(dateStr string, events []domain.NewsEvent,
 	for _, e := range events {
 		// Apply filters before writing lines
 		if filter == "high" && e.Impact != "high" { continue }
+		if filter == "med" && e.Impact != "high" && e.Impact != "medium" { continue }
 		if filter == "usd" && e.Currency != "USD" { continue }
 		if filter == "eur" && e.Currency != "EUR" { continue }
 
@@ -106,6 +107,7 @@ func (f *Formatter) FormatCalendarWeek(weekStart string, events []domain.NewsEve
 	for _, e := range events {
 		// Apply filters
 		if filter == "high" && e.Impact != "high" { continue }
+		if filter == "med" && e.Impact != "high" && e.Impact != "medium" { continue }
 		if filter == "usd" && e.Currency != "USD" { continue }
 		if filter == "eur" && e.Currency != "EUR" { continue }
 

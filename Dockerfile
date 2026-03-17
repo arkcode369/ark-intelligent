@@ -1,5 +1,5 @@
 # ===========================================================================
-# FF Calendar Bot v2 — Multi-stage Docker build
+# ARK Community Intelligent v1 — Multi-stage Docker build
 # Stage 1: Build Go binary with CGO disabled (static linking)
 # Stage 2: Minimal Alpine runtime with ca-certs and timezone data
 # ===========================================================================

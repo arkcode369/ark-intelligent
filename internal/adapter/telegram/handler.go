@@ -82,23 +82,28 @@ func NewHandler(
 
 func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, args string) error {
 	html := `🦅 <b>ARK Intelligence Terminal</b>
-<i>Premium Institutional Flow & Macro Analytics</i>
+<i>Institutional Flow & Macro Analytics</i>
 
-Welcome to the ARK ecosystem. We fuse level-2 COT Positioning diagnostics with real-time Economic Calendars for high-conviction decision making.
+<b>📊 COT Positioning</b>
+/cot - Overview semua currency
+/cot USD - Detail spesifik currency
+/cot raw USD - Raw data positioning
 
-<b>⚡ Intelligence Terminals:</b>
-/cot - COT Positioning diagnostics & Spec Net metrics
-/calendar - Today's Economic Calendar (use <code>/calendar week</code> for full week)
-/outlook - AI Weekly Market Structural Outlook (COT standard)
-/outlook news - AI News catalysts, Storm Days & Central Bank Watch
-/outlook combine - AI Fused COT crowding vs Catalyst triggers
+<b>📅 Economic Calendar</b>
+/calendar - Agenda hari ini
+/calendar week - Agenda minggu ini
+<i>Gunakan tombol navigasi untuk pindah hari/minggu</i>
 
-<b>⚙️ Operations:</b>
+<b>🧠 AI Intelligence Outlook</b>
+/outlook cot - COT Positioning structural analysis
+/outlook news - News catalysts, Storm Days & Central Bank
+/outlook combine - Fused COT + News catalyst triggers
+
+<b>⚙️ Operations</b>
 /settings - Preference management
-/status - Neural grid status
-/help - Visual guide
+/status - System status
 
-<code>ARK Interface: v2.0.0</code>`
+<code>ARK Interface v1.0.0</code>`
 
 	_, err := h.bot.SendHTML(ctx, chatID, html)
 	return err
@@ -439,7 +444,7 @@ func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, ar
 <b>Services:</b>
 <code>AI Engine:  %s</code>
 
-<b>Version:</b> v2.0.0`,
+<b>Version:</b> v1.0.0`,
 		now.Format("15:04:05"),
 		len(cotAnalyses),
 		aiStatus,

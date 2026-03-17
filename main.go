@@ -1156,7 +1156,7 @@ func (b *Bot) safeSend(chatID, text string, kb InlineKeyboardMarkup) {
 // -- MAIN LOOP ----------------------------------------------------------------
 
 func (b *Bot) run() {
-	log.Println("[BOT] Starting FF Calendar Bot v4...")
+	log.Println("[BOT] Starting ARK Community Intelligent v1...")
 
 
 	// Alert check every 30s

@@ -108,17 +108,14 @@ type FFEvent struct {
 	Forecast string `json:"forecast"` // Market consensus forecast
 	Previous string `json:"previous"` // Previous period value
 
-	// Revision tracking (NEW in v2)
 	Revision      *EventRevision `json:"revision,omitempty"`       // Non-nil if Previous was revised
 	ReleaseType   ReleaseType    `json:"release_type"`             // Preliminary/Revised/Final/Regular
 	IsPreliminary bool           `json:"is_preliminary"`           // Flash/advance estimate
 	IsFinal       bool           `json:"is_final"`                 // Final release (no more revisions expected)
 
-	// Speech event details (NEW in v2)
 	SpeakerName string `json:"speaker_name,omitempty"` // e.g., "Powell", "Lagarde"
 	SpeakerRole string `json:"speaker_role,omitempty"` // e.g., "Fed Chair", "ECB President"
 
-	// Multi-day event tracking (NEW in v2)
 	MultiDayGroup string `json:"multi_day_group,omitempty"` // Group ID for multi-day events (e.g., "FOMC-2024-03")
 	MultiDayIndex int    `json:"multi_day_index,omitempty"` // Day number within group (1, 2, ...)
 

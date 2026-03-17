@@ -3,207 +3,246 @@ package news
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"
 )
 
-// FirecrawlFetcher implements ports.NewsFetcher using Firecrawl's REST API.
 type FirecrawlFetcher struct {
 	apiKey     string
 	httpClient *http.Client
-	baseURL    string
 }
 
-// NewFirecrawlFetcher creates a new fetcher instance.
 func NewFirecrawlFetcher(apiKey string) *FirecrawlFetcher {
 	return &FirecrawlFetcher{
 		apiKey: apiKey,
 		httpClient: &http.Client{
-			Timeout: 45 * time.Second, // Scrape can take a bit
+			Timeout: 120 * time.Second, // Long timeout for 3 sequential scrapes if needed
 		},
-		baseURL: "https://api.firecrawl.dev/v1/scrape",
 	}
 }
 
-// ScrapeCalendar syncs the entire week's upcoming data.
-// 'week' parameter should be "this" or "next".
-func (f *FirecrawlFetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain.NewsEvent, error) {
-	urlTarget := "https://www.forexfactory.com/calendar?week=this" // Enforce full week anonymously
+type firecrawlReq struct {
+	URL         string                 `json:"url"`
+	Formats     []string               `json:"formats"`
+	JSONOptions map[string]interface{} `json:"jsonOptions"`
+}
+
+type scrapedEvent struct {
+	Date      string `json:"date"`
+	Time      string `json:"time"`
+	Country   string `json:"country"`
+	Event     string `json:"event"`
+	Actual    string `json:"actual"`
+	Previous  string `json:"previous"`
+	Consensus string `json:"consensus"`
+}
+
+type scrapeResp struct {
+	Success bool `json:"success"`
+	Data    struct {
+		JSON struct {
+			Events []scrapedEvent `json:"events"`
+		} `json:"json"`
+	} `json:"data"`
+	Error string `json:"error"`
+}
+
+func getWeekRange(week string) (string, string) {
+	now := time.Now().UTC()
+	for now.Weekday() != time.Monday {
+		now = now.AddDate(0, 0, -1)
+	}
+	start := now
 	if week == "next" {
-		urlTarget = "https://www.forexfactory.com/calendar?week=next"
+		start = start.AddDate(0, 0, 7)
+	} else if week == "prev" {
+		start = start.AddDate(0, 0, -7)
 	}
-	
-	prompt := `Extract ALL scheduled economic calendar events from the table on the page for the ENTIRE week.
-Include events for Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday. Do NOT skip items.
-Return ONLY an array of events named "calendar_events".
-For each event I need:
-- id: a unique hash string generated based on name and date
-- date: e.g., "Mon Mar 16", "Tue Mar 17"
-- time: "7:30am" or "Tentative"
-- currency: "USD", "EUR" etc.
-- event: full title like "CPI m/m"
-- impact: "high", "medium", "low", "non"
-- forecast: string
-- previous: string
-- actual: string (or empty if blank)
-
-Ensure null values are converted to empty strings.`
-
-	return f.doExtractCall(ctx, urlTarget, prompt)
+	end := start.AddDate(0, 0, 6)
+	return start.Format("2006-01-02"), end.Format("2006-01-02")
 }
 
-// ScrapeActuals performs a micro-pull just for a specific date's actuals.
-// Target example: https://www.forexfactory.com/calendar?day=mar17.2026
+func (f *FirecrawlFetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain.NewsEvent, error) {
+	if f.apiKey == "" {
+		return nil, fmt.Errorf("firecrawl api key is empty")
+	}
+
+	d1, d2 := getWeekRange(week)
+
+	// Since we need impacts, and Firecrawl can't easily extract TradingEconomics CSS classes,
+	// we scrape 3 times with different filters. (1=All, 2=Med+High, 3=High)
+	// We do this sequentially to avoid 429 Too Many Requests on Firecrawl APIs.
+
+	log.Printf("[FETCHER] Fetching High impact events...")
+	highEvents, err := f.doScrape(ctx, fmt.Sprintf("https://tradingeconomics.com/calendar?importance=3&d1=%s&d2=%s", d1, d2))
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching high impact: %w", err)
+	}
+
+	log.Printf("[FETCHER] Fetching Med+High impact events...")
+	medHighEvents, err := f.doScrape(ctx, fmt.Sprintf("https://tradingeconomics.com/calendar?importance=2&d1=%s&d2=%s", d1, d2))
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching med impact: %w", err)
+	}
+
+	log.Printf("[FETCHER] Fetching All impact events...")
+	allEvents, err := f.doScrape(ctx, fmt.Sprintf("https://tradingeconomics.com/calendar?importance=1&d1=%s&d2=%s", d1, d2))
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching all impact: %w", err)
+	}
+
+	return mergeEvents(allEvents, medHighEvents, highEvents), nil
+}
+
 func (f *FirecrawlFetcher) ScrapeActuals(ctx context.Context, date string) ([]domain.NewsEvent, error) {
-	urlTarget := fmt.Sprintf("https://www.forexfactory.com/calendar?day=%s", date)
-	
-	prompt := `Extract the upcoming economic calendar events from ForexFactory. 
-Return ONLY an array of events named "calendar_events". Focus heavily on extracting the 'actual' figures if they exist.
-For each event I need exactly:
-- id: a unique hash string generated based on name and date
-- date: "Mon Mar 17"
-- time: "7:30am" or "Tentative"
-- currency: "USD", "EUR" etc.
-- event: full title like "CPI m/m"
-- impact: "high", "medium", "low", "non"
-- forecast: string
-- previous: string
-- actual: string (or empty string if blank)
-
-Ensure null values are converted to empty strings.`
-
-	return f.doExtractCall(ctx, urlTarget, prompt)
+	return f.ScrapeCalendar(ctx, "this")
 }
 
-func (f *FirecrawlFetcher) doExtractCall(ctx context.Context, urlTarget, prompt string) ([]domain.NewsEvent, error) {
-	// Firecrawl Scrape API format with Extract (LLM) configuration
-	payload := map[string]interface{}{
-		"url": urlTarget,
-		"formats": []string{"extract"},
-		"extract": map[string]interface{}{
-			"prompt": prompt,
+func (f *FirecrawlFetcher) doScrape(ctx context.Context, targetURL string) ([]scrapedEvent, error) {
+	reqBody := firecrawlReq{
+		URL:     targetURL,
+		Formats: []string{"json"},
+		JSONOptions: map[string]interface{}{
+			"prompt": "Extract economic calendar events from the table. Combine date headers with rows to provide 'date' (e.g., 'Tuesday March 17 2026'). Extract time (e.g. '12:30 AM'), country (2-letter code), event name, actual, previous, and consensus/forecast.",
 			"schema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"calendar_events": map[string]interface{}{
+					"events": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
-								"id": map[string]interface{}{"type": "string"},
-								"date": map[string]interface{}{"type": "string"},
-								"time": map[string]interface{}{"type": "string"},
-								"currency": map[string]interface{}{"type": "string"},
-								"event": map[string]interface{}{"type": "string"},
-								"impact": map[string]interface{}{"type": "string"},
-								"forecast": map[string]interface{}{"type": "string"},
-								"previous": map[string]interface{}{"type": "string"},
-								"actual": map[string]interface{}{"type": "string"},
+								"date":      map[string]interface{}{"type": "string"},
+								"time":      map[string]interface{}{"type": "string"},
+								"country":   map[string]interface{}{"type": "string"},
+								"event":     map[string]interface{}{"type": "string"},
+								"actual":    map[string]interface{}{"type": "string"},
+								"previous":  map[string]interface{}{"type": "string"},
+								"consensus": map[string]interface{}{"type": "string"},
 							},
+							"required": []string{"date", "time", "country", "event"},
 						},
 					},
 				},
-				"required": []string{"calendar_events"},
+				"required": []string{"events"},
 			},
 		},
-		"waitFor": 5000,
 	}
 
-	body, err := json.Marshal(payload)
+	b, _ := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.firecrawl.dev/v1/scrape", bytes.NewReader(b))
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", f.baseURL, bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("create req: %w", err)
-	}
-
 	req.Header.Set("Authorization", "Bearer "+f.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("do req: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode != http.StatusOK {
-		respBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("bad status %d: %s", resp.StatusCode, string(respBytes))
+		return nil, fmt.Errorf("firecrawl API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	// Parse Firecrawl root response structure
-	var fcResp struct {
-		Success bool `json:"success"`
-		Data    struct {
-			Extract struct {
-				CalendarEvents []domain.NewsEvent `json:"calendar_events"`
-			} `json:"extract"`
-		} `json:"data"`
+	var sResp scrapeResp
+	if err := json.Unmarshal(bodyBytes, &sResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal firecrawl response: %w", err)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&fcResp); err != nil {
-		return nil, fmt.Errorf("decode resp: %w", err)
+	if !sResp.Success {
+		return nil, fmt.Errorf("firecrawl job failed: %s", sResp.Error)
 	}
 
-	if !fcResp.Success {
-		return nil, fmt.Errorf("firecrawl API returned success=false")
-	}
-
-	events := fcResp.Data.Extract.CalendarEvents
-
-	// Hydrate parse time (TimeWIB)
-	year := timeutil.NowWIB().Year()
-	for i := range events {
-		events[i].Status = "upcoming"
-		if events[i].Actual != "" {
-			events[i].Status = "released"
-		}
-		
-		// Map "High" to "high"
-		events[i].Impact = parseImpact(events[i].Impact)
-
-		// Create TimeWIB from Date & Time fields if possible
-		if events[i].Time != "Tentative" && events[i].Time != "All Day" && events[i].Time != "" {
-			// Format: "Mon Mar 17 7:30am 2026"  (Merging text)
-			timeStr := fmt.Sprintf("%s %s %d", events[i].Date, events[i].Time, year)
-			// Timezone tricky handling: target is usually America/New_York relative if you don't login.
-			// However let's assume we request it relative to GMT or we just parse string. 
-			// In production, we assume user is passing a specific string format.
-			loc, _ := time.LoadLocation("America/New_York") // Default ForexFactory anonymous timezone
-			if t, err := time.ParseInLocation("Mon Jan 2 3:04pm 2006", timeStr, loc); err == nil {
-				// Translate to WIB (+7)
-				wibLoc, _ := time.LoadLocation("Asia/Jakarta")
-				events[i].TimeWIB = t.In(wibLoc)
-			} else {
-				log.Printf("[FETCHER] Error parsing time string %q: %v", timeStr, err)
-			}
-		} else {
-			// fallback mapping to midnight
-			timeStr := fmt.Sprintf("%s 12:00am %d", events[i].Date, year)
-			loc, _ := time.LoadLocation("America/New_York")
-			if t, err := time.ParseInLocation("Mon Jan 2 3:04pm 2006", timeStr, loc); err == nil {
-				wibLoc, _ := time.LoadLocation("Asia/Jakarta")
-				events[i].TimeWIB = t.In(wibLoc)
-			}
-		}
-	}
-
-	return events, nil
+	return sResp.Data.JSON.Events, nil
 }
 
-func parseImpact(raw string) string {
-	lower := string(bytes.ToLower([]byte(raw)))
-	if lower == "high" || lower == "medium" || lower == "low" || lower == "non" {
-		return lower
+func genKey(e scrapedEvent) string {
+	return e.Date + "|" + e.Time + "|" + strings.ToUpper(e.Country) + "|" + e.Event
+}
+
+func mergeEvents(all, medHigh, high []scrapedEvent) []domain.NewsEvent {
+	highMap := make(map[string]bool)
+	for _, e := range high {
+		highMap[genKey(e)] = true
 	}
-	return "non" // assume lowest if broken
+
+	medHighMap := make(map[string]bool)
+	for _, e := range medHigh {
+		medHighMap[genKey(e)] = true
+	}
+
+	wibLoc, _ := time.LoadLocation("Asia/Jakarta")
+	nyLoc, _ := time.LoadLocation("America/New_York")
+
+	var results []domain.NewsEvent
+	for _, raw := range all {
+		k := genKey(raw)
+		impact := "low"
+		if highMap[k] {
+			impact = "high"
+		} else if medHighMap[k] {
+			impact = "medium"
+		}
+
+		// Firecrawl scrape returns timezone in NY (EST/EDT) usually from TradingEconomics
+		// We'll parse the date and time strings.
+		// date usually looks like "Tuesday March 17 2026"
+		// time usually looks like "08:30 AM"
+		var t time.Time
+		if raw.Time != "" {
+			tStr := raw.Date + " " + raw.Time
+			parsed, err := time.ParseInLocation("Monday January 2 2006 03:04 PM", tStr, nyLoc)
+			if err != nil {
+				log.Printf("[FETCHER] skip bad date/time format: %s", tStr)
+				continue
+			}
+			t = parsed
+		} else {
+			// tentative times
+			parsed, err := time.ParseInLocation("Monday January 2 2006", raw.Date, nyLoc)
+			if err != nil {
+				continue
+			}
+			t = parsed
+		}
+
+		wibTime := t.In(wibLoc)
+
+		id := fmt.Sprintf("%x", md5.Sum([]byte(k)))
+
+		results = append(results, domain.NewsEvent{
+			ID:       id,
+			Date:     wibTime.Format("Mon Jan 2"),
+			Time:     wibTime.Format("3:04pm"),
+			TimeWIB:  wibTime,
+			Currency: strings.ToUpper(raw.Country),
+			Event:    raw.Event,
+			Impact:   impact,
+			Forecast: raw.Consensus,
+			Previous: raw.Previous,
+			Actual:   raw.Actual,
+			Status:   statusFromActual(raw.Actual),
+		})
+	}
+	return results
+}
+
+func statusFromActual(actual string) string {
+	if actual != "" {
+		return "released"
+	}
+	return "upcoming"
 }

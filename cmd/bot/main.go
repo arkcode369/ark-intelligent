@@ -1,4 +1,4 @@
-// Package main is the entry point for the FF Calendar Bot.
+// Package main is the entry point for ARK Community Intelligent.
 // It wires all dependencies using manual DI (no framework), starts
 // background schedulers, and runs the Telegram long-polling loop.
 //
@@ -34,7 +34,7 @@ const banner = `
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 	fmt.Println(banner)
-	log.Printf("[MAIN] Starting FF Calendar Bot v2.0 (Go %s, %s/%s)",
+	log.Printf("[MAIN] Starting ARK Community Intelligent v1.0 (Go %s, %s/%s)",
 		runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	// -----------------------------------------------------------------------
@@ -103,14 +103,8 @@ func main() {
 	cotFetcher := cotsvc.NewFetcher()
 	cotAnalyzer := cotsvc.NewAnalyzer(cotRepo, cotFetcher)
 
-	// News services
-	var newsFetcher *newssvc.FirecrawlFetcher
-	if cfg.FirecrawlAPIKey != "" {
-		newsFetcher = newssvc.NewFirecrawlFetcher(cfg.FirecrawlAPIKey)
-	} else {
-		log.Println("[MAIN] WARNING: FIRECRAWL_API_KEY missing, Calendar syncing disabled")
-	}
-
+	// News services (uses Firecrawl for TradingEconomics)
+	newsFetcher := newssvc.NewFirecrawlFetcher(cfg.FirecrawlAPIKey)
 	log.Println("[MAIN] Service layer initialized")
 
 	// -----------------------------------------------------------------------
@@ -144,12 +138,10 @@ func main() {
 		COTFetch: cfg.COTFetchInterval,
 	})
 
-	// Setup News Scheduler if fetcher is available
-	if newsFetcher != nil {
-		newsSched := newssvc.NewScheduler(newsRepo, newsFetcher, aiAnalyzer, bot, prefsRepo)
-		newsSched.Start(ctx)
-		log.Println("[MAIN] News Background scheduler (Firecrawl) started")
-	}
+	// News Background Scheduler (always starts — uses free ForexFactory API)
+	newsSched := newssvc.NewScheduler(newsRepo, newsFetcher, aiAnalyzer, bot, prefsRepo)
+	newsSched.Start(ctx)
+	log.Println("[MAIN] News Background scheduler started")
 
 	log.Println("[MAIN] Background schedulers started")
 
@@ -174,10 +166,11 @@ func main() {
 		// Send startup notification
 		startupMsg := fmt.Sprintf(
 			"🦅 <b>ARK Intelligence Online</b>\n"+
-			"<i>Neural Grid synchronized. Operational.</i>\n\n"+
-			"<code>AI Diagnostics:</code> %s\n"+
-			"<code>Data Terminals:</code> COT, Economics\n\n"+
-			"Type /help to initialize interface",
+				"<i>Systems synchronized</i>\n\n"+
+				"<code>AI Engine :</code> %s\n"+
+				"<code>Calendar  :</code> Trading Economics\n"+
+				"<code>COT Data  :</code> CFTC Socrata\n\n"+
+				"Type /help for commands",
 			aiStatus(aiAnalyzer),
 		)
 		if _, err := bot.SendHTML(initCtx, cfg.ChatID, startupMsg); err != nil {
@@ -230,9 +223,9 @@ func main() {
 // aiStatus returns a human-readable AI status string.
 func aiStatus(ai *aisvc.Interpreter) string {
 	if ai != nil && ai.IsAvailable() {
-		return "Gemini active"
+		return "Active"
 	}
-	return "Template fallback"
+	return "Offline"
 }
 
 // logStorageSize logs the current database size.

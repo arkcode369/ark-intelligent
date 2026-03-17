@@ -11,7 +11,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// EventRepository — Persistence for FF calendar events
+// EventRepository — Persistence for economic calendar events
 // ---------------------------------------------------------------------------
 
 // EventRepository defines storage operations for economic calendar events.

@@ -3,7 +3,7 @@
 // and logs errors without crashing the process.
 //
 // Jobs:
-//   - FF Calendar scrape + alert scheduling
+//   - Economic Calendar scrape + alert scheduling
 //   - FF Revision detection
 //   - COT data fetch + analysis
 //   - Surprise index recalculation
