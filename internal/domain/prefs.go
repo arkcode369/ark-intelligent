@@ -9,6 +9,11 @@ type UserPrefs struct {
 	COTAlertsEnabled bool     `json:"cot_alerts_enabled"` // Whether to receive alerts for new COT data
 	CurrencyFilter   []string `json:"currency_filter"`    // If set, only alert for these currencies
 	Language         string   `json:"language"`           // AI output language ("id" or "en")
+
+	// Broadcast & UI state
+	ChatID         string `json:"chat_id"`         // Telegram chat ID (set on /start, used for push alerts)
+	CalendarFilter string `json:"calendar_filter"` // Last used calendar filter: "all", "high", "med", "cur:USD", etc.
+	CalendarView   string `json:"calendar_view"`   // Last used view: "day", "week", "month"
 }
 
 // DefaultPrefs returns the default user preferences.
@@ -21,5 +26,8 @@ func DefaultPrefs() UserPrefs {
 		COTAlertsEnabled: true,
 		CurrencyFilter:   nil,  // nil = all currencies
 		Language:         "id", // Default to Indonesian
+		ChatID:           "",
+		CalendarFilter:   "all",
+		CalendarView:     "day",
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
@@ -18,6 +20,12 @@ type Scheduler struct {
 	aiAnalyzer ports.AIAnalyzer
 	messenger  ports.Messenger
 	prefsRepo  ports.PrefsRepository
+
+	// sentReminders prevents duplicate pre-event alerts.
+	// Key: "{eventID}:{minsUntil}", reset at midnight.
+	sentMu        sync.Mutex
+	sentReminders map[string]bool
+	lastResetDay  string
 }
 
 // NewScheduler creates a new background scheduler.
@@ -29,11 +37,12 @@ func NewScheduler(
 	prefsRepo ports.PrefsRepository,
 ) *Scheduler {
 	return &Scheduler{
-		repo:       repo,
-		fetcher:    fetcher,
-		aiAnalyzer: aiAnalyzer,
-		messenger:  messenger,
-		prefsRepo:  prefsRepo,
+		repo:          repo,
+		fetcher:       fetcher,
+		aiAnalyzer:    aiAnalyzer,
+		messenger:     messenger,
+		prefsRepo:     prefsRepo,
+		sentReminders: make(map[string]bool),
 	}
 }
 
@@ -50,9 +59,16 @@ func (s *Scheduler) Start(ctx context.Context) {
 	// 2. Daily Morning Reminder Monitor (Runs every day at 06:00 WIB)
 	go s.runDailyReminderLoop(ctx)
 
-	// 3. Micro-Scrape Trigger (Evaluated every minute)
+	// 3. Micro-Scrape Trigger (Evaluated every minute — picks up actuals after release)
 	go s.runMicroScrapeLoop(ctx)
+
+	// 4. Pre-Event Reminder (Evaluated every minute — sends alerts X mins before event)
+	go s.runPreEventReminderLoop(ctx)
 }
+
+// ---------------------------------------------------------------------------
+// Weekly Sync
+// ---------------------------------------------------------------------------
 
 func (s *Scheduler) runWeeklySyncLoop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
@@ -72,7 +88,6 @@ func (s *Scheduler) runWeeklySyncLoop(ctx context.Context) {
 					log.Printf("[NEWS SCHEDULER] Weekly sync failed: %v", err)
 					continue
 				}
-
 				if err := s.repo.SaveEvents(ctx, events); err != nil {
 					log.Printf("[NEWS SCHEDULER] Failed to save weekly events: %v", err)
 				}
@@ -81,6 +96,10 @@ func (s *Scheduler) runWeeklySyncLoop(ctx context.Context) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Daily Morning Reminder
+// ---------------------------------------------------------------------------
 
 func (s *Scheduler) runDailyReminderLoop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
@@ -106,6 +125,7 @@ func (s *Scheduler) runDailyReminderLoop(ctx context.Context) {
 	}
 }
 
+// broadcastDailyReminder sends a per-user morning summary filtered by their preferences.
 func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 	dateStr := now.Format("20060102")
 	events, err := s.repo.GetByDate(ctx, dateStr)
@@ -113,45 +133,173 @@ func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 		return
 	}
 
-	highCount, medCount := 0, 0
-	var firstHigh *domain.NewsEvent
+	activeUsers, err := s.prefsRepo.GetAllActive(ctx)
+	if err != nil {
+		log.Printf("[NEWS SCHEDULER] broadcastDailyReminder: get users failed: %v", err)
+		return
+	}
 
-	for _, e := range events {
-		if e.Impact == "high" {
-			highCount++
-			if firstHigh == nil {
-				// Store copy of first high impact event for the day
-				evt := e
-				firstHigh = &evt
+	for userID, prefs := range activeUsers {
+		if !prefs.AlertsEnabled || prefs.ChatID == "" {
+			continue
+		}
+
+		alertImpactsLower := toLowerSlice(prefs.AlertImpacts)
+		impactSet := toSet(alertImpactsLower)
+
+		highCount, medCount, lowCount := 0, 0, 0
+		var firstMatch *domain.NewsEvent
+
+		for i := range events {
+			e := &events[i]
+			if len(prefs.CurrencyFilter) > 0 && !containsStr(prefs.CurrencyFilter, e.Currency) {
+				continue
 			}
-		} else if e.Impact == "medium" {
-			medCount++
+			if !impactSet[strings.ToLower(e.Impact)] {
+				continue
+			}
+			switch strings.ToLower(e.Impact) {
+			case "high":
+				highCount++
+			case "medium":
+				medCount++
+			case "low":
+				lowCount++
+			}
+			if firstMatch == nil {
+				ev := *e
+				firstMatch = &ev
+			}
+		}
+
+		if highCount == 0 && medCount == 0 && lowCount == 0 {
+			continue // Nothing matching this user's preferences today
+		}
+
+		html := fmt.Sprintf("🦅 <b>NEWS RADAR</b>: %s\n", now.Format("Mon Jan 02"))
+		if highCount > 0 {
+			html += fmt.Sprintf("🔴 High Impact: %d events\n", highCount)
+		}
+		if medCount > 0 {
+			html += fmt.Sprintf("🟠 Medium Impact: %d events\n", medCount)
+		}
+		if lowCount > 0 {
+			html += fmt.Sprintf("🟡 Low Impact: %d events\n", lowCount)
+		}
+		if firstMatch != nil {
+			html += fmt.Sprintf("\nPertama: %s WIB — %s %s",
+				firstMatch.TimeWIB.Format("15:04"), firstMatch.Currency, firstMatch.Event)
+		}
+
+		if _, sendErr := s.messenger.SendHTML(ctx, prefs.ChatID, html); sendErr != nil {
+			log.Printf("[NEWS SCHEDULER] Failed to send daily reminder to user %d: %v", userID, sendErr)
+		}
+		time.Sleep(50 * time.Millisecond) // Avoid Telegram flood
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Pre-Event Reminder (X minutes before event)
+// ---------------------------------------------------------------------------
+
+func (s *Scheduler) runPreEventReminderLoop(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.evaluatePreEventReminders(ctx)
 		}
 	}
-
-	if highCount == 0 && medCount == 0 {
-		return // Nothing interesting today
-	}
-
-	html := fmt.Sprintf("🦅 <b>NEWS RADAR</b>: %s\n", now.Format("Mon Jan 02"))
-	if highCount > 0 {
-		html += fmt.Sprintf("🔴 High Impact: %d events\n", highCount)
-	}
-	if medCount > 0 {
-		html += fmt.Sprintf("🟡 Medium Impact: %d events\n", medCount)
-	}
-	if firstHigh != nil {
-		html += fmt.Sprintf("\nPertama: %s WIB - %s %s", firstHigh.TimeWIB.Format("15:04"), firstHigh.Currency, firstHigh.Event)
-	}
-
-	// Assuming we have a global broadcast group ID in messenger (default chat ID)
-	// Alternatively, we get it from environment
-	// Ports.Messenger interface doesn't natively expose Broadcast, but Bot does.
-	// For simplicity, we just send to a generic target if we know it, or we rely on user subscriptions.
-	// In the FF bot design, broadcasts go to a default Channel via a specific wrapper.
-	// We'll use SendHTML with empty string which defaults to the global Broadcast if implemented.
-	_, _ = s.messenger.SendHTML(ctx, "", html)
 }
+
+func (s *Scheduler) evaluatePreEventReminders(ctx context.Context) {
+	now := timeutil.NowWIB()
+	dateStr := now.Format("20060102")
+
+	// Reset sent-reminders map at midnight
+	s.sentMu.Lock()
+	if s.lastResetDay != dateStr {
+		s.sentReminders = make(map[string]bool)
+		s.lastResetDay = dateStr
+	}
+	s.sentMu.Unlock()
+
+	events, err := s.repo.GetByDate(ctx, dateStr)
+	if err != nil || len(events) == 0 {
+		return
+	}
+
+	activeUsers, err := s.prefsRepo.GetAllActive(ctx)
+	if err != nil {
+		return
+	}
+
+	for _, e := range events {
+		if e.Actual != "" {
+			continue // Already released
+		}
+
+		minsUntil := int(e.TimeWIB.Sub(now).Minutes())
+		if minsUntil < 0 || minsUntil > 120 {
+			continue // Not in relevant window
+		}
+
+		for userID, prefs := range activeUsers {
+			if !prefs.AlertsEnabled || prefs.ChatID == "" {
+				continue
+			}
+
+			// Check if this reminder minute matches user's alert minutes
+			if !containsInt(prefs.AlertMinutes, minsUntil) {
+				continue
+			}
+
+			// Check impact filter
+			alertImpactsLower := toLowerSlice(prefs.AlertImpacts)
+			if !toSet(alertImpactsLower)[strings.ToLower(e.Impact)] {
+				continue
+			}
+
+			// Check currency filter
+			if len(prefs.CurrencyFilter) > 0 && !containsStr(prefs.CurrencyFilter, e.Currency) {
+				continue
+			}
+
+			// Anti-duplicate: skip if already sent this reminder
+			reminderKey := fmt.Sprintf("%s:%d:%d", e.ID, minsUntil, userID)
+			s.sentMu.Lock()
+			alreadySent := s.sentReminders[reminderKey]
+			if !alreadySent {
+				s.sentReminders[reminderKey] = true
+			}
+			s.sentMu.Unlock()
+
+			if alreadySent {
+				continue
+			}
+
+			html := fmt.Sprintf("⏰ <b>EVENT INCOMING</b> — %d menit lagi\n\n", minsUntil)
+			html += fmt.Sprintf("%s <b>%s</b> — %s\n", e.FormatImpactColor(), e.Currency, e.Event)
+			html += fmt.Sprintf("🕐 %s WIB\n", e.TimeWIB.Format("15:04"))
+			if e.Forecast != "" || e.Previous != "" {
+				html += fmt.Sprintf("📊 Forecast: %s | Prev: %s\n", e.Forecast, e.Previous)
+			}
+
+			if _, sendErr := s.messenger.SendHTML(ctx, prefs.ChatID, html); sendErr != nil {
+				log.Printf("[NEWS SCHEDULER] Failed to send pre-event alert to user %d: %v", userID, sendErr)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Micro-Scrape (picks up actual values after release)
+// ---------------------------------------------------------------------------
 
 func (s *Scheduler) runMicroScrapeLoop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
@@ -171,14 +319,13 @@ func (s *Scheduler) evaluatePendingScrapes(ctx context.Context) {
 	now := timeutil.NowWIB()
 	dateStr := now.Format("20060102")
 
-	// Hourly Sweep logic (checking for missed/pending data across the day if at top of hour)
+	// Hourly Sweep logic
 	if now.Minute() == 0 {
 		log.Println("[NEWS SCHEDULER] Running Hourly Slow-Poll Sweep")
 		s.triggerMicroScrape(ctx, dateStr, "hourly")
 		return
 	}
 
-	// Fast Backoff Logic
 	events, err := s.repo.GetByDate(ctx, dateStr)
 	if err != nil || len(events) == 0 {
 		return
@@ -192,11 +339,11 @@ func (s *Scheduler) evaluatePendingScrapes(ctx context.Context) {
 
 		minsSinceRelease := int(now.Sub(e.TimeWIB).Minutes())
 
-		// Micro-Scrape targets: +1min, +5min, +10min
+		// Micro-Scrape targets: +1min, +5min, +10min after scheduled release
 		if minsSinceRelease == 1 || minsSinceRelease == 5 || minsSinceRelease == 10 {
 			log.Printf("[NEWS SCHEDULER] Micro-scrape triggered by %s %s (+%dm)", e.Currency, e.Event, minsSinceRelease)
 			triggerScrape = true
-			break // Batch fetch covers whole day anyway
+			break
 		}
 	}
 
@@ -212,15 +359,13 @@ func (s *Scheduler) triggerMicroScrape(ctx context.Context, dateStr string, reas
 		return
 	}
 
-	// Update datastore
 	for _, ev := range newEvents {
 		if ev.Actual != "" {
-			// Find if we need to alert just now
 			originalEvt, _ := s.getEventByID(ctx, dateStr, ev.ID)
 			if originalEvt != nil && originalEvt.Actual == "" {
 				s.onNewRelease(ctx, ev)
 			}
-			s.repo.UpdateActual(ctx, ev.ID, ev.Actual)
+			_ = s.repo.UpdateActual(ctx, ev.ID, ev.Actual)
 		}
 	}
 }
@@ -238,30 +383,54 @@ func (s *Scheduler) getEventByID(ctx context.Context, dateStr string, id string)
 	return nil, fmt.Errorf("not found")
 }
 
+// onNewRelease broadcasts an actual-release alert to all eligible users.
 func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
-	if ev.Impact != "high" && ev.Impact != "medium" {
-		return // Only alert high/medium
-	}
-
 	log.Printf("[NEWS SCHEDULER] New Release Detected: %s %s -> %s", ev.Currency, ev.Event, ev.Actual)
 
-	analysisStr := ""
-	if s.aiAnalyzer.IsAvailable() {
-		// Attempt flash analysis
-		// Wait, we haven't implemented language check here yet. Just passing English for now or default "id".
-		analysisStr, _ = s.aiAnalyzer.AnalyzeActualRelease(ctx, ev, "id")
+	activeUsers, err := s.prefsRepo.GetAllActive(ctx)
+	if err != nil {
+		log.Printf("[NEWS SCHEDULER] onNewRelease: get users failed: %v", err)
+		return
 	}
 
-	html := fmt.Sprintf("📈 <b>News Actual Release!</b>\n\n%s <b>%s</b>\n", ev.FormatImpactColor(), ev.Event)
-	html += fmt.Sprintf("Data: <b>%s</b>\n", ev.Currency)
-	html += fmt.Sprintf("Actual: <b>%s</b> (Forecast: %s / Prev: %s)\n", ev.Actual, ev.Forecast, ev.Previous)
+	for userID, prefs := range activeUsers {
+		if !prefs.AlertsEnabled || prefs.ChatID == "" {
+			continue
+		}
 
-	if analysisStr != "" {
-		html += fmt.Sprintf("\n💡 <b>AI Analysis:</b>\n%s", analysisStr)
+		alertImpactsLower := toLowerSlice(prefs.AlertImpacts)
+		if !toSet(alertImpactsLower)[strings.ToLower(ev.Impact)] {
+			continue
+		}
+
+		if len(prefs.CurrencyFilter) > 0 && !containsStr(prefs.CurrencyFilter, ev.Currency) {
+			continue
+		}
+
+		// Optionally run AI flash analysis (language from prefs)
+		analysisStr := ""
+		if s.aiAnalyzer != nil && s.aiAnalyzer.IsAvailable() {
+			analysisStr, _ = s.aiAnalyzer.AnalyzeActualRelease(ctx, ev, prefs.Language)
+		}
+
+		html := fmt.Sprintf("📈 <b>News Actual Release!</b>\n\n%s <b>%s</b>\n", ev.FormatImpactColor(), ev.Event)
+		html += fmt.Sprintf("Currency: <b>%s</b>\n", ev.Currency)
+		html += fmt.Sprintf("Actual: <b>%s</b> (Forecast: %s / Prev: %s)\n", ev.Actual, ev.Forecast, ev.Previous)
+
+		if analysisStr != "" {
+			html += fmt.Sprintf("\n💡 <b>AI Analysis:</b>\n%s", analysisStr)
+		}
+
+		if _, sendErr := s.messenger.SendHTML(ctx, prefs.ChatID, html); sendErr != nil {
+			log.Printf("[NEWS SCHEDULER] Failed to send release alert to user %d: %v", userID, sendErr)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-
-	_, _ = s.messenger.SendHTML(ctx, "", html)
 }
+
+// ---------------------------------------------------------------------------
+// Initial Sync
+// ---------------------------------------------------------------------------
 
 func (s *Scheduler) runInitialSync(ctx context.Context) {
 	now := timeutil.NowWIB()
@@ -285,4 +454,42 @@ func (s *Scheduler) runInitialSync(ctx context.Context) {
 	} else {
 		log.Printf("[NEWS SCHEDULER] Initial sync successful, saved %d events for the week", len(newEvents))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Utility helpers
+// ---------------------------------------------------------------------------
+
+func toLowerSlice(ss []string) []string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = strings.ToLower(s)
+	}
+	return out
+}
+
+func toSet(ss []string) map[string]bool {
+	m := make(map[string]bool, len(ss))
+	for _, s := range ss {
+		m[s] = true
+	}
+	return m
+}
+
+func containsStr(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
+}
+
+func containsInt(slice []int, val int) bool {
+	for _, v := range slice {
+		if v == val {
+			return true
+		}
+	}
+	return false
 }

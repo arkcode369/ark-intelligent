@@ -30,7 +30,8 @@ func (e NewsEvent) FormatImpactColor() string {
 		return "🟠"
 	case "low":
 		return "🟡"
-	case "holiday":
+	case "holiday", "none":
+		// MQL5 returns "none" for holidays/special days (not "holiday")
 		return "🔵"
 	default:
 		return "⚪"

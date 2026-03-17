@@ -149,7 +149,7 @@ func (f *MQL5Fetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain
 		return nil, fmt.Errorf("mql5 fetch failed: %w", err)
 	}
 
-	events := convertEvents(raw, "low", "medium", "high", "holiday")
+	events := convertEvents(raw, "low", "medium", "high", "holiday", "none")
 	log.Printf("[MQL5] ScrapeCalendar returned %d events (all impact)", len(events))
 	return events, nil
 }
@@ -170,7 +170,7 @@ func (f *MQL5Fetcher) ScrapeMonth(ctx context.Context, monthType string) ([]doma
 		return nil, fmt.Errorf("mql5 fetch month failed: %w", err)
 	}
 
-	events := convertEvents(raw, "low", "medium", "high", "holiday")
+	events := convertEvents(raw, "low", "medium", "high", "holiday", "none")
 	log.Printf("[MQL5] ScrapeMonth returned %d events", len(events))
 	return events, nil
 }
@@ -184,7 +184,7 @@ func (f *MQL5Fetcher) ScrapeRange(ctx context.Context, dateMode, from, to string
 		return nil, fmt.Errorf("mql5 fetch range failed: %w", err)
 	}
 
-	events := convertEvents(raw, "low", "medium", "high", "holiday")
+	events := convertEvents(raw, "low", "medium", "high", "holiday", "none")
 	log.Printf("[MQL5] ScrapeRange returned %d events", len(events))
 	return events, nil
 }
@@ -271,7 +271,9 @@ func convertEvents(raw []mql5Event, allowedImpacts ...string) []domain.NewsEvent
 			currency = countryIDToCurrency(e.Country)
 		}
 
-		// Skip events with unknown/unsupported currencies
+		// Skip events with unknown/unsupported currencies.
+		// Exception: "none" impact holidays may carry a country currency we still want to show.
+		// If currency is truly empty even after fallback, skip.
 		if currency == "" {
 			continue
 		}

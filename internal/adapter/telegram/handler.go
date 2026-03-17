@@ -81,6 +81,13 @@ func NewHandler(
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, args string) error {
+	// Persist chatID so the scheduler can push alerts to this user.
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+	if prefs.ChatID != chatID {
+		prefs.ChatID = chatID
+		_ = h.prefsRepo.Set(ctx, userID, prefs)
+	}
+
 	html := `🦅 <b>ARK Intelligence Terminal</b>
 <i>Institutional Flow & Macro Analytics</i>
 
@@ -496,14 +503,21 @@ func (h *Handler) sendCalendarChunked(ctx context.Context, chatID string, msgID 
 func (h *Handler) cmdCalendar(ctx context.Context, chatID string, userID int64, args string) error {
 	now := timeutil.NowWIB()
 
+	// Load saved filter preference (fallback to "all")
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+	savedFilter := prefs.CalendarFilter
+	if savedFilter == "" {
+		savedFilter = "all"
+	}
+
 	if strings.ToLower(strings.TrimSpace(args)) == "week" {
 		events, err := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
 		if err != nil {
 			_, err = h.bot.SendHTML(ctx, chatID, "Failed to get weekly calendar")
 			return err
 		}
-		html := h.fmt.FormatCalendarWeek(now.Format("Jan 02, 2006"), events, "all")
-		kb := h.kb.CalendarFilter("all", now.Format("20060102"), true)
+		html := h.fmt.FormatCalendarWeek(now.Format("Jan 02, 2006"), events, savedFilter)
+		kb := h.kb.CalendarFilter(savedFilter, now.Format("20060102"), true)
 		return h.sendCalendarChunked(ctx, chatID, 0, html, kb)
 	}
 
@@ -514,8 +528,8 @@ func (h *Handler) cmdCalendar(ctx context.Context, chatID string, userID int64, 
 		return err
 	}
 
-	html := h.fmt.FormatCalendarDay(now.Format("Mon Jan 02, 2006"), events, "all")
-	kb := h.kb.CalendarFilter("all", dateStr, false)
+	html := h.fmt.FormatCalendarDay(now.Format("Mon Jan 02, 2006"), events, savedFilter)
+	kb := h.kb.CalendarFilter(savedFilter, dateStr, false)
 	return h.sendCalendarChunked(ctx, chatID, 0, html, kb)
 }
 
@@ -550,6 +564,16 @@ func (h *Handler) cbNewsFilter(ctx context.Context, chatID string, msgID int, us
 	} else {
 		filter = parts[0]
 	}
+
+	// Persist the chosen filter for this user
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+	prefs.CalendarFilter = filter
+	if isWeek {
+		prefs.CalendarView = "week"
+	} else {
+		prefs.CalendarView = "day"
+	}
+	_ = h.prefsRepo.Set(ctx, userID, prefs)
 
 	var events []domain.NewsEvent
 	var err error
