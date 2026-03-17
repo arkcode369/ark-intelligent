@@ -188,7 +188,9 @@ func main() {
 	go func() {
 		defer close(pollDone)
 		log.Println("[MAIN] Starting Telegram long-polling...")
-		bot.StartPolling(ctx)
+		if err := bot.StartPolling(ctx); err != nil {
+			log.Printf("[MAIN] Polling exited with error: %v", err)
+		}
 		log.Println("[MAIN] Polling stopped")
 	}()
 
