@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
@@ -244,72 +245,69 @@ func (h *Handler) cbCOTDetail(ctx context.Context, chatID string, msgID int, use
 
 func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, args string) error {
 	if h.aiAnalyzer == nil || !h.aiAnalyzer.IsAvailable() {
-		_, err := h.bot.SendHTML(ctx, chatID,
-			"AI outlook is unavailable. Gemini API key not configured.")
+		_, err := h.bot.SendHTML(ctx, chatID, "AI outlook is unavailable. Gemini API key not configured.")
 		return err
 	}
 
 	subcmd := strings.ToLower(strings.TrimSpace(args))
-	prefs, err := h.prefsRepo.Get(ctx, userID)
-	if err != nil {
-		prefs = domain.DefaultPrefs() // fallback
+	if subcmd == "" {
+		html := "🦅 <b>ARK Intelligence Outlook</b>\nSelect the type of market analysis you want to generate:"
+		kb := h.kb.OutlookMenu()
+		_, err := h.bot.SendWithKeyboard(ctx, chatID, html, kb)
+		return err
 	}
 
-	placeholderID, _ := h.bot.SendHTML(ctx, chatID, "Generating intelligence report... (10-15s) ⏳")
+	return h.generateOutlook(ctx, chatID, userID, subcmd, 0)
+}
+
+func (h *Handler) cbOutlook(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
+	action := strings.TrimPrefix(data, "out:") // cot, news, combine
+	return h.generateOutlook(ctx, chatID, userID, action, msgID)
+}
+
+func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int64, subcmd string, editMsgID int) error {
+	prefs, err := h.prefsRepo.Get(ctx, userID)
+	if err != nil {
+		prefs = domain.DefaultPrefs()
+	}
+
+	placeholderID := 0
+	if editMsgID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, editMsgID, "Generating intelligence report... (10-15s) ⏳")
+		placeholderID = editMsgID
+	} else {
+		placeholderID, _ = h.bot.SendHTML(ctx, chatID, "Generating intelligence report... (10-15s) ⏳")
+	}
 
 	now := timeutil.NowWIB()
-	
+	var result string
+
 	if subcmd == "news" {
 		weekEvts, err := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
 		if err != nil {
 			_ = h.bot.EditMessage(ctx, chatID, placeholderID, "Failed to load news for analysis.")
 			return err
 		}
-		
-		result, err := h.aiAnalyzer.AnalyzeNewsOutlook(ctx, weekEvts, prefs.Language)
-		if err != nil {
-			_ = h.bot.EditMessage(ctx, chatID, placeholderID, fmt.Sprintf("AI Generation failed: %v", err))
-			return err
-		}
-		_ = h.bot.DeleteMessage(ctx, chatID, placeholderID)
-		_, err = h.bot.SendHTML(ctx, chatID, h.fmt.FormatWeeklyOutlook(result, now))
-		return err
-		
+		result, err = h.aiAnalyzer.AnalyzeNewsOutlook(ctx, weekEvts, prefs.Language)
 	} else if subcmd == "combine" {
 		cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
 		weekEvts, _ := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
-
-		weeklyData := ports.WeeklyData{
-			COTAnalyses: cotAnalyses,
-			NewsEvents:  weekEvts,
-			Language:    prefs.Language,
-		}
-
-		result, err := h.aiAnalyzer.AnalyzeCombinedOutlook(ctx, weeklyData)
-		if err != nil {
-			_ = h.bot.EditMessage(ctx, chatID, placeholderID, fmt.Sprintf("AI Generation failed: %v", err))
-			return err
-		}
-		_ = h.bot.DeleteMessage(ctx, chatID, placeholderID)
-		_, err = h.bot.SendHTML(ctx, chatID, h.fmt.FormatWeeklyOutlook(result, now))
-		return err
+		weeklyData := ports.WeeklyData{COTAnalyses: cotAnalyses, NewsEvents: weekEvts, Language: prefs.Language}
+		result, err = h.aiAnalyzer.AnalyzeCombinedOutlook(ctx, weeklyData)
+	} else { // "cot" or default
+		cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
+		weeklyData := ports.WeeklyData{COTAnalyses: cotAnalyses, Language: prefs.Language}
+		result, err = h.aiAnalyzer.GenerateWeeklyOutlook(ctx, weeklyData)
 	}
 
-	// Default COT standard outlook
-	cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
-	weeklyData := ports.WeeklyData{
-		COTAnalyses: cotAnalyses,
-		Language:    prefs.Language,
-	}
-
-	outlook, err := h.aiAnalyzer.GenerateWeeklyOutlook(ctx, weeklyData)
 	if err != nil {
-		_ = h.bot.EditMessage(ctx, chatID, placeholderID,
-			fmt.Sprintf("Failed to generate outlook: %v", err))
-		return err
+		return h.bot.EditMessage(ctx, chatID, placeholderID, fmt.Sprintf("AI Generation failed: %v", err))
 	}
 
-	html := h.fmt.FormatWeeklyOutlook(outlook, now)
+	html := h.fmt.FormatWeeklyOutlook(result, now)
+	if editMsgID > 0 {
+		return h.bot.EditMessage(ctx, chatID, editMsgID, html)
+	}
 	_ = h.bot.DeleteMessage(ctx, chatID, placeholderID)
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
