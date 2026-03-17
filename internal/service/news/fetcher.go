@@ -1,259 +1,268 @@
 package news
 
 import (
-	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 )
 
-type FirecrawlFetcher struct {
-	apiKey     string
+// MQL5Fetcher fetches economic calendar data from MQL5's hidden POST endpoint.
+// No API key required. Returns Medium + High impact events with actual values.
+type MQL5Fetcher struct {
 	httpClient *http.Client
 }
 
-func NewFirecrawlFetcher(apiKey string) *FirecrawlFetcher {
-	return &FirecrawlFetcher{
-		apiKey: apiKey,
+// NewMQL5Fetcher creates a new MQL5Fetcher.
+func NewMQL5Fetcher() *MQL5Fetcher {
+	return &MQL5Fetcher{
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second, // Long timeout for 3 sequential scrapes if needed
+			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-type firecrawlReq struct {
-	URL         string                 `json:"url"`
-	Formats     []string               `json:"formats"`
-	JSONOptions map[string]interface{} `json:"jsonOptions"`
+// mql5Event is the raw JSON structure returned by the MQL5 API.
+type mql5Event struct {
+	ID                int    `json:"Id"`
+	EventName         string `json:"EventName"`
+	Importance        string `json:"Importance"`   // "low", "medium", "high"
+	CurrencyCode      string `json:"CurrencyCode"` // Already the currency code e.g. "USD"
+	Country           int    `json:"Country"`       // int country code
+	ActualValue       string `json:"ActualValue"`
+	ForecastValue     string `json:"ForecastValue"`
+	PreviousValue     string `json:"PreviousValue"`
+	OldPreviousValue  string `json:"OldPreviousValue"`
+	FullDate          string `json:"FullDate"`      // "2026-03-17T14:00:00" — New York (ET)
+	ReleaseDate       int64  `json:"ReleaseDate"`   // Unix milliseconds (unused; use FullDate)
+	ImpactDirection   int    `json:"ImpactDirection"` // 0=neutral, 1=positive, 2=negative
+	ImpactValue       string `json:"ImpactValue"`
+	Processed         int    `json:"Processed"` // 1=released, 0=upcoming
 }
 
-type scrapedEvent struct {
-	Date      string `json:"date"`
-	Time      string `json:"time"`
-	Country   string `json:"country"`
-	Event     string `json:"event"`
-	Actual    string `json:"actual"`
-	Previous  string `json:"previous"`
-	Consensus string `json:"consensus"`
-	Forecast  string `json:"forecast"`
+// mql5DateMode — MQL5 supports several date modes; we use mode 1 (custom date range).
+const mql5DateMode = "1"
+
+// mql5Endpoint is the hidden POST API used by the MQL5 Economic Calendar page.
+const mql5Endpoint = "https://www.mql5.com/en/economic-calendar/content"
+
+// importance values:
+//   4 = Medium + High (we filter ourselves from the response)
+//   We always fetch with importance=4 and filter in Go.
+const mql5ImportanceFilter = "4"
+
+// currencies bitmask — 262143 = all major currencies
+const mql5CurrenciesMask = "262143"
+
+// nyLocation is New York (ET) — the timezone MQL5 FullDate uses.
+var nyLocation *time.Location
+
+// wibLocation is WIB (UTC+7).
+var wibLocation *time.Location
+
+func init() {
+	var err error
+	nyLocation, err = time.LoadLocation("America/New_York")
+	if err != nil {
+		nyLocation = time.FixedZone("EST", -5*60*60)
+	}
+	wibLocation, err = time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		wibLocation = time.FixedZone("WIB", 7*60*60)
+	}
 }
 
-type scrapeResp struct {
-	Success bool `json:"success"`
-	Data    struct {
-		JSON struct {
-			Events []scrapedEvent `json:"events"`
-		} `json:"json"`
-	} `json:"data"`
-	Error string `json:"error"`
-}
-
+// getWeekRange returns the from/to ISO timestamps for a given week label.
+// week: "this" | "next" | "prev"
+// Returns times in UTC (MQL5 accepts UTC-formatted ISO strings).
 func getWeekRange(week string) (string, string) {
-	now := time.Now().UTC()
+	// Anchor to Monday of the current WIB week
+	now := time.Now().In(wibLocation)
+	// Walk back to Monday
 	for now.Weekday() != time.Monday {
 		now = now.AddDate(0, 0, -1)
 	}
-	start := now
-	if week == "next" {
-		start = start.AddDate(0, 0, 7)
-	} else if week == "prev" {
-		start = start.AddDate(0, 0, -7)
+	// Zero out to midnight WIB Monday
+	monday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, wibLocation)
+
+	switch week {
+	case "next":
+		monday = monday.AddDate(0, 0, 7)
+	case "prev":
+		monday = monday.AddDate(0, 0, -7)
 	}
-	end := start.AddDate(0, 0, 6)
-	return start.Format("2006-01-02"), end.Format("2006-01-02")
+
+	// End = Sunday 23:59:59 of that week
+	sunday := monday.AddDate(0, 0, 6)
+	end := time.Date(sunday.Year(), sunday.Month(), sunday.Day(), 23, 59, 59, 0, wibLocation)
+
+	// MQL5 wants format: 2006-01-02T15:04:05 (no timezone, interpreted as NY time by server)
+	// But sending UTC works as the server adjusts. We'll send in UTC format.
+	fromStr := monday.UTC().Format("2006-01-02T15:04:05")
+	toStr := end.UTC().Format("2006-01-02T15:04:05")
+	return fromStr, toStr
 }
 
-func (f *FirecrawlFetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain.NewsEvent, error) {
-	if f.apiKey == "" {
-		return nil, fmt.Errorf("firecrawl api key is empty")
-	}
+// ScrapeCalendar fetches all Medium+High impact events for the given week.
+// week: "this" | "next" | "prev"
+func (f *MQL5Fetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain.NewsEvent, error) {
+	fromStr, toStr := getWeekRange(week)
+	log.Printf("[MQL5] ScrapeCalendar week=%s from=%s to=%s", week, fromStr, toStr)
 
-	d1, d2 := getWeekRange(week)
-
-	// Since we need impacts, and Firecrawl can't easily extract TradingEconomics CSS classes,
-	// we scrape 3 times with different filters. (1=All, 2=Med+High, 3=High)
-	// We do this sequentially to avoid 429 Too Many Requests on Firecrawl APIs.
-
-	log.Printf("[FETCHER] Fetching High impact events...")
-	highEvents, err := f.doScrape(ctx, fmt.Sprintf("https://tradingeconomics.com/calendar?importance=3&d1=%s&d2=%s", d1, d2))
+	raw, err := f.fetchMQL5(ctx, fromStr, toStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed fetching high impact: %w", err)
+		return nil, fmt.Errorf("mql5 fetch failed: %w", err)
 	}
 
-	log.Printf("[FETCHER] Fetching Med+High impact events...")
-	medHighEvents, err := f.doScrape(ctx, fmt.Sprintf("https://tradingeconomics.com/calendar?importance=2&d1=%s&d2=%s", d1, d2))
-	if err != nil {
-		return nil, fmt.Errorf("failed fetching med impact: %w", err)
-	}
-
-	return mergeEvents(medHighEvents, highEvents), nil
+	events := convertEvents(raw, "medium", "high")
+	log.Printf("[MQL5] ScrapeCalendar returned %d events (med+high)", len(events))
+	return events, nil
 }
 
-func (f *FirecrawlFetcher) ScrapeActuals(ctx context.Context, date string) ([]domain.NewsEvent, error) {
+// ScrapeActuals fetches today's events (for micro-scrape to pick up actuals).
+// date parameter is ignored; we always fetch "this" week's data.
+func (f *MQL5Fetcher) ScrapeActuals(ctx context.Context, date string) ([]domain.NewsEvent, error) {
+	// For actuals we fetch the current week — same as ScrapeCalendar("this")
 	return f.ScrapeCalendar(ctx, "this")
 }
 
-func (f *FirecrawlFetcher) doScrape(ctx context.Context, targetURL string) ([]scrapedEvent, error) {
-	reqBody := firecrawlReq{
-		URL:     targetURL,
-		Formats: []string{"json"},
-		JSONOptions: map[string]interface{}{
-			"prompt": `Extract ALL economic calendar events from the layout table associated with each date header. DO NOT SKIP any row.
-VERY IMPORTANT FOR COLUMN ALIGNMENT: The table columns are strictly ordered left to right: [Time], [Country], [Event Name], [Actual], [Previous], [Consensus], [Forecast].
-If a cell value is EMPTY (like no Actual for an upcoming event), DO NOT shift the next number left! Place it strictly in its correct struct key based on the column index.
+// fetchMQL5 performs the POST request to MQL5 and returns the raw event list.
+func (f *MQL5Fetcher) fetchMQL5(ctx context.Context, from, to string) ([]mql5Event, error) {
+	form := url.Values{}
+	form.Set("date_mode", mql5DateMode)
+	form.Set("from", from)
+	form.Set("to", to)
+	form.Set("importance", mql5ImportanceFilter)
+	form.Set("currencies", mql5CurrenciesMask)
 
-NUMERCIAL VALUE EXTRACTION: For Actual, Previous, Consensus, and Forecast, strictly extract the VISIBLE VISUAL numerical values (e.g. '0.5%', '15.5K', '58.3', '-12.0'). 
-DO NOT extract underlying link identifiers, anchor tags, historical code IDs, or text tracking codes (like 'USAAECW' or 'UNITEDSTAPENHOMSAL').`,
-			"schema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"events": map[string]interface{}{
-						"type": "array",
-						"items": map[string]interface{}{
-							"type": "object",
-							"properties": map[string]interface{}{
-								"date":      map[string]interface{}{"type": "string"},
-								"time":      map[string]interface{}{"type": "string"},
-								"country":   map[string]interface{}{"type": "string"},
-								"event":     map[string]interface{}{"type": "string"},
-								"actual":    map[string]interface{}{"type": "string"},
-								"previous":  map[string]interface{}{"type": "string"},
-								"consensus": map[string]interface{}{"type": "string"},
-								"forecast":  map[string]interface{}{"type": "string"},
-							},
-							"required": []string{"date", "time", "country", "event"},
-						},
-					},
-				},
-				"required": []string{"events"},
-			},
-		},
-	}
-
-	b, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.firecrawl.dev/v1/scrape", bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, "POST", mql5Endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+f.apiKey)
-	req.Header.Set("Content-Type", "application/json")
+
+	// Required headers to avoid 403/empty response
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", "https://www.mql5.com/en/economic-calendar")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
+	req.Header.Set("Origin", "https://www.mql5.com")
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("http request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("firecrawl API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("mql5 API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var sResp scrapeResp
-	if err := json.Unmarshal(bodyBytes, &sResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal firecrawl response: %w", err)
+	// MQL5 returns a JSON array directly
+	var events []mql5Event
+	if err := json.Unmarshal(body, &events); err != nil {
+		return nil, fmt.Errorf("failed to parse mql5 response: %w (body: %.200s)", err, string(body))
 	}
 
-	if !sResp.Success {
-		return nil, fmt.Errorf("firecrawl job failed: %s", sResp.Error)
-	}
-
-	return sResp.Data.JSON.Events, nil
+	return events, nil
 }
 
-func genKey(e scrapedEvent) string {
-	return e.Date + "|" + e.Time + "|" + strings.ToUpper(e.Country) + "|" + e.Event
-}
-
-func mergeEvents(medHigh, high []scrapedEvent) []domain.NewsEvent {
-	highMap := make(map[string]bool)
-	for _, e := range high {
-		highMap[genKey(e)] = true
+// convertEvents converts raw MQL5 events to domain.NewsEvent, filtering by impact level.
+func convertEvents(raw []mql5Event, allowedImpacts ...string) []domain.NewsEvent {
+	allowMap := make(map[string]bool, len(allowedImpacts))
+	for _, imp := range allowedImpacts {
+		allowMap[strings.ToLower(imp)] = true
 	}
-
-	wibLoc, _ := time.LoadLocation("Asia/Jakarta")
-	nyLoc, _ := time.LoadLocation("America/New_York")
 
 	var results []domain.NewsEvent
-	for _, raw := range medHigh {
-		k := genKey(raw)
-		impact := "medium"
-		if highMap[k] {
-			impact = "high"
+	for _, e := range raw {
+		impact := strings.ToLower(e.Importance)
+		if !allowMap[impact] {
+			continue
 		}
 
-		// Firecrawl scrape returns timezone in NY (EST/EDT) usually from TradingEconomics
-		// We'll parse the date and time strings.
-		// date usually looks like "Tuesday March 17 2026"
-		// time usually looks like "08:30 AM"
-		var t time.Time
-		if raw.Time != "" {
-			tStr := raw.Date + " " + raw.Time
-			parsed, err := time.ParseInLocation("Monday January 2 2006 03:04 PM", tStr, nyLoc)
-			if err != nil {
-				log.Printf("[FETCHER] skip bad date/time format: %s", tStr)
-				continue
-			}
-			t = parsed
-		} else {
-			// tentative times
-			parsed, err := time.ParseInLocation("Monday January 2 2006", raw.Date, nyLoc)
-			if err != nil {
-				continue
-			}
-			t = parsed
+		// Parse FullDate as New York time
+		t, err := time.ParseInLocation("2006-01-02T15:04:05", e.FullDate, nyLocation)
+		if err != nil {
+			log.Printf("[MQL5] skip event %d %q: bad date %q: %v", e.ID, e.EventName, e.FullDate, err)
+			continue
 		}
 
-		wibTime := t.In(wibLoc)
+		wibTime := t.In(wibLocation)
 
-		id := fmt.Sprintf("%x", md5.Sum([]byte(k)))
+		// Determine currency: prefer CurrencyCode from API, fall back to country code map
+		currency := e.CurrencyCode
+		if currency == "" {
+			currency = countryIDToCurrency(e.Country)
+		}
+
+		// Skip events with unknown/unsupported currencies
+		if currency == "" {
+			continue
+		}
+
+		id := fmt.Sprintf("mql5-%d", e.ID)
 
 		results = append(results, domain.NewsEvent{
 			ID:       id,
 			Date:     wibTime.Format("Mon Jan 2"),
-			Time:     wibTime.Format("3:04pm"),
+			Time:     wibTime.Format("15:04"),
 			TimeWIB:  wibTime,
-			Currency: countryToCurrency(raw.Country),
-			Event:    raw.Event,
+			Currency: currency,
+			Event:    e.EventName,
 			Impact:   impact,
-			Forecast: func() string {
-				if raw.Forecast != "" { return raw.Forecast }
-				return raw.Consensus
-			}(),
-			Previous: raw.Previous,
-			Actual:   raw.Actual,
-			Status:   statusFromActual(raw.Actual),
+			Forecast: e.ForecastValue,
+			Previous: e.PreviousValue,
+			Actual:   e.ActualValue,
+			Status:   statusFromProcessed(e.Processed),
 		})
 	}
 	return results
 }
 
-func statusFromActual(actual string) string {
-	if actual != "" {
+// statusFromProcessed maps MQL5 Processed field to domain status string.
+func statusFromProcessed(processed int) string {
+	if processed == 1 {
 		return "released"
 	}
 	return "upcoming"
 }
 
-func countryToCurrency(c string) string {
-	switch strings.ToUpper(c) {
-	case "US": return "USD"
-	case "EU", "DE", "FR", "IT", "ES", "NL": return "EUR"
-	case "JP": return "JPY"
-	case "GB": return "GBP"
-	case "AU": return "AUD"
-	case "NZ": return "NZD"
-	case "CA": return "CAD"
-	case "CH": return "CHF"
-	default: return strings.ToUpper(c)
+// countryIDToCurrency maps MQL5 integer country codes to currency codes.
+// Used as fallback if CurrencyCode is empty.
+func countryIDToCurrency(countryID int) string {
+	switch countryID {
+	case 840:
+		return "USD" // United States
+	case 999, 276, 250, 380, 724, 528, 56, 40, 246, 372, 620, 300, 705, 233, 428, 440, 196, 442, 470:
+		return "EUR" // Eurozone countries
+	case 392:
+		return "JPY" // Japan
+	case 826:
+		return "GBP" // United Kingdom
+	case 36:
+		return "AUD" // Australia
+	case 124:
+		return "CAD" // Canada
+	case 756:
+		return "CHF" // Switzerland
+	case 554:
+		return "NZD" // New Zealand
+	case 156:
+		return "CNY" // China
+	default:
+		return ""
 	}
 }

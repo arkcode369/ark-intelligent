@@ -18,9 +18,8 @@ type Config struct {
 	ChatID   string // Default Telegram chat ID
 
 	// AI (optional — graceful degradation without)
-	GeminiAPIKey    string // Google Gemini API key
-	GeminiModel     string // Model name (default: gemini-3.1-flash-lite-preview)
-	FirecrawlAPIKey string // Firecrawl API Key for web scraping
+	GeminiAPIKey string // Google Gemini API key
+	GeminiModel  string // Model name (default: gemini-3.1-flash-lite-preview)
 
 	// Storage
 	DataDir string // BadgerDB data directory
@@ -51,9 +50,8 @@ func MustLoad() *Config {
 		ChatID:   mustGetEnv("CHAT_ID"),
 
 		// AI (optional)
-		GeminiAPIKey:   getEnv("GEMINI_API_KEY", ""),
-		GeminiModel:    getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
-		FirecrawlAPIKey: getEnv("FIRECRAWL_API_KEY", ""),
+		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:  getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
 
 		// Storage
 		DataDir: getEnv("DATA_DIR", "/app/data"),

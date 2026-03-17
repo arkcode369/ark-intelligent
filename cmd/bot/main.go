@@ -103,8 +103,8 @@ func main() {
 	cotFetcher := cotsvc.NewFetcher()
 	cotAnalyzer := cotsvc.NewAnalyzer(cotRepo, cotFetcher)
 
-	// News services (uses Firecrawl for TradingEconomics)
-	newsFetcher := newssvc.NewFirecrawlFetcher(cfg.FirecrawlAPIKey)
+	// News services (uses MQL5 Economic Calendar API — no API key required)
+	newsFetcher := newssvc.NewMQL5Fetcher()
 	log.Println("[MAIN] Service layer initialized")
 
 	// -----------------------------------------------------------------------
@@ -168,7 +168,7 @@ func main() {
 			"🦅 <b>ARK Intelligence Online</b>\n"+
 				"<i>Systems synchronized</i>\n\n"+
 				"<code>AI Engine :</code> %s\n"+
-				"<code>Calendar  :</code> Trading Economics\n"+
+				"<code>Calendar  :</code> MQL5 Economic Calendar\n"+
 				"<code>COT Data  :</code> CFTC Socrata\n\n"+
 				"Type /help for commands",
 			aiStatus(aiAnalyzer),
