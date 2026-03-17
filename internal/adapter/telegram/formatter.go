@@ -3,6 +3,7 @@ package telegram
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,16 +25,32 @@ func NewFormatter() *Formatter {
 	return &Formatter{}
 }
 
-// directionArrow checks if Actual beats Forecast.
+// parseNumeric strips common suffixes and parses a numeric value from a string.
+func parseNumeric(s string) *float64 {
+	s = strings.TrimSpace(s)
+	// Remove trailing %, K, M, B, and common suffixes
+	s = strings.TrimRight(s, "%KMBkmb")
+	s = strings.ReplaceAll(s, ",", "")
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return &f
+	}
+	return nil
+}
+
+// directionArrow checks if Actual beats Forecast using numeric comparison.
 func directionArrow(actual, forecast string) string {
-	// Need numeric logic if you want to be precise, but since FF returns strings like "3.5%",
-	// we'll just return a neutral dot if it's not easily parsed.
-	if actual != "" && forecast != "" {
-		if actual > forecast {
-			return "🟢"
-		} else if actual < forecast {
-			return "🔴"
-		}
+	if actual == "" || forecast == "" {
+		return "⚪"
+	}
+	aVal := parseNumeric(actual)
+	fVal := parseNumeric(forecast)
+	if aVal == nil || fVal == nil {
+		return "⚪"
+	}
+	if *aVal > *fVal {
+		return "🟢"
+	} else if *aVal < *fVal {
+		return "🔴"
 	}
 	return "⚪"
 }
@@ -55,14 +72,17 @@ func (f *Formatter) FormatCalendarDay(dateStr string, events []domain.NewsEvent,
 
 	if len(events) == 0 {
 		b.WriteString("No events found for this filter.")
+		b.WriteString("\n\n<i>Tip: </i><code>/calendar</code> | <code>/calendar week</code>")
 		return b.String()
 	}
 
+	hasEvents := false
 	for _, e := range events {
 		// Apply filters before writing lines
 		if !matchesFilter(e, filter) {
 			continue
 		}
+		hasEvents = true
 
 		timeDisplay := e.Time
 		if !e.TimeWIB.IsZero() {
@@ -73,13 +93,19 @@ func (f *Formatter) FormatCalendarDay(dateStr string, events []domain.NewsEvent,
 		b.WriteString(fmt.Sprintf("↳ <i>%s</i>\n", e.Event))
 
 		if e.Actual != "" {
-			b.WriteString(fmt.Sprintf("   Actual: <b>%s</b> %s (Fcast: %s | Prev: %s)\n", e.Actual, directionArrow(e.Actual, e.Forecast), e.Forecast, e.Previous))
+			arrow := directionArrow(e.Actual, e.Forecast)
+			b.WriteString(fmt.Sprintf("   ✅ Actual: <b>%s</b> %s (Fcast: %s | Prev: %s)\n", e.Actual, arrow, e.Forecast, e.Previous))
 		} else {
 			b.WriteString(fmt.Sprintf("   Fcast: %s | Prev: %s\n", e.Forecast, e.Previous))
 		}
 		b.WriteString("\n")
 	}
 
+	if !hasEvents {
+		b.WriteString("No events match the current filter.")
+	}
+
+	b.WriteString("\n<i>Tip: </i><code>/calendar</code> | <code>/calendar week</code>")
 	return b.String()
 }
 
@@ -95,6 +121,7 @@ func (f *Formatter) FormatCalendarWeek(weekStart string, events []domain.NewsEve
 
 	if len(events) == 0 {
 		b.WriteString("No events found.")
+		b.WriteString("\n\n<i>Tip: </i><code>/calendar</code> | <code>/calendar week</code>")
 		return b.String()
 	}
 
@@ -116,9 +143,15 @@ func (f *Formatter) FormatCalendarWeek(weekStart string, events []domain.NewsEve
 			timeDisplay = e.TimeWIB.Format("15:04 WIB")
 		}
 
-		b.WriteString(fmt.Sprintf("%s %s %s: <i>%s</i>\n", e.FormatImpactColor(), timeDisplay, e.Currency, e.Event))
+		line := fmt.Sprintf("%s %s %s: <i>%s</i>", e.FormatImpactColor(), timeDisplay, e.Currency, e.Event)
+		if e.Actual != "" {
+			arrow := directionArrow(e.Actual, e.Forecast)
+			line += fmt.Sprintf(" — ✅<b>%s</b>%s", e.Actual, arrow)
+		}
+		b.WriteString(line + "\n")
 	}
 
+	b.WriteString("\n<i>Tip: </i><code>/calendar</code> | <code>/calendar week</code>")
 	return b.String()
 }
 
@@ -153,7 +186,12 @@ func (f *Formatter) FormatCalendarMonth(monthLabel string, events []domain.NewsE
 			timeDisplay = e.TimeWIB.Format("15:04 WIB")
 		}
 
-		b.WriteString(fmt.Sprintf("%s %s %s: <i>%s</i>\n", e.FormatImpactColor(), timeDisplay, e.Currency, e.Event))
+		line := fmt.Sprintf("%s %s %s: <i>%s</i>", e.FormatImpactColor(), timeDisplay, e.Currency, e.Event)
+		if e.Actual != "" {
+			arrow := directionArrow(e.Actual, e.Forecast)
+			line += fmt.Sprintf(" — ✅<b>%s</b>%s", e.Actual, arrow)
+		}
+		b.WriteString(line + "\n")
 	}
 
 	return b.String()
@@ -201,12 +239,19 @@ func (f *Formatter) FormatCOTOverview(analyses []domain.COTAnalysis) string {
 			f.momentumLabel(a.MomentumDir)))
 	}
 
-	b.WriteString("<i>Tap a currency for detailed breakdown</i>")
+	b.WriteString("<i>Tap a currency for detailed breakdown</i>\n")
+	b.WriteString("<i>Tip: </i><code>/cot USD</code> | <code>/cot raw EUR</code> | <code>/cot GBP</code>")
 	return b.String()
 }
 
 // FormatCOTDetail formats detailed COT analysis for one contract.
+// Signature unchanged for backward compatibility.
 func (f *Formatter) FormatCOTDetail(a domain.COTAnalysis) string {
+	return f.FormatCOTDetailWithCode(a, "")
+}
+
+// FormatCOTDetailWithCode formats detailed COT analysis and appends quick-copy commands.
+func (f *Formatter) FormatCOTDetailWithCode(a domain.COTAnalysis, displayCode string) string {
 	var b strings.Builder
 
 	rt := a.Contract.ReportType
@@ -246,6 +291,11 @@ func (f *Formatter) FormatCOTDetail(a domain.COTAnalysis) string {
 	b.WriteString(fmt.Sprintf("<code>  4W Momentum:    %s</code>\n", fmtutil.FmtNumSigned(a.SpecMomentum4W, 0)))
 	b.WriteString(fmt.Sprintf("<code>  OI Change WoW:  %s (%s)</code>\n", fmtutil.FmtNumSigned(a.OpenInterestChg, 0), a.OITrend))
 	b.WriteString(fmt.Sprintf("<code>  ST Bias:        %s</code>\n", a.ShortTermBias))
+
+	// Quick copy commands
+	if displayCode != "" {
+		b.WriteString(fmt.Sprintf("\n<i>Quick commands:</i>\n<code>/cot %s</code> | <code>/cot raw %s</code>", displayCode, displayCode))
+	}
 
 	return b.String()
 }
@@ -299,6 +349,7 @@ func (f *Formatter) FormatWeeklyOutlook(outlook string, date time.Time) string {
 	b.WriteString("<b>Weekly Market Outlook</b>\n")
 	b.WriteString(fmt.Sprintf("<i>Week of %s</i>\n\n", date.Format("Jan 2, 2006")))
 	b.WriteString(outlook)
+	b.WriteString("\n\n<i>Tip: </i><code>/outlook cot</code> | <code>/outlook news</code> | <code>/outlook combine</code>")
 
 	return b.String()
 }
@@ -336,10 +387,22 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 	}
 	b.WriteString(fmt.Sprintf("<code>[AI] Output Language: %s</code>\n", langDisplay))
 
-	if len(prefs.CurrencyFilter) > 0 {
-		b.WriteString(fmt.Sprintf("<code>Currencies filter  : %s</code>\n", strings.Join(prefs.CurrencyFilter, ", ")))
+	// Alert minutes display
+	if len(prefs.AlertMinutes) > 0 {
+		parts := make([]string, len(prefs.AlertMinutes))
+		for i, m := range prefs.AlertMinutes {
+			parts[i] = fmt.Sprintf("%d", m)
+		}
+		b.WriteString(fmt.Sprintf("<code>Alert Minutes      : %s</code>\n", strings.Join(parts, "/")))
 	} else {
-		b.WriteString("<code>Currencies filter  : All</code>\n")
+		b.WriteString("<code>Alert Minutes      : -</code>\n")
+	}
+
+	// Currency filter display
+	if len(prefs.CurrencyFilter) > 0 {
+		b.WriteString(fmt.Sprintf("<code>Alert Currencies   : %s</code>\n", strings.Join(prefs.CurrencyFilter, ", ")))
+	} else {
+		b.WriteString("<code>Alert Currencies   : All Currencies</code>\n")
 	}
 
 	b.WriteString("\n<i>Use the buttons below to adjust preferences</i>")

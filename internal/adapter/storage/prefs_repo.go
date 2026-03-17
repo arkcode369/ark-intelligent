@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
 
@@ -13,6 +15,11 @@ import (
 // PrefsRepo implements ports.PrefsRepository using BadgerDB.
 type PrefsRepo struct {
 	db *badger.DB
+
+	// Cache for GetAllActive — refreshed at most every 5 minutes.
+	cacheMu      sync.RWMutex
+	cachedActive map[int64]domain.UserPrefs
+	cacheExpiry  time.Time
 }
 
 // NewPrefsRepo creates a new PrefsRepo backed by the given DB.
@@ -214,20 +221,41 @@ func (r *PrefsRepo) Get(_ context.Context, userID int64) (domain.UserPrefs, erro
 	return prefs, nil
 }
 
-// Set persists preferences for a user.
+// Set persists preferences for a user and invalidates the GetAllActive cache.
 func (r *PrefsRepo) Set(_ context.Context, userID int64, prefs domain.UserPrefs) error {
 	data, err := json.Marshal(&prefs)
 	if err != nil {
 		return fmt.Errorf("marshal prefs: %w", err)
 	}
 	key := prefsKey(userID)
-	return r.db.Update(func(txn *badger.Txn) error {
+	if err := r.db.Update(func(txn *badger.Txn) error {
 		return txn.Set(key, data)
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Invalidate cache so the next GetAllActive reflects the new value immediately.
+	r.cacheMu.Lock()
+	r.cachedActive = nil
+	r.cacheExpiry = time.Time{}
+	r.cacheMu.Unlock()
+
+	return nil
 }
 
 // GetAllActive retrieves all users that have alerts enabled.
-func (r *PrefsRepo) GetAllActive(_ context.Context) (map[int64]domain.UserPrefs, error) {
+// Results are cached for 5 minutes to reduce DB load during high-frequency loops.
+func (r *PrefsRepo) GetAllActive(ctx context.Context) (map[int64]domain.UserPrefs, error) {
+	// Fast path: serve from cache if still valid.
+	r.cacheMu.RLock()
+	if r.cachedActive != nil && time.Now().Before(r.cacheExpiry) {
+		cached := r.cachedActive
+		r.cacheMu.RUnlock()
+		return cached, nil
+	}
+	r.cacheMu.RUnlock()
+
+	// Slow path: scan DB.
 	result := make(map[int64]domain.UserPrefs)
 	prefix := []byte("prefs:")
 
@@ -265,6 +293,13 @@ func (r *PrefsRepo) GetAllActive(_ context.Context) (map[int64]domain.UserPrefs,
 	if err != nil {
 		return nil, fmt.Errorf("get all active: %w", err)
 	}
+
+	// Store in cache with 5-minute TTL.
+	r.cacheMu.Lock()
+	r.cachedActive = result
+	r.cacheExpiry = time.Now().Add(5 * time.Minute)
+	r.cacheMu.Unlock()
+
 	return result, nil
 }
 

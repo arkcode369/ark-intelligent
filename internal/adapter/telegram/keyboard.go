@@ -198,6 +198,32 @@ func (kb *KeyboardBuilder) contractLabel(name, code string) string {
 // Settings Keyboards
 // ---------------------------------------------------------------------------
 
+// alertMinutesPreset returns the preset key matching the given slice, or "".
+func alertMinutesPreset(minutes []int) string {
+	if sliceEqual(minutes, []int{60, 15, 5}) {
+		return "time_60_15_5"
+	}
+	if sliceEqual(minutes, []int{15, 5, 1}) {
+		return "time_15_5_1"
+	}
+	if sliceEqual(minutes, []int{5, 1}) {
+		return "time_5_1"
+	}
+	return ""
+}
+
+func sliceEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // SettingsMenu builds the settings control keyboard.
 // Shows current state and toggle buttons for all preference options.
 func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyboard {
@@ -234,7 +260,59 @@ func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyb
 		CallbackData: "set:lang_toggle",
 	}})
 
-	// Row 3: View Changelog
+	// Row 4: Alert Minutes presets
+	activePreset := alertMinutesPreset(prefs.AlertMinutes)
+	presetLabel := func(key, label string) string {
+		if activePreset == key {
+			return "✅ " + label
+		}
+		return label
+	}
+	rows = append(rows, []ports.InlineButton{
+		{Text: presetLabel("time_60_15_5", "⏰ 60/15/5"), CallbackData: "set:time_60_15_5"},
+		{Text: presetLabel("time_15_5_1", "⏰ 15/5/1"), CallbackData: "set:time_15_5_1"},
+		{Text: presetLabel("time_5_1", "⏰ 5/1"), CallbackData: "set:time_5_1"},
+	})
+
+	// Rows 5-6: Currency filter toggles
+	curSet := make(map[string]bool)
+	for _, c := range prefs.CurrencyFilter {
+		curSet[strings.ToUpper(c)] = true
+	}
+	curBtn := func(flag, cur string) ports.InlineButton {
+		label := flag + " " + cur
+		if curSet[cur] {
+			label = "✅ " + flag + " " + cur
+		}
+		return ports.InlineButton{
+			Text:         label,
+			CallbackData: "set:cur_toggle:" + cur,
+		}
+	}
+	rows = append(rows, []ports.InlineButton{
+		curBtn("🇺🇸", "USD"),
+		curBtn("🇪🇺", "EUR"),
+		curBtn("🇬🇧", "GBP"),
+		curBtn("🇯🇵", "JPY"),
+	})
+	rows = append(rows, []ports.InlineButton{
+		curBtn("🇦🇺", "AUD"),
+		curBtn("🇨🇦", "CAD"),
+		curBtn("🇨🇭", "CHF"),
+		curBtn("🇳🇿", "NZD"),
+	})
+
+	// Row 7: All Currencies reset
+	allCurLabel := "All Currencies"
+	if len(prefs.CurrencyFilter) == 0 {
+		allCurLabel = "✅ All Currencies"
+	}
+	rows = append(rows, []ports.InlineButton{{
+		Text:         allCurLabel,
+		CallbackData: "set:cur_reset",
+	}})
+
+	// Row 8: View Changelog
 	rows = append(rows, []ports.InlineButton{{
 		Text:         "📜 View Changelog",
 		CallbackData: "set:changelog_view",

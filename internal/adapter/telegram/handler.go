@@ -203,7 +203,7 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 		return e
 	}
 
-	html := h.fmt.FormatCOTDetail(*analysis)
+	html := h.fmt.FormatCOTDetailWithCode(*analysis, displayCode)
 
 	// Add AI interpretation if it's a new message
 	if editMsgID == 0 && h.aiAnalyzer != nil && h.aiAnalyzer.IsAvailable() {
@@ -259,7 +259,8 @@ func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, a
 
 	subcmd := strings.ToLower(strings.TrimSpace(args))
 	if subcmd == "" {
-		html := "🦅 <b>ARK Intelligence Outlook</b>\nSelect the type of market analysis you want to generate:"
+		html := "🦅 <b>ARK Intelligence Outlook</b>\nSelect the type of market analysis you want to generate:\n\n" +
+			"<i>Tip: </i><code>/outlook cot</code> | <code>/outlook news</code> | <code>/outlook combine</code>"
 		kb := h.kb.OutlookMenu()
 		_, err := h.bot.SendWithKeyboard(ctx, chatID, html, kb)
 		return err
@@ -380,13 +381,36 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 		prefs.AlertImpacts = []string{"High", "Medium", "Low"}
 	case "time_60_15_5":
 		prefs.AlertMinutes = []int{60, 15, 5}
-	case "time_15_5":
-		prefs.AlertMinutes = []int{15, 5}
+	case "time_15_5_1":
+		prefs.AlertMinutes = []int{15, 5, 1}
 	case "time_5_1":
 		prefs.AlertMinutes = []int{5, 1}
+	case "cur_reset":
+		prefs.CurrencyFilter = nil
 	default:
-		log.Printf("[HANDLER] Unknown settings action: %s", action)
-		return nil
+		// Handle cur_toggle:XXX dynamically
+		if strings.HasPrefix(action, "cur_toggle:") {
+			cur := strings.ToUpper(strings.TrimPrefix(action, "cur_toggle:"))
+			if cur != "" {
+				found := false
+				newFilter := make([]string, 0, len(prefs.CurrencyFilter))
+				for _, c := range prefs.CurrencyFilter {
+					if strings.ToUpper(c) == cur {
+						found = true
+						// Skip it (remove)
+					} else {
+						newFilter = append(newFilter, c)
+					}
+				}
+				if !found {
+					newFilter = append(newFilter, cur)
+				}
+				prefs.CurrencyFilter = newFilter
+			}
+		} else {
+			log.Printf("[HANDLER] Unknown settings action: %s", action)
+			return nil
+		}
 	}
 
 	if err := h.prefsRepo.Set(ctx, userID, prefs); err != nil {
