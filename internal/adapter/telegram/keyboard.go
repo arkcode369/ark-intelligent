@@ -112,7 +112,6 @@ func (kb *KeyboardBuilder) CalendarFilter(activeFilter string, dateStr string, i
 	rows = append(rows, []ports.InlineButton{
 		{Text: btnText("🇺🇸 USD", "usd"), CallbackData: "cal:filter:usd:" + dateStr + ":" + viewType},
 		{Text: btnText("🇪🇺 EUR", "eur"), CallbackData: "cal:filter:eur:" + dateStr + ":" + viewType},
-		{Text: btnText("📋 All", "all"), CallbackData: "cal:filter:all:" + dateStr + ":" + viewType},
 	})
 
 	return ports.InlineKeyboard{Rows: rows}

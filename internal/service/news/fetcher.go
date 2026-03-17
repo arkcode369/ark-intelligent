@@ -93,13 +93,7 @@ func (f *FirecrawlFetcher) ScrapeCalendar(ctx context.Context, week string) ([]d
 		return nil, fmt.Errorf("failed fetching med impact: %w", err)
 	}
 
-	log.Printf("[FETCHER] Fetching All impact events...")
-	allEvents, err := f.doScrape(ctx, fmt.Sprintf("https://tradingeconomics.com/calendar?importance=1&d1=%s&d2=%s", d1, d2))
-	if err != nil {
-		return nil, fmt.Errorf("failed fetching all impact: %w", err)
-	}
-
-	return mergeEvents(allEvents, medHighEvents, highEvents), nil
+	return mergeEvents(medHighEvents, highEvents), nil
 }
 
 func (f *FirecrawlFetcher) ScrapeActuals(ctx context.Context, date string) ([]domain.NewsEvent, error) {
@@ -173,28 +167,21 @@ func genKey(e scrapedEvent) string {
 	return e.Date + "|" + e.Time + "|" + strings.ToUpper(e.Country) + "|" + e.Event
 }
 
-func mergeEvents(all, medHigh, high []scrapedEvent) []domain.NewsEvent {
+func mergeEvents(medHigh, high []scrapedEvent) []domain.NewsEvent {
 	highMap := make(map[string]bool)
 	for _, e := range high {
 		highMap[genKey(e)] = true
-	}
-
-	medHighMap := make(map[string]bool)
-	for _, e := range medHigh {
-		medHighMap[genKey(e)] = true
 	}
 
 	wibLoc, _ := time.LoadLocation("Asia/Jakarta")
 	nyLoc, _ := time.LoadLocation("America/New_York")
 
 	var results []domain.NewsEvent
-	for _, raw := range all {
+	for _, raw := range medHigh {
 		k := genKey(raw)
-		impact := "low"
+		impact := "medium"
 		if highMap[k] {
 			impact = "high"
-		} else if medHighMap[k] {
-			impact = "medium"
 		}
 
 		// Firecrawl scrape returns timezone in NY (EST/EDT) usually from TradingEconomics
