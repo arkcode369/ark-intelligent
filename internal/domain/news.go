@@ -30,6 +30,8 @@ func (e NewsEvent) FormatImpactColor() string {
 		return "🟠"
 	case "low":
 		return "🟡"
+	case "holiday":
+		return "🔵"
 	default:
 		return "⚪"
 	}

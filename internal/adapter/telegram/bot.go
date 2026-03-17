@@ -571,6 +571,69 @@ func splitMessage(text string, maxLen int) []string {
 	return chunks
 }
 
+// SendWithKeyboardChunked sends a potentially long HTML message with a keyboard.
+// If the message exceeds 4000 chars, it sends intermediate chunks as plain HTML
+// messages and attaches the keyboard only to the last chunk.
+// Returns the message ID of the last sent message.
+func (b *Bot) SendWithKeyboardChunked(ctx context.Context, chatID string, html string, kb ports.InlineKeyboard) (int, error) {
+	if chatID == "" {
+		chatID = b.defaultID
+	}
+
+	chunks := splitMessage(html, 4000)
+
+	if len(chunks) == 1 {
+		return b.SendWithKeyboard(ctx, chatID, chunks[0], kb)
+	}
+
+	// Send all but the last chunk as plain HTML
+	var lastID int
+	for _, chunk := range chunks[:len(chunks)-1] {
+		id, err := b.SendHTML(ctx, chatID, chunk)
+		if err != nil {
+			return lastID, err
+		}
+		lastID = id
+	}
+
+	// Last chunk gets the keyboard
+	id, err := b.SendWithKeyboard(ctx, chatID, chunks[len(chunks)-1], kb)
+	if err != nil {
+		return lastID, err
+	}
+	return id, nil
+}
+
+// EditWithKeyboardChunked edits the given message with the first chunk and sends
+// additional chunks as new messages. Keyboard is attached to the last message.
+func (b *Bot) EditWithKeyboardChunked(ctx context.Context, chatID string, msgID int, html string, kb ports.InlineKeyboard) error {
+	if chatID == "" {
+		chatID = b.defaultID
+	}
+
+	chunks := splitMessage(html, 4000)
+
+	if len(chunks) == 1 {
+		return b.EditWithKeyboard(ctx, chatID, msgID, chunks[0], kb)
+	}
+
+	// Edit the original message with the first chunk (no keyboard yet)
+	if err := b.EditMessage(ctx, chatID, msgID, chunks[0]); err != nil {
+		return err
+	}
+
+	// Send intermediate chunks as new messages (no keyboard)
+	for _, chunk := range chunks[1 : len(chunks)-1] {
+		if _, err := b.SendHTML(ctx, chatID, chunk); err != nil {
+			return err
+		}
+	}
+
+	// Last chunk as new message with keyboard
+	_, err := b.SendWithKeyboard(ctx, chatID, chunks[len(chunks)-1], kb)
+	return err
+}
+
 // DefaultChatID returns the configured default chat ID.
 func (b *Bot) DefaultChatID() string {
 	return b.defaultID

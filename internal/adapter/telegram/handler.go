@@ -480,6 +480,19 @@ func currencyToContractCode(currency string) string {
 // /calendar & Callbacks — Economic Calendar
 // ---------------------------------------------------------------------------
 
+// sendCalendarChunked sends or edits a calendar message, automatically chunking
+// if the HTML exceeds Telegram's 4096-char limit. The keyboard is always
+// attached to the last chunk.
+//   - msgID == 0 → new message (send)
+//   - msgID >  0 → edit existing message, overflow as new messages
+func (h *Handler) sendCalendarChunked(ctx context.Context, chatID string, msgID int, html string, kb ports.InlineKeyboard) error {
+	if msgID > 0 {
+		return h.bot.EditWithKeyboardChunked(ctx, chatID, msgID, html, kb)
+	}
+	_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, html, kb)
+	return err
+}
+
 func (h *Handler) cmdCalendar(ctx context.Context, chatID string, userID int64, args string) error {
 	now := timeutil.NowWIB()
 
@@ -489,10 +502,9 @@ func (h *Handler) cmdCalendar(ctx context.Context, chatID string, userID int64, 
 			_, err = h.bot.SendHTML(ctx, chatID, "Failed to get weekly calendar")
 			return err
 		}
-		html := h.fmt.FormatCalendarWeek(now.Format("Jan 02, 2006"), events, "med")
-		kb := h.kb.CalendarFilter("med", now.Format("20060102"), true)
-		_, err = h.bot.SendWithKeyboard(ctx, chatID, html, kb)
-		return err
+		html := h.fmt.FormatCalendarWeek(now.Format("Jan 02, 2006"), events, "all")
+		kb := h.kb.CalendarFilter("all", now.Format("20060102"), true)
+		return h.sendCalendarChunked(ctx, chatID, 0, html, kb)
 	}
 
 	dateStr := now.Format("20060102")
@@ -502,10 +514,9 @@ func (h *Handler) cmdCalendar(ctx context.Context, chatID string, userID int64, 
 		return err
 	}
 
-	html := h.fmt.FormatCalendarDay(now.Format("Mon Jan 02, 2006"), events, "med")
-	kb := h.kb.CalendarFilter("med", dateStr, false)
-	_, err = h.bot.SendWithKeyboard(ctx, chatID, html, kb)
-	return err
+	html := h.fmt.FormatCalendarDay(now.Format("Mon Jan 02, 2006"), events, "all")
+	kb := h.kb.CalendarFilter("all", dateStr, false)
+	return h.sendCalendarChunked(ctx, chatID, 0, html, kb)
 }
 
 func (h *Handler) cbNewsFilter(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
@@ -560,7 +571,7 @@ func (h *Handler) cbNewsFilter(ctx context.Context, chatID string, msgID int, us
 	}
 
 	kb := h.kb.CalendarFilter(filter, dateStr, isWeek)
-	return h.bot.EditWithKeyboard(ctx, chatID, msgID, html, kb)
+	return h.sendCalendarChunked(ctx, chatID, msgID, html, kb)
 }
 
 func (h *Handler) cbNewsNav(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
@@ -637,7 +648,7 @@ func (h *Handler) cbNewsNav(ctx context.Context, chatID string, msgID int, userI
 	}
 
 	kb := h.kb.CalendarFilter(activeFilter, targetDateStr, isWeek)
-	return h.bot.EditWithKeyboard(ctx, chatID, msgID, html, kb)
+	return h.sendCalendarChunked(ctx, chatID, msgID, html, kb)
 }
 
 // handleMonthNav handles prevmonth / thismonth / nextmonth navigation.
@@ -686,5 +697,5 @@ func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, 
 	monthLabel := time.Date(targetYear, targetMonth, 1, 0, 0, 0, 0, time.UTC).Format("January 2006")
 	html := h.fmt.FormatCalendarMonth(monthLabel, events, "all")
 	kb := h.kb.CalendarFilter("all", targetDateStr, true)
-	return h.bot.EditWithKeyboard(ctx, chatID, msgID, html, kb)
+	return h.sendCalendarChunked(ctx, chatID, msgID, html, kb)
 }
