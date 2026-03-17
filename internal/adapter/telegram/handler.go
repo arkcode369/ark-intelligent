@@ -598,7 +598,7 @@ func (h *Handler) cbNewsNav(ctx context.Context, chatID string, msgID int, userI
 	}
 
 	if len(events) == 0 {
-		_ = h.bot.EditMessage(ctx, chatID, msgID, "Fetching calendar from ForexFactory... (15s) ⏳")
+		_ = h.bot.EditMessage(ctx, chatID, msgID, "Fetching calendar from Trading Economics... (15s) ⏳")
 		if isWeek {
 			rangeType := "this"
 			if targetDate.After(timeutil.NowWIB()) {
