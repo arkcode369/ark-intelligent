@@ -225,6 +225,18 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 		}
 	}
 
+	// Inject FRED macro context (non-fatal if fails — uses cache if available)
+	if editMsgID == 0 {
+		macroData, fredErr := fred.GetCachedOrFetch(ctx)
+		if fredErr == nil && macroData != nil {
+			regime := fred.ClassifyMacroRegime(macroData)
+			fredCtx := h.fmt.FormatFREDContext(macroData, regime)
+			if fredCtx != "" {
+				html += fredCtx
+			}
+		}
+	}
+
 	// P1.4 — Upcoming Catalysts: fetch events for next 48h for this currency
 	if editMsgID == 0 && h.newsRepo != nil {
 		now := timeutil.NowWIB()
@@ -328,8 +340,8 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		}
 		result, err = h.aiAnalyzer.AnalyzeNewsOutlook(ctx, weekEvts, prefs.Language)
 	} else if subcmd == "fred" {
-		// Fetch fresh FRED data then run AI analysis
-		macroData, fredErr := fred.FetchMacroData(ctx)
+		// Use cached FRED data (or fetch fresh if stale) then run AI analysis
+		macroData, fredErr := fred.GetCachedOrFetch(ctx)
 		if fredErr != nil || macroData == nil {
 			_ = h.bot.EditMessage(ctx, chatID, placeholderID, "Failed to fetch FRED macro data. Check FRED_API_KEY.")
 			return fredErr
@@ -338,8 +350,8 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	} else if subcmd == "combine" {
 		cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
 		weekEvts, _ := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
-		// Fetch FRED data for enriched combine analysis — non-fatal if it fails
-		macroData, _ := fred.FetchMacroData(ctx)
+		// Use cached FRED data — non-fatal if it fails
+		macroData, _ := fred.GetCachedOrFetch(ctx)
 		weeklyData := ports.WeeklyData{
 			COTAnalyses: cotAnalyses,
 			NewsEvents:  weekEvts,
@@ -812,10 +824,20 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 // ---------------------------------------------------------------------------
 
 // cmdMacro handles the /macro command — fetches FRED data and displays macro regime.
+// Usage: /macro (uses cache) or /macro refresh (force re-fetch from FRED).
 func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, args string) error {
-	placeholderID, _ := h.bot.SendHTML(ctx, chatID, "🏦 Fetching FRED macro data... ⏳ (5-10s)")
+	forceRefresh := strings.EqualFold(strings.TrimSpace(args), "refresh")
+	if forceRefresh {
+		fred.InvalidateCache()
+	}
 
-	data, err := fred.FetchMacroData(ctx)
+	cacheStatus := "🏦 Fetching FRED macro data... ⏳ (5-15s)"
+	if !forceRefresh && fred.CacheAge() >= 0 {
+		cacheStatus = "🏦 Loading FRED macro data (from cache)... ⏳"
+	}
+	placeholderID, _ := h.bot.SendHTML(ctx, chatID, cacheStatus)
+
+	data, err := fred.GetCachedOrFetch(ctx)
 	if err != nil {
 		return h.bot.EditMessage(ctx, chatID, placeholderID,
 			fmt.Sprintf("Failed to fetch FRED data: %v\n\nMake sure FRED_API_KEY is set in .env", err))

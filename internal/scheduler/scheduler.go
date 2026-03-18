@@ -23,6 +23,7 @@ import (
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
 	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
+	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
 	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"
 )
 
@@ -51,11 +52,12 @@ type Intervals struct {
 
 // Scheduler manages all background periodic jobs.
 type Scheduler struct {
-	deps    *Deps
-	stopCh  chan struct{}
-	wg      sync.WaitGroup
-	running bool
-	mu      sync.Mutex
+	deps         *Deps
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
+	running      bool
+	mu           sync.Mutex
+	lastFREDData *fred.MacroData // previous FRED snapshot for alert diffing
 }
 
 // New creates a new Scheduler.
@@ -83,7 +85,10 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 	// Weekly outlook (check every hour, fires on Sunday 18:00 WIB)
 	s.startJob(ctx, "weekly-outlook", 1*time.Hour, s.jobWeeklyOutlook)
 
-	log.Printf("[SCHED] Started 2 background jobs")
+	// FRED alert monitor (checks every hour for regime changes)
+	s.startJob(ctx, "fred-alerts", 1*time.Hour, s.jobFREDAlerts)
+
+	log.Printf("[SCHED] Started 3 background jobs")
 }
 
 // Stop signals all jobs to stop and waits for them to finish.
@@ -260,6 +265,50 @@ func (s *Scheduler) jobWeeklyOutlook(ctx context.Context) error {
 	}
 
 	log.Println("[SCHED:weekly-outlook] Weekly outlook sent")
+	return nil
+}
+
+// jobFREDAlerts checks for FRED macro regime changes and broadcasts alerts to subscribed users.
+// Runs every hour. Compares the freshly fetched MacroData against the previous snapshot.
+func (s *Scheduler) jobFREDAlerts(ctx context.Context) error {
+	current, err := fred.GetCachedOrFetch(ctx)
+	if err != nil {
+		return fmt.Errorf("fred fetch for alerts: %w", err)
+	}
+
+	s.mu.Lock()
+	previous := s.lastFREDData
+	s.lastFREDData = current
+	s.mu.Unlock()
+
+	alerts := fred.CheckAlerts(current, previous)
+	if len(alerts) == 0 {
+		return nil
+	}
+
+	log.Printf("[SCHED:fred-alerts] %d alert(s) detected", len(alerts))
+
+	activeUsers, err := s.deps.PrefsRepo.GetAllActive(ctx)
+	if err != nil {
+		return fmt.Errorf("get active users for fred alerts: %w", err)
+	}
+
+	for _, alert := range alerts {
+		msg := fred.FormatMacroAlert(alert)
+		count := 0
+		for userID, prefs := range activeUsers {
+			if !prefs.COTAlertsEnabled {
+				continue
+			}
+			chatID := fmt.Sprintf("%d", userID)
+			if _, sendErr := s.deps.Bot.SendHTML(ctx, chatID, msg); sendErr == nil {
+				count++
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		log.Printf("[SCHED:fred-alerts] Alert %q sent to %d users", alert.Type, count)
+	}
+
 	return nil
 }
 

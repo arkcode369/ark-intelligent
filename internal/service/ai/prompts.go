@@ -206,17 +206,25 @@ func BuildFREDOutlookPrompt(data *fred.MacroData, regime fred.MacroRegime, lang 
 
 	b.WriteString("=== FRED QUANTITATIVE DATA ===\n")
 
-	// Yield curve
+	// Yield curve (2Y-10Y)
 	b.WriteString(fmt.Sprintf("2Y Treasury:       %.2f%%\n", data.Yield2Y))
 	b.WriteString(fmt.Sprintf("10Y Treasury:      %.2f%%\n", data.Yield10Y))
-	b.WriteString(fmt.Sprintf("Yield Spread:      %.2f%% (%s)\n", data.YieldSpread, regime.YieldCurve))
+	b.WriteString(fmt.Sprintf("2Y-10Y Spread:     %+.2f%% %s (%s)\n",
+		data.YieldSpread, data.YieldSpreadTrend.Arrow(), regime.YieldCurve))
+
+	// 3M-10Y spread (NY Fed recession predictor)
+	if data.Yield3M > 0 {
+		b.WriteString(fmt.Sprintf("3M Treasury:       %.2f%%\n", data.Yield3M))
+		b.WriteString(fmt.Sprintf("3M-10Y Spread:     %+.2f%% (%s)\n", data.Spread3M10Y, regime.Yield3M10Y))
+	}
 
 	// Inflation
 	if data.CorePCE > 0 {
-		b.WriteString(fmt.Sprintf("Core PCE:          %.2f%% (%s)\n", data.CorePCE, regime.Inflation))
+		b.WriteString(fmt.Sprintf("Core PCE:          %.2f%% %s (%s)\n",
+			data.CorePCE, data.CorePCETrend.Arrow(), regime.Inflation))
 	}
 	if data.CPI > 0 {
-		b.WriteString(fmt.Sprintf("CPI (headline):    %.2f%%\n", data.CPI))
+		b.WriteString(fmt.Sprintf("CPI (headline):    %.2f%% %s\n", data.CPI, data.CPITrend.Arrow()))
 	}
 	if data.Breakeven5Y > 0 {
 		b.WriteString(fmt.Sprintf("10Y Breakeven:     %.2f%%\n", data.Breakeven5Y))
@@ -224,26 +232,61 @@ func BuildFREDOutlookPrompt(data *fred.MacroData, regime fred.MacroRegime, lang 
 
 	// Monetary policy
 	if data.FedFundsRate > 0 {
-		b.WriteString(fmt.Sprintf("Fed Funds Rate:    %.2f%% (%s)\n", data.FedFundsRate, regime.MonPolicy))
+		realRate := data.FedFundsRate - data.Breakeven5Y
+		b.WriteString(fmt.Sprintf("Fed Funds Rate:    %.2f%% (Real Rate: %+.2f%%) (%s)\n",
+			data.FedFundsRate, realRate, regime.MonPolicy))
+	}
+	if data.SOFR > 0 {
+		b.WriteString(fmt.Sprintf("SOFR:              %.2f%%\n", data.SOFR))
+	}
+	if data.IORB > 0 {
+		b.WriteString(fmt.Sprintf("IORB:              %.2f%%\n", data.IORB))
+	}
+	if regime.SOFRLabel != "N/A" && regime.SOFRLabel != "" {
+		b.WriteString(fmt.Sprintf("SOFR/IORB Status:  %s\n", regime.SOFRLabel))
 	}
 
 	// Financial stress
-	b.WriteString(fmt.Sprintf("NFCI:              %.3f (%s)\n", data.NFCI, regime.FinStress))
+	b.WriteString(fmt.Sprintf("NFCI:              %.3f %s (%s)\n",
+		data.NFCI, data.NFCITrend.Arrow(), regime.FinStress))
 	if data.TedSpread > 0 {
 		b.WriteString(fmt.Sprintf("TED Spread:        %.0f bps\n", data.TedSpread))
 	}
 
 	// Labor
 	if data.InitialClaims > 0 {
-		b.WriteString(fmt.Sprintf("Initial Claims:    %.0fK/week\n", data.InitialClaims/1_000))
+		b.WriteString(fmt.Sprintf("Initial Claims:    %.0fK/week %s\n",
+			data.InitialClaims/1_000, data.ClaimsTrend.Arrow()))
 	}
 	if data.UnemployRate > 0 {
 		b.WriteString(fmt.Sprintf("Unemployment:      %.1f%%\n", data.UnemployRate))
 	}
 
+	// Sahm Rule
+	if data.SahmRule > 0 {
+		triggered := ""
+		if data.SahmRule >= 0.5 {
+			triggered = " ⚠️ RECESSION SIGNAL"
+		}
+		b.WriteString(fmt.Sprintf("Sahm Rule:         %.2f%s (%s)\n",
+			data.SahmRule, triggered, regime.SahmLabel))
+	}
+
 	// Growth
 	if data.GDPGrowth != 0 {
 		b.WriteString(fmt.Sprintf("Real GDP Growth:   %.1f%% QoQ ann. (%s)\n", data.GDPGrowth, regime.Growth))
+	}
+
+	// M2 money supply
+	if data.M2Growth != 0 {
+		b.WriteString(fmt.Sprintf("M2 YoY Growth:     %+.1f%% %s (%s)\n",
+			data.M2Growth, data.M2GrowthTrend.Arrow(), regime.M2Label))
+	}
+
+	// Fed balance sheet
+	if data.FedBalSheet > 0 {
+		b.WriteString(fmt.Sprintf("Fed Balance Sheet: $%.2fT %s (%s)\n",
+			data.FedBalSheet/1_000, data.FedBalSheetTrend.Arrow(), regime.FedBalance))
 	}
 
 	// USD
@@ -254,16 +297,17 @@ func BuildFREDOutlookPrompt(data *fred.MacroData, regime fred.MacroRegime, lang 
 	b.WriteString("\n=== DERIVED REGIME ===\n")
 	b.WriteString(fmt.Sprintf("Macro Regime:      %s\n", regime.Name))
 	b.WriteString(fmt.Sprintf("Risk-Off Score:    %d/100\n", regime.Score))
+	b.WriteString(fmt.Sprintf("Recession Risk:    %s\n", regime.RecessionRisk))
 	b.WriteString(fmt.Sprintf("Implied Bias:      %s\n", regime.Bias))
 
 	b.WriteString("\n=== ANALYSIS REQUESTED ===\n")
 	b.WriteString("Provide a structured FRED Macro Outlook covering:\n")
-	b.WriteString("1. FED POLICY OUTLOOK: Given current FFR, inflation, and yield curve shape — what is the likely Fed trajectory? Rate cuts, holds, or hikes?\n")
-	b.WriteString("2. USD STRUCTURAL BIAS: Based on real rates (FFR - breakeven), DXY level, and financial conditions — what is the medium-term dollar outlook?\n")
-	b.WriteString("3. RISK APPETITE: Using NFCI, yield curve, and labor data together — assess current risk-on vs risk-off positioning pressure.\n")
-	b.WriteString("4. GOLD & SAFE HAVENS: Given real yields and financial stress indicators — is gold/JPY/CHF structurally attractive?\n")
-	b.WriteString("5. GROWTH TRAJECTORY: Based on GDP + labor + yield curve — is the economy heading toward expansion, slowdown, or recession?\n")
-	b.WriteString("6. KEY INFLECTION POINTS: What specific data releases (e.g. next CPI, NFP, FOMC) could change this regime?\n")
+	b.WriteString("1. FED POLICY OUTLOOK: Given current FFR, real rate, inflation trends (Core PCE + CPI arrows), and yield curve shape — what is the likely Fed trajectory? Rate cuts, holds, or hikes?\n")
+	b.WriteString("2. USD STRUCTURAL BIAS: Based on real rates (FFR - breakeven), SOFR/IORB spread, DXY level, M2 growth trend, and financial conditions — what is the medium-term dollar outlook?\n")
+	b.WriteString("3. RISK APPETITE: Using NFCI trend, both yield curves (2Y-10Y AND 3M-10Y), Sahm Rule, and labor data together — assess current risk-on vs risk-off pressure.\n")
+	b.WriteString("4. GOLD & SAFE HAVENS: Given real yields, financial stress, Fed balance sheet direction (QE/QT), and Sahm Rule reading — is gold/JPY/CHF structurally attractive?\n")
+	b.WriteString("5. GROWTH TRAJECTORY: Based on GDP + labor + yield curve + Sahm Rule — is the economy heading toward expansion, slowdown, or recession?\n")
+	b.WriteString("6. KEY INFLECTION POINTS: What specific data releases (e.g. next CPI, NFP, FOMC) could change this regime? What Sahm/curve levels would trigger regime shift?\n")
 
 	return b.String()
 }
@@ -299,30 +343,72 @@ func BuildCombinedWithFREDPrompt(data ports.WeeklyData, regime fred.MacroRegime)
 	if data.MacroData != nil {
 		b.WriteString("\n=== 3. FRED MACRO BACKDROP ===\n")
 		m := data.MacroData
-		b.WriteString(fmt.Sprintf("Macro Regime: %s (Risk-Off Score: %d/100)\n", regime.Name, regime.Score))
-		b.WriteString(fmt.Sprintf("Yield Curve: %.2f%% spread (%s)\n", m.YieldSpread, regime.YieldCurve))
-		if m.CorePCE > 0 {
-			b.WriteString(fmt.Sprintf("Core PCE: %.2f%% | ", m.CorePCE))
+		b.WriteString(fmt.Sprintf("Macro Regime: %s (Risk-Off Score: %d/100 | Recession Risk: %s)\n",
+			regime.Name, regime.Score, regime.RecessionRisk))
+
+		// Yield curves
+		b.WriteString(fmt.Sprintf("2Y-10Y Spread: %+.2f%% %s (%s)\n",
+			m.YieldSpread, m.YieldSpreadTrend.Arrow(), regime.YieldCurve))
+		if m.Yield3M > 0 {
+			b.WriteString(fmt.Sprintf("3M-10Y Spread: %+.2f%% (%s)\n", m.Spread3M10Y, regime.Yield3M10Y))
 		}
-		if m.FedFundsRate > 0 {
-			b.WriteString(fmt.Sprintf("FFR: %.2f%%\n", m.FedFundsRate))
+
+		// Inflation
+		if m.CorePCE > 0 {
+			b.WriteString(fmt.Sprintf("Core PCE: %.2f%% %s | ", m.CorePCE, m.CorePCETrend.Arrow()))
+		}
+		if m.CPI > 0 {
+			b.WriteString(fmt.Sprintf("CPI: %.2f%% %s\n", m.CPI, m.CPITrend.Arrow()))
 		} else {
 			b.WriteString("\n")
 		}
-		b.WriteString(fmt.Sprintf("NFCI: %.3f (%s)\n", m.NFCI, regime.FinStress))
+
+		// Monetary policy
+		if m.FedFundsRate > 0 {
+			realRate := m.FedFundsRate - m.Breakeven5Y
+			b.WriteString(fmt.Sprintf("FFR: %.2f%% (Real: %+.2f%%)", m.FedFundsRate, realRate))
+		}
+		if m.SOFR > 0 && m.IORB > 0 {
+			b.WriteString(fmt.Sprintf(" | SOFR: %.2f%% IORB: %.2f%%", m.SOFR, m.IORB))
+		}
+		b.WriteString("\n")
+
+		// Financial stress
+		b.WriteString(fmt.Sprintf("NFCI: %.3f %s (%s)\n", m.NFCI, m.NFCITrend.Arrow(), regime.FinStress))
+
+		// Labor
 		if m.InitialClaims > 0 {
-			b.WriteString(fmt.Sprintf("Claims: %.0fK | ", m.InitialClaims/1_000))
+			b.WriteString(fmt.Sprintf("Claims: %.0fK %s | ", m.InitialClaims/1_000, m.ClaimsTrend.Arrow()))
 		}
 		if m.UnemployRate > 0 {
 			b.WriteString(fmt.Sprintf("U-Rate: %.1f%%\n", m.UnemployRate))
 		} else {
 			b.WriteString("\n")
 		}
-		if m.DXY > 0 {
-			b.WriteString(fmt.Sprintf("DXY: %.1f (%s)\n", m.DXY, regime.USDStrength))
+
+		// Sahm Rule
+		if m.SahmRule > 0 {
+			b.WriteString(fmt.Sprintf("Sahm Rule: %.2f (%s)\n", m.SahmRule, regime.SahmLabel))
 		}
+
+		// Growth & money supply
 		if m.GDPGrowth != 0 {
 			b.WriteString(fmt.Sprintf("GDP Growth: %.1f%% QoQ ann.\n", m.GDPGrowth))
+		}
+		if m.M2Growth != 0 {
+			b.WriteString(fmt.Sprintf("M2 YoY: %+.1f%% %s (%s)\n",
+				m.M2Growth, m.M2GrowthTrend.Arrow(), regime.M2Label))
+		}
+
+		// Fed balance sheet
+		if m.FedBalSheet > 0 {
+			b.WriteString(fmt.Sprintf("Fed Balance: $%.2fT %s (%s)\n",
+				m.FedBalSheet/1_000, m.FedBalSheetTrend.Arrow(), regime.FedBalance))
+		}
+
+		// USD
+		if m.DXY > 0 {
+			b.WriteString(fmt.Sprintf("DXY: %.1f (%s)\n", m.DXY, regime.USDStrength))
 		}
 		b.WriteString(fmt.Sprintf("Implied Bias: %s\n", regime.Bias))
 	}

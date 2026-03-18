@@ -723,46 +723,67 @@ func (f *Formatter) FormatUpcomingCatalysts(currency string, events []domain.New
 // ---------------------------------------------------------------------------
 
 // FormatMacroRegime formats the FRED macro regime dashboard message.
-// P3.2 — /macro command output.
+// P3.2 — /macro command output. Now includes trend arrows, Sahm Rule, 3M-10Y spread,
+// SOFR/IORB, Fed balance sheet, and M2 YoY growth.
 func (f *Formatter) FormatMacroRegime(regime fred.MacroRegime, data *fred.MacroData) string {
 	var b strings.Builder
 
-	// Risk score bar (20 chars)
 	riskBar := buildRiskBar(regime.Score, 15)
 
 	b.WriteString("🏦 <b>MACRO REGIME DASHBOARD</b>\n")
 	b.WriteString(fmt.Sprintf("<i>FRED Data — Updated %s WIB</i>\n\n", data.FetchedAt.Format("02 Jan 15:04")))
 	b.WriteString(fmt.Sprintf("<b>REGIME: %s</b>  Risk: %d/100\n", regime.Name, regime.Score))
-	b.WriteString(fmt.Sprintf("<code>[%s]</code>\n\n", riskBar))
+	b.WriteString(fmt.Sprintf("<code>[%s]</code>\n", riskBar))
+	b.WriteString(fmt.Sprintf("<code>Recession Risk: %s</code>\n\n", regime.RecessionRisk))
 
-	// Yield Curve
-	b.WriteString(fmt.Sprintf("<code>Yield Curve  : %s</code>\n", regime.YieldCurve))
+	// --- Yield Curve ---
+	b.WriteString(fmt.Sprintf("<code>2Y-10Y Curve : %s</code>\n", regime.YieldCurve))
 	b.WriteString(fmt.Sprintf("<code>               10Y=%.2f%% | 2Y=%.2f%%</code>\n", data.Yield10Y, data.Yield2Y))
+	if regime.Yield3M10Y != "N/A" && regime.Yield3M10Y != "" {
+		b.WriteString(fmt.Sprintf("<code>3M-10Y Curve : %s</code>\n", regime.Yield3M10Y))
+		if data.Yield3M > 0 {
+			b.WriteString(fmt.Sprintf("<code>               3M=%.2f%%</code>\n", data.Yield3M))
+		}
+	}
 
-	// Inflation
-	b.WriteString(fmt.Sprintf("<code>Core PCE     : %s</code>\n", regime.Inflation))
+	// --- Inflation ---
+	b.WriteString(fmt.Sprintf("\n<code>Core PCE     : %s</code>\n", regime.Inflation))
 	if data.Breakeven5Y > 0 {
 		realRate := data.FedFundsRate - data.Breakeven5Y
 		b.WriteString(fmt.Sprintf("<code>10Y Breakeven: %.2f%% | Real Rate: %+.2f%%</code>\n", data.Breakeven5Y, realRate))
 	}
+	if regime.M2Label != "N/A" && regime.M2Label != "" {
+		b.WriteString(fmt.Sprintf("<code>M2 Supply    : %s</code>\n", regime.M2Label))
+	}
 
-	// Monetary Policy
+	// --- Monetary Policy ---
 	if data.FedFundsRate > 0 {
-		b.WriteString(fmt.Sprintf("<code>Mon. Policy  : %s</code>\n", regime.MonPolicy))
+		b.WriteString(fmt.Sprintf("\n<code>Mon. Policy  : %s</code>\n", regime.MonPolicy))
+	}
+	if regime.SOFRLabel != "N/A" && regime.SOFRLabel != "" {
+		b.WriteString(fmt.Sprintf("<code>SOFR/IORB    : %s</code>\n", regime.SOFRLabel))
+	}
+	if regime.FedBalance != "N/A" && regime.FedBalance != "" {
+		b.WriteString(fmt.Sprintf("<code>Fed Balance  : %s</code>\n", regime.FedBalance))
 	}
 
-	// Financial Stress
-	b.WriteString(fmt.Sprintf("<code>Fin. Stress  : %s</code>\n", regime.FinStress))
+	// --- Financial Stress ---
+	b.WriteString(fmt.Sprintf("\n<code>Fin. Stress  : %s</code>\n", regime.FinStress))
 
-	// Labor
-	b.WriteString(fmt.Sprintf("<code>Labor Market : %s</code>\n", regime.Labor))
+	// --- Labor + Sahm ---
+	b.WriteString(fmt.Sprintf("\n<code>Labor Market : %s</code>\n", regime.Labor))
+	if regime.SahmAlert {
+		b.WriteString(fmt.Sprintf("<code>Sahm Rule    : %s</code> ← 🚨 RECESSION SIGNAL\n", regime.SahmLabel))
+	} else if regime.SahmLabel != "N/A" && regime.SahmLabel != "" {
+		b.WriteString(fmt.Sprintf("<code>Sahm Rule    : %s</code>\n", regime.SahmLabel))
+	}
 
-	// Growth
+	// --- Growth ---
 	if regime.Growth != "N/A" && regime.Growth != "" {
-		b.WriteString(fmt.Sprintf("<code>GDP Growth   : %s</code>\n", regime.Growth))
+		b.WriteString(fmt.Sprintf("\n<code>GDP Growth   : %s</code>\n", regime.Growth))
 	}
 
-	// USD
+	// --- USD ---
 	if regime.USDStrength != "N/A" && regime.USDStrength != "" {
 		b.WriteString(fmt.Sprintf("<code>USD Strength : %s</code>\n", regime.USDStrength))
 	}
@@ -770,7 +791,45 @@ func (f *Formatter) FormatMacroRegime(regime fred.MacroRegime, data *fred.MacroD
 	b.WriteString(fmt.Sprintf("\n→ <b>%s</b>\n", regime.Bias))
 	b.WriteString(fmt.Sprintf("<i>%s</i>\n", regime.Description))
 
-	b.WriteString("\n<i>Data: St. Louis FRED | </i><code>/macro</code><i> to refresh | </i><code>/outlook fred</code><i> for AI analysis</i>")
+	// Cache age hint
+	age := fred.CacheAge()
+	cacheNote := "live fetch"
+	if age >= 0 {
+		cacheNote = fmt.Sprintf("cached %dm ago", int(age.Minutes()))
+	}
+	b.WriteString(fmt.Sprintf("\n<i>St. Louis FRED (%s) | </i><code>/macro refresh</code><i> to force-update | </i><code>/outlook fred</code><i> for AI analysis</i>", cacheNote))
+	return b.String()
+}
+
+// FormatFREDContext formats a compact FRED macro context block for COT detail view.
+// Shows the most tradable macro filters relevant to currency positioning.
+func (f *Formatter) FormatFREDContext(data *fred.MacroData, regime fred.MacroRegime) string {
+	if data == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n🏦 <b>FRED Macro Context:</b>\n")
+
+	// Line 1: Core macro trinity
+	realRate := data.FedFundsRate - data.Breakeven5Y
+	b.WriteString(fmt.Sprintf("<code>DXY: %.1f | Real Rate: %+.2f%% | NFCI: %.3f %s</code>\n",
+		data.DXY, realRate, data.NFCI, data.NFCITrend.Arrow()))
+
+	// Line 2: Regime + bias (truncated for space)
+	b.WriteString(fmt.Sprintf("<code>Regime: %s | Score: %d/100</code>\n", regime.Name, regime.Score))
+	b.WriteString(fmt.Sprintf("<i>→ %s</i>\n", regime.Bias))
+
+	// Line 3: Alert flags
+	if regime.SahmAlert {
+		b.WriteString("🚨 <b>SAHM RULE TRIGGERED — Recession risk HIGH!</b>\n")
+	}
+	if data.Spread3M10Y < 0 && data.Spread3M10Y != 0 {
+		b.WriteString(fmt.Sprintf("🔴 <code>3M-10Y INVERTED: %.2f%% (recession predictor)</code>\n", data.Spread3M10Y))
+	}
+	if data.YieldSpread < 0 {
+		b.WriteString(fmt.Sprintf("⚠️ <code>2Y-10Y INVERTED: %.2f%%</code>\n", data.YieldSpread))
+	}
+
 	return b.String()
 }
 
