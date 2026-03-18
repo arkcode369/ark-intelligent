@@ -19,7 +19,8 @@ Rules:
 - Always state the directional bias (BULLISH/BEARISH/NEUTRAL) clearly.
 - Cite specific numbers from the data provided.
 - Note any conflicting signals or risks.
-- Format for Telegram: use plain text, no markdown headers.
+- Format for Telegram HTML: you may use ONLY these tags: <b>bold</b>, <i>italic</i>, <code>code</code>. NO other HTML tags.
+- NEVER use angle brackets < > for anything other than the allowed HTML tags above. Write currency pairs, labels, and terms as plain text (e.g. write USD not <USD>, write rate cuts not <rate cuts>).
 - Keep responses under 800 words.
 - Use WIB (UTC+7) for all times.`
 

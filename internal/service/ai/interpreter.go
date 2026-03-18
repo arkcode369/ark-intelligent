@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,6 +12,41 @@ import (
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
 	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
 )
+
+// allowedTags are the only HTML tags Telegram Bot API accepts in HTML parse mode.
+var allowedTags = map[string]bool{
+	"b": true, "/b": true,
+	"i": true, "/i": true,
+	"u": true, "/u": true,
+	"s": true, "/s": true,
+	"code": true, "/code": true,
+	"pre": true, "/pre": true,
+	"a": true, "/a": true,
+	"tg-spoiler": true, "/tg-spoiler": true,
+}
+
+// reTags matches any <tag> or </tag> including those with attributes.
+var reTags = regexp.MustCompile(`<(/?\w[\w-]*)(\s[^>]*)?>`)
+
+// sanitizeTelegramHTML strips any HTML tags that Telegram does not support,
+// replacing them with their inner text or escaping the angle brackets.
+// Allowed tags (b, i, u, s, code, pre, a, tg-spoiler) are kept as-is.
+func sanitizeTelegramHTML(s string) string {
+	return reTags.ReplaceAllStringFunc(s, func(match string) string {
+		sub := reTags.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		tagName := strings.ToLower(sub[1])
+		if allowedTags[tagName] {
+			return match // keep valid Telegram tags
+		}
+		// Unknown tag — escape the angle brackets so Telegram won't try to parse it
+		match = strings.ReplaceAll(match, "<", "&lt;")
+		match = strings.ReplaceAll(match, ">", "&gt;")
+		return match
+	})
+}
 
 // WeeklyOutlookData is the internal data structure used by the AI interpreter
 // for generating weekly outlooks. It mirrors ports.WeeklyData but with
@@ -291,7 +327,7 @@ func (ip *Interpreter) fallbackWeeklyOutlook(data WeeklyOutlookData) string {
 
 // formatResponse wraps AI output with a header.
 func formatResponse(header, content string) string {
-	return fmt.Sprintf("=== %s ===\n\n%s", header, content)
+	return fmt.Sprintf("=== %s ===\n\n%s", header, sanitizeTelegramHTML(content))
 }
 
 // throttle adds a small delay between API calls to avoid rate limiting.
