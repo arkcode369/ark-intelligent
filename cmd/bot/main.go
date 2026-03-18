@@ -52,7 +52,7 @@ func main() {
 	log = logger.Component("main")
 
 	log.Info().
-		Str("version", "v1.0").
+		Str("version", "v3.0.0").
 		Str("go", runtime.Version()).
 		Str("os", runtime.GOOS).
 		Str("arch", runtime.GOARCH).

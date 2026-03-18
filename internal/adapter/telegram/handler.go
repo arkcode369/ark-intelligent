@@ -144,7 +144,7 @@ func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, arg
 /settings - Preference management
 /status - System status
 
-<code>ARK Interface v2.1.0</code>`
+<code>ARK Interface v3.0.0</code>`
 
 	_, err := h.bot.SendHTML(ctx, chatID, html)
 	return err
@@ -597,7 +597,7 @@ func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, ar
 <b>Services:</b>
 <code>AI Engine:  %s</code>
 
-<b>Version:</b> v1.0.0`,
+<b>Version:</b> v3.0.0`,
 		now.Format("15:04:05"),
 		len(cotAnalyses),
 		aiStatus,
