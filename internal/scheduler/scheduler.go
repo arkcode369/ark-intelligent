@@ -23,6 +23,7 @@ import (
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
+	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
 	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
 	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
 	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"
@@ -40,6 +41,7 @@ type Deps struct {
 	COTRepo     ports.COTRepository
 	PrefsRepo   ports.PrefsRepository
 	ChatID      string
+	CachedAI    *aisvc.CachedInterpreter
 }
 
 // Intervals configures how often each job runs.
@@ -204,6 +206,10 @@ func (s *Scheduler) jobCOTFetch(ctx context.Context) error {
 	}
 
 	log.Println("[SCHED:cot-fetch] COT data fetched and analyzed")
+	// Invalidate AI caches that depend on COT data
+	if s.deps.CachedAI != nil {
+		s.deps.CachedAI.InvalidateOnCOTUpdate(ctx)
+	}
 	return nil
 }
 
@@ -368,6 +374,11 @@ func (s *Scheduler) jobFREDAlerts(ctx context.Context) error {
 			time.Sleep(50 * time.Millisecond)
 		}
 		log.Printf("[SCHED:fred-alerts] Alert %q sent to %d users", alert.Type, count)
+	}
+
+	// Invalidate AI caches that depend on FRED data
+	if len(alerts) > 0 && s.deps.CachedAI != nil {
+		s.deps.CachedAI.InvalidateOnFREDUpdate(ctx)
 	}
 
 	return nil

@@ -21,6 +21,7 @@ import (
 	"github.com/arkcode369/ff-calendar-bot/internal/adapter/storage"
 	tgbot "github.com/arkcode369/ff-calendar-bot/internal/adapter/telegram"
 	"github.com/arkcode369/ff-calendar-bot/internal/config"
+	"github.com/arkcode369/ff-calendar-bot/internal/ports"
 	"github.com/arkcode369/ff-calendar-bot/internal/scheduler"
 	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
 	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
@@ -71,6 +72,7 @@ func main() {
 	cotRepo := storage.NewCOTRepo(db)
 	prefsRepo := storage.NewPrefsRepo(db)
 	newsRepo := storage.NewNewsRepo(db)
+	cacheRepo := storage.NewCacheRepo(db)
 
 	log.Println("[MAIN] Storage layer initialized")
 	logStorageSize(db)
@@ -85,15 +87,18 @@ func main() {
 	// -----------------------------------------------------------------------
 	// 5. AI layer (optional — graceful degradation)
 	// -----------------------------------------------------------------------
-	var aiAnalyzer *aisvc.Interpreter
+	var aiAnalyzer ports.AIAnalyzer
+	var cachedAI *aisvc.CachedInterpreter
 
 	if cfg.HasGemini() {
 		gemini, err := aisvc.NewGeminiClient(ctx, cfg.GeminiAPIKey)
 		if err != nil {
 			log.Printf("[MAIN] WARNING: Gemini init failed, AI features disabled: %v", err)
 		} else {
-			aiAnalyzer = aisvc.NewInterpreter(gemini, eventRepo, cotRepo)
-			log.Println("[MAIN] Gemini AI initialized")
+			rawAI := aisvc.NewInterpreter(gemini, eventRepo, cotRepo)
+			cachedAI = aisvc.NewCachedInterpreter(rawAI, cacheRepo)
+			aiAnalyzer = cachedAI
+			log.Println("[MAIN] Gemini AI initialized (with cache layer)")
 		}
 	} else {
 		log.Println("[MAIN] No GEMINI_API_KEY — AI features disabled (template fallback active)")
@@ -121,6 +126,7 @@ func main() {
 		COTRepo:     cotRepo,
 		PrefsRepo:   prefsRepo,
 		ChatID:      cfg.ChatID,
+		CachedAI:    cachedAI,
 	})
 
 	sched.Start(ctx, &scheduler.Intervals{
@@ -131,6 +137,12 @@ func main() {
 	// P1.1: cotRepo injected for Confluence Alert cross-check on actual releases
 	// newsSched is created before NewHandler so the surprise accumulator can be injected.
 	newsSched := newssvc.NewScheduler(newsRepo, newsFetcher, aiAnalyzer, bot, prefsRepo, cotRepo)
+
+	// Wire AI cache invalidation on significant news releases
+	if cachedAI != nil {
+		newsSched.SetNewsInvalidateFunc(cachedAI.InvalidateOnNewsUpdate)
+	}
+
 	newsSched.Start(ctx)
 	log.Println("[MAIN] News Background scheduler started")
 
@@ -246,7 +258,7 @@ func main() {
 // ---------------------------------------------------------------------------
 
 // aiStatus returns a human-readable AI status string.
-func aiStatus(ai *aisvc.Interpreter) string {
+func aiStatus(ai ports.AIAnalyzer) string {
 	if ai != nil && ai.IsAvailable() {
 		return "Active"
 	}

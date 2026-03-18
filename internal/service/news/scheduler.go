@@ -38,6 +38,10 @@ type Scheduler struct {
 	surpriseAccum map[string]float64
 	// surpriseWeek tracks the current ISO week global key (e.g. "202612") for auto-reset.
 	surpriseWeek string
+
+	// onNewsInvalidate is called when significant news data changes (new releases with high surprise).
+	// Used by AI cache layer to invalidate news-dependent caches.
+	onNewsInvalidate func(ctx context.Context)
 }
 
 // NewScheduler creates a new background scheduler.
@@ -59,6 +63,11 @@ func NewScheduler(
 		sentReminders: make(map[string]bool),
 		surpriseAccum: make(map[string]float64),
 	}
+}
+
+// SetNewsInvalidateFunc sets the callback for news cache invalidation.
+func (s *Scheduler) SetNewsInvalidateFunc(fn func(ctx context.Context)) {
+	s.onNewsInvalidate = fn
 }
 
 // Start begins the background monitoring loop.
@@ -622,6 +631,11 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 							time.Sleep(50 * time.Millisecond)
 						}
 					}
+				}
+
+				// Invalidate news-dependent AI caches
+				if s.onNewsInvalidate != nil {
+					s.onNewsInvalidate(ctx)
 				}
 			}
 		}

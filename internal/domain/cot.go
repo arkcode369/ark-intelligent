@@ -43,7 +43,6 @@ type COTRecord struct {
 
 	// Open Interest
 	OpenInterest    float64 `json:"open_interest"`
-	OpenInterestOld float64 `json:"open_interest_old"` // Previous week (unused legacy)
 
 	// --- A. TFF (Financials: Currencies/Bonds) ---
 	DealerLong    float64 `json:"dealer_long"`
@@ -305,6 +304,7 @@ type COTAnalysis struct {
 	// --- I. FRED-Adjusted Scores ---
 	RegimeAdjustedScore float64 `json:"regime_adjusted_score"`
 
+	// AINarrative is reserved for per-contract AI narrative caching (populated by cache layer).
 	AINarrative string `json:"ai_narrative,omitempty"`
 }
 
