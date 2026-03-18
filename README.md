@@ -1,4 +1,4 @@
-# FF Calendar Bot
+# ARK Intelligent
 
 Institutional-grade macro intelligence Telegram bot for forex traders, delivering COT positioning, economic calendar events, FRED macro data, and AI-powered analysis.
 
