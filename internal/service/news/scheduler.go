@@ -11,6 +11,8 @@ import (
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
+	"github.com/arkcode369/ff-calendar-bot/internal/service/cot"
+	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
 	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"
 )
 
@@ -519,7 +521,7 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 
 		// P1.1 — Build confluence alert if COT data is available
 		if cotAnalysis != nil {
-			html = s.buildConfluenceAlert(ev, cotAnalysis)
+			html = s.buildConfluenceAlert(ctx, ev, cotAnalysis)
 		} else {
 			html = s.buildStandardReleaseAlert(ctx, ev, prefs.Language)
 		}
@@ -532,7 +534,8 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 }
 
 // buildConfluenceAlert builds the P1.1 Confluence Alert message.
-func (s *Scheduler) buildConfluenceAlert(ev domain.NewsEvent, analysis *domain.COTAnalysis) string {
+// Gap A/C: Now accepts ctx to fetch FRED regime and apply regime-adjusted surprise scoring.
+func (s *Scheduler) buildConfluenceAlert(ctx context.Context, ev domain.NewsEvent, analysis *domain.COTAnalysis) string {
 	// Parse numeric values
 	actualVal, hasActual := ParseNumericValue(ev.Actual)
 	forecastVal, hasForecast := ParseNumericValue(ev.Forecast)
@@ -563,29 +566,53 @@ func (s *Scheduler) buildConfluenceAlert(ev domain.NewsEvent, analysis *domain.C
 		beatMiss = "Actual"
 	}
 
+	// Gap A/C — Fetch FRED macro data for regime-adjusted scoring (best-effort, non-fatal)
+	var macroData *fred.MacroData
+	var adjustedSigma = surpriseSigma
+	var regimeAdjLabel string
+
+	if md, fredErr := fred.GetCachedOrFetch(ctx); fredErr == nil && md != nil {
+		macroData = md
+		regime := fred.ClassifyMacroRegime(md)
+
+		// Gap C: filter surprise sigma through FRED regime context
+		adjustedSigma = cot.AdjustSurpriseByFREDContext(ev.Currency, surpriseSigma, regime)
+
+		// Gap A: compute regime-adjusted sentiment label
+		surpriseRecords := []domain.SurpriseRecord{{
+			Currency:   ev.Currency,
+			EventName:  ev.Event,
+			SigmaValue: adjustedSigma,
+		}}
+		regimeAdjLabel = cot.AdjustSentimentBySurprise(*analysis, surpriseRecords, macroData)
+	}
+
 	cotBullish := analysis.SentimentScore > 0
 	cotBias := "BULLISH"
 	if !cotBullish {
 		cotBias = "BEARISH"
 	}
 
+	// Use adjusted sigma for confluence classification
+	effectiveSigma := adjustedSigma
+
 	var confluenceType string
 	var confluenceIcon string
 	var insight string
 
-	if surpriseSigma > 0.1 && cotBullish {
+	if effectiveSigma > 0.1 && cotBullish {
 		confluenceType = "CONFLUENCE"
 		confluenceIcon = "🟢"
 		insight = "Smart money dan data sepakat — " + cotBias + ". Trend continuation likely"
-	} else if surpriseSigma < -0.1 && !cotBullish {
+	} else if effectiveSigma < -0.1 && !cotBullish {
 		confluenceType = "CONFLUENCE"
 		confluenceIcon = "🟢"
 		insight = "Smart money dan data sepakat — " + cotBias + ". Trend continuation likely"
-	} else if surpriseSigma > 0.1 && !cotBullish {
+	} else if effectiveSigma > 0.1 && !cotBullish {
 		confluenceType = "DIVERGENCE"
 		confluenceIcon = "🔴"
 		insight = "Smart money SHORT tapi data HAWKISH → Watch: short squeeze potensial, hati-hati counter-trend"
-	} else if surpriseSigma < -0.1 && cotBullish {
+	} else if effectiveSigma < -0.1 && cotBullish {
 		confluenceType = "DIVERGENCE"
 		confluenceIcon = "🔴"
 		insight = "Smart money LONG tapi data DOVISH → Watch: long liquidation potensial, hati-hati counter-trend"
@@ -603,6 +630,11 @@ func (s *Scheduler) buildConfluenceAlert(ev domain.NewsEvent, analysis *domain.C
 	html += fmt.Sprintf("%s <b>%s</b>: COT %s <b>%s</b> (Spec Net %.0fK, idx %.0f%%)\n",
 		confluenceIcon, confluenceType, ev.Currency, cotBias, netK, analysis.COTIndex)
 	html += fmt.Sprintf("→ %s\n", insight)
+
+	// Gap A — show regime-adjusted bias if available
+	if regimeAdjLabel != "" && macroData != nil {
+		html += fmt.Sprintf("📐 Regime-Adj Bias: <b>%s</b>\n", regimeAdjLabel)
+	}
 
 	return html
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
+	"github.com/arkcode369/ff-calendar-bot/internal/service/cot"
 	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
 	"github.com/arkcode369/ff-calendar-bot/pkg/fmtutil"
 )
@@ -549,6 +550,143 @@ func (f *Formatter) FormatRanking(analyses []domain.COTAnalysis, date time.Time)
 
 	b.WriteString("\n<i>Tip: </i><code>/cot GBP</code> untuk detail lengkap")
 	return b.String()
+}
+
+// convictionRankEntry holds a ranking entry with conviction score for FormatRankingWithConviction.
+type convictionRankEntry struct {
+	Currency   string
+	Score      float64
+	COTIndex   float64
+	Conviction cot.ConvictionScore
+}
+
+// FormatRankingWithConviction formats the weekly currency strength ranking with unified
+// conviction scores from COT + FRED regime + calendar data.
+// Gap D — exposes ConvictionScore per currency in /rank output.
+// Falls back gracefully to plain ranking if convictions is empty.
+func (f *Formatter) FormatRankingWithConviction(
+	analyses []domain.COTAnalysis,
+	convictions []cot.ConvictionScore,
+	regime *fred.MacroRegime,
+	date time.Time,
+) string {
+	// If no conviction data, fall back to the plain ranking
+	if len(convictions) == 0 {
+		return f.FormatRanking(analyses, date)
+	}
+
+	// Build a map from currency → conviction score
+	convMap := make(map[string]cot.ConvictionScore, len(convictions))
+	for _, cs := range convictions {
+		convMap[cs.Currency] = cs
+	}
+
+	// Filter to 8 major currencies only
+	majors := map[string]bool{"EUR": true, "GBP": true, "JPY": true, "AUD": true,
+		"NZD": true, "CAD": true, "CHF": true, "USD": true}
+
+	var entries []convictionRankEntry
+	for _, a := range analyses {
+		if !majors[a.Contract.Currency] {
+			continue
+		}
+		cs := convMap[a.Contract.Currency]
+		entries = append(entries, convictionRankEntry{
+			Currency:   a.Contract.Currency,
+			Score:      a.SentimentScore,
+			COTIndex:   a.COTIndex,
+			Conviction: cs,
+		})
+	}
+
+	// Sort by conviction score descending (highest conviction first)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Conviction.Score > entries[j].Conviction.Score
+	})
+
+	var b strings.Builder
+	b.WriteString("🏆 <b>CURRENCY STRENGTH RANKING</b>\n")
+	b.WriteString(fmt.Sprintf("<i>COT + FRED Conviction — %s</i>\n", date.Format("02 Jan 2006")))
+
+	// Show regime context if available
+	if regime != nil {
+		b.WriteString(fmt.Sprintf("\n📊 Regime: <b>%s</b> | Risk-Off: %d/100\n", regime.Name, regime.Score))
+	}
+	b.WriteString("\n")
+
+	medals := []string{"🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"}
+
+	for i, e := range entries {
+		medal := ""
+		if i < len(medals) {
+			medal = medals[i]
+		}
+
+		colorDot := scoreDot(e.Score)
+		sentSign := "+"
+		if e.Score < 0 {
+			sentSign = ""
+		}
+
+		convScore := int(math.Round(e.Conviction.Score))
+		convLabel := e.Conviction.Label
+		if convLabel == "" {
+			convLabel = e.Conviction.Direction
+		}
+
+		b.WriteString(fmt.Sprintf("%s %s <b>%s</b> | Sent: %s%.0f | Conv: <b>%d/100</b> %s\n",
+			medal, colorDot, e.Currency, sentSign, e.Score, convScore, convLabel))
+	}
+
+	// Best pairs based on conviction spread
+	b.WriteString("\n📊 <b>Best Pairs:</b>\n")
+	var plainEntries []rankEntry
+	for _, e := range entries {
+		plainEntries = append(plainEntries, rankEntry{
+			Currency: e.Currency,
+			Score:    e.Score,
+			COTIndex: e.COTIndex,
+		})
+	}
+	// Re-sort by raw sentiment for pair building
+	sort.Slice(plainEntries, func(i, j int) bool {
+		return plainEntries[i].Score > plainEntries[j].Score
+	})
+	pairs := buildBestPairs(plainEntries)
+	for _, p := range pairs {
+		b.WriteString(p + "\n")
+	}
+
+	// Regime advisory
+	if regime != nil {
+		advisory := regimeAdvisory(regime.Name)
+		if advisory != "" {
+			b.WriteString(fmt.Sprintf("\n⚠️ %s\n", advisory))
+		}
+	}
+
+	b.WriteString("\n<i>Tip: </i><code>/cot EUR</code> untuk detail lengkap | <code>/macro</code> untuk FRED regime")
+	return b.String()
+}
+
+// regimeAdvisory returns a short advisory note based on the macro regime.
+func regimeAdvisory(regimeName string) string {
+	switch regimeName {
+	case "STRESS":
+		return "Safe-haven demand elevated — JPY/CHF/Gold favored"
+	case "RECESSION":
+		return "Recession risk — defensive FX (JPY/CHF) and Gold over commodity FX"
+	case "INFLATIONARY":
+		return "Inflationary regime — USD bias bullish; AUD/NZD/CAD under pressure"
+	case "DISINFLATIONARY":
+		return "Disinflation — risk-on tilt; commodity FX and EUR/GBP may benefit"
+	case "STAGFLATION":
+		return "Stagflation — Gold bullish; equities and commodity FX bearish"
+	case "GOLDILOCKS":
+		return "Goldilocks — risk appetite favors AUD/NZD/CAD; USD mild bearish"
+	default:
+		return ""
+	}
 }
 
 // scoreArrow returns directional arrows for a sentiment score.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
+	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
 	"github.com/arkcode369/ff-calendar-bot/pkg/mathutil"
 )
 
@@ -15,8 +16,9 @@ import (
 // It processes historical records to derive net positions, ratios,
 // momentum, sentiment, concentration, and generates trading signals.
 type Analyzer struct {
-	cotRepo ports.COTRepository
-	fetcher *Fetcher
+	cotRepo    ports.COTRepository
+	fetcher    *Fetcher
+	lastRegime *fred.MacroRegime // Gap B: cached FRED regime for COT adjustments
 }
 
 // NewAnalyzer creates a COT analyzer.
@@ -43,6 +45,15 @@ func (a *Analyzer) AnalyzeAll(ctx context.Context) ([]domain.COTAnalysis, error)
 		log.Printf("[cot] warn: save records: %v", err)
 	}
 
+	// Gap B — Best-effort FRED regime fetch for RegimeAdjustedScore population
+	var cachedRegime *fred.MacroRegime
+	if macroData, fredErr := fred.GetCachedOrFetch(ctx); fredErr == nil && macroData != nil {
+		r := fred.ClassifyMacroRegime(macroData)
+		cachedRegime = &r
+		a.lastRegime = cachedRegime
+		log.Printf("[cot] FRED regime loaded for scoring: %s", r.Name)
+	}
+
 	var analyses []domain.COTAnalysis
 
 	for _, record := range records {
@@ -53,7 +64,7 @@ func (a *Analyzer) AnalyzeAll(ctx context.Context) ([]domain.COTAnalysis, error)
 			history = []domain.COTRecord{record} // use just current if no history
 		}
 
-		analysis := a.computeMetrics(record, history)
+		analysis := a.computeMetrics(record, history, cachedRegime)
 		analyses = append(analyses, analysis)
 	}
 
@@ -87,6 +98,7 @@ func (a *Analyzer) SyncHistory(ctx context.Context) error {
 }
 
 // AnalyzeContract computes metrics for a single contract.
+// Uses the cached FRED regime from the last AnalyzeAll run if available.
 func (a *Analyzer) AnalyzeContract(ctx context.Context, contractCode string) (*domain.COTAnalysis, error) {
 	latest, err := a.cotRepo.GetLatest(ctx, contractCode)
 	if err != nil {
@@ -98,12 +110,13 @@ func (a *Analyzer) AnalyzeContract(ctx context.Context, contractCode string) (*d
 		history = []domain.COTRecord{*latest}
 	}
 
-	analysis := a.computeMetrics(*latest, history)
+	analysis := a.computeMetrics(*latest, history, a.lastRegime)
 	return &analysis, nil
 }
 
 // computeMetrics calculates all 20+ COT metrics from a record + history.
-func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COTRecord) domain.COTAnalysis {
+// regime is optional — when non-nil, RegimeAdjustedScore is populated (Gap B).
+func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COTRecord, regime *fred.MacroRegime) domain.COTAnalysis {
 	contract := findContractByCode(current.ContractCode)
 	rt := contract.ReportType
 
@@ -286,6 +299,13 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 	// === Signal Strength ===
 	analysis.SignalStrength = classifySignalStrength(analysis)
+
+	// === Gap B — Regime-Adjusted Score ===
+	// Populate RegimeAdjustedScore when FRED regime is available.
+	// This mathematically links macro regime to the COT sentiment score.
+	if regime != nil {
+		analysis.RegimeAdjustedScore = ComputeRegimeAdjustedScore(analysis, *regime)
+	}
 
 	return analysis
 }

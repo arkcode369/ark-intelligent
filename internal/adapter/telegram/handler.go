@@ -9,6 +9,7 @@ import (
 
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
+	"github.com/arkcode369/ff-calendar-bot/internal/service/cot"
 	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
 	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"
 )
@@ -361,7 +362,13 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		result, err = h.aiAnalyzer.AnalyzeCombinedOutlook(ctx, weeklyData)
 	} else { // "cot" or default
 		cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
-		weeklyData := ports.WeeklyData{COTAnalyses: cotAnalyses, Language: prefs.Language}
+		// Gap E — pass MacroData so FRED regime context is injected into the /outlook cot prompt
+		macroData, _ := fred.GetCachedOrFetch(ctx)
+		weeklyData := ports.WeeklyData{
+			COTAnalyses: cotAnalyses,
+			MacroData:   macroData,
+			Language:    prefs.Language,
+		}
 		result, err = h.aiAnalyzer.GenerateWeeklyOutlook(ctx, weeklyData)
 	}
 
@@ -804,7 +811,7 @@ func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, 
 // ---------------------------------------------------------------------------
 
 // cmdRank handles the /rank command — weekly currency strength ranking.
-// Ranks 8 major currencies by COT SentimentScore and shows best pairs.
+// Ranks 8 major currencies by COT SentimentScore and shows conviction scores (COT + FRED + Calendar).
 func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args string) error {
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
@@ -813,8 +820,28 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 		return err
 	}
 
+	// Fetch FRED regime for conviction scoring (best-effort, non-fatal)
+	var macroData *fred.MacroData
+	var regime *fred.MacroRegime
+	if md, fredErr := fred.GetCachedOrFetch(ctx); fredErr == nil && md != nil {
+		macroData = md
+		r := fred.ClassifyMacroRegime(md)
+		regime = &r
+	}
+
+	// Compute conviction scores for each currency
+	convictions := make([]cot.ConvictionScore, 0, len(analyses))
+	for _, a := range analyses {
+		var r fred.MacroRegime
+		if regime != nil {
+			r = *regime
+		}
+		cs := cot.ComputeConvictionScore(a, r, 0.0, "", macroData)
+		convictions = append(convictions, cs)
+	}
+
 	now := timeutil.NowWIB()
-	html := h.fmt.FormatRanking(analyses, now)
+	html := h.fmt.FormatRankingWithConviction(analyses, convictions, regime, now)
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
