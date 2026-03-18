@@ -200,14 +200,21 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 
 func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode, displayCode string, isRaw bool, editMsgID int) error {
 	if isRaw {
-		records, err := h.cotRepo.GetHistory(ctx, contractCode, 1)
+		// Try GetHistory first (up to 4 weeks back to avoid missing data
+		// when CFTC report is older than 7 days due to delayed release).
+		records, err := h.cotRepo.GetHistory(ctx, contractCode, 4)
 		if err != nil || len(records) == 0 {
-			msg := fmt.Sprintf("No COT data for %s", displayCode)
-			if editMsgID > 0 {
-				return h.bot.EditMessage(ctx, chatID, editMsgID, msg)
+			// Fallback: try GetLatest directly (reverse-scans the whole prefix)
+			latest, latestErr := h.cotRepo.GetLatest(ctx, contractCode)
+			if latestErr != nil || latest == nil {
+				msg := fmt.Sprintf("No COT data for %s", displayCode)
+				if editMsgID > 0 {
+					return h.bot.EditMessage(ctx, chatID, editMsgID, msg)
+				}
+				_, e := h.bot.SendHTML(ctx, chatID, msg)
+				return e
 			}
-			_, e := h.bot.SendHTML(ctx, chatID, msg)
-			return e
+			records = []domain.COTRecord{*latest}
 		}
 
 		html := h.fmt.FormatCOTRaw(records[0])

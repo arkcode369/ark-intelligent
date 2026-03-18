@@ -105,12 +105,16 @@ func (r *COTRepo) GetLatest(_ context.Context, contractCode string) (*domain.COT
 
 // GetHistory returns COT records for a contract over N weeks.
 // Returns records in chronological order (oldest first).
+//
+// NOTE: CFTC reports are as-of Tuesday but published on Friday. This means
+// the latest record in DB may be older than (weeks*7) days when called shortly
+// after a new release cycle. The function therefore uses the prefix start as
+// the seek fallback so at least one record is always returned when data exists.
 func (r *COTRepo) GetHistory(_ context.Context, contractCode string, weeks int) ([]domain.COTRecord, error) {
 	var records []domain.COTRecord
 
 	cutoff := time.Now().AddDate(0, 0, -weeks*7).Format("20060102")
 	prefix := cotRecordPrefix(contractCode)
-	// Seek directly to the cutoff date within the prefix
 	seekKey := []byte(fmt.Sprintf("cot:%s:%s", contractCode, cutoff))
 
 	err := r.db.View(func(txn *badger.Txn) error {
@@ -136,6 +140,27 @@ func (r *COTRepo) GetHistory(_ context.Context, contractCode string, weeks int) 
 				return fmt.Errorf("read COT history: %w", err)
 			}
 		}
+
+		// Fallback: if no records found within the cutoff window (e.g. CFTC
+		// release lag pushed data older than weeks*7), scan from prefix start
+		// so we always return whatever is stored rather than an empty slice.
+		if len(records) == 0 {
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+				err := item.Value(func(val []byte) error {
+					var rec domain.COTRecord
+					if err := json.Unmarshal(val, &rec); err != nil {
+						return err
+					}
+					records = append(records, rec)
+					return nil
+				})
+				if err != nil {
+					return fmt.Errorf("read COT history (fallback): %w", err)
+				}
+			}
+		}
+
 		return nil
 	})
 	if err != nil {
