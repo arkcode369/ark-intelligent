@@ -286,19 +286,25 @@ func socrataFloat(s string) float64 {
 	return v
 }
 
+func socrataInt(s string) int {
+	s = strings.ReplaceAll(s, ",", "")
+	v, _ := strconv.Atoi(strings.TrimSpace(s))
+	return v
+}
+
 func socrataToRecord(sr domain.SocrataRecord, contract domain.COTContract) domain.COTRecord {
 	reportDate, _ := time.Parse("2006-01-02T15:04:05.000", sr.ReportDate)
 	if reportDate.IsZero() && len(sr.ReportDate) >= 10 {
 		reportDate, _ = time.Parse("2006-01-02", sr.ReportDate[:10])
 	}
 
-	return domain.COTRecord{
+	rec := domain.COTRecord{
 		ContractCode: contract.Code,
 		ContractName: contract.Name,
 		ReportDate:   reportDate,
 		OpenInterest: socrataFloat(sr.OpenInterest),
 
-		// TFF
+		// TFF positions
 		DealerLong:    socrataFloat(sr.DealerPositionsLong),
 		DealerShort:   socrataFloat(sr.DealerPositionsShort),
 		AssetMgrLong:  socrataFloat(sr.AssetMgrPositionsLong),
@@ -306,13 +312,55 @@ func socrataToRecord(sr domain.SocrataRecord, contract domain.COTContract) domai
 		LevFundLong:   socrataFloat(sr.LevMoneyPositionsLong),
 		LevFundShort:  socrataFloat(sr.LevMoneyPositionsShort),
 
-		// Disaggregated
+		// TFF spread positions
+		DealerSpread:   socrataFloat(sr.DealerPositionsSpread),
+		AssetMgrSpread: socrataFloat(sr.AssetMgrPositionsSpread),
+		LevFundSpread:  socrataFloat(sr.LevMoneyPositionsSpread),
+		OtherSpread:    socrataFloat(sr.OtherReptSpread),
+
+		// TFF WoW changes (API-computed — preferred over manual history diff)
+		DealerLongChg:    socrataFloat(sr.ChangeDealerLong),
+		DealerShortChg:   socrataFloat(sr.ChangeDealerShort),
+		AssetMgrLongChg:  socrataFloat(sr.ChangeAssetMgrLong),
+		AssetMgrShortChg: socrataFloat(sr.ChangeAssetMgrShort),
+		LevFundLongChg:   socrataFloat(sr.ChangeLevMoneyLong),
+		LevFundShortChg:  socrataFloat(sr.ChangeLevMoneyShort),
+		OIChangeAPI:      socrataFloat(sr.ChangeOI),
+
+		// TFF trader counts
+		AssetMgrLongTraders:  socrataInt(sr.TradersAssetMgrLong),
+		AssetMgrShortTraders: socrataInt(sr.TradersAssetMgrShort),
+		DealerLongTraders:    socrataInt(sr.TradersDealerLong),
+		DealerShortTraders:   socrataInt(sr.TradersDealerShort),
+		LevFundLongTraders:   socrataInt(sr.TradersLevMoneyLong),
+		LevFundShortTraders:  socrataInt(sr.TradersLevMoneyShort),
+		TotalTraders:         socrataInt(sr.TradersTotAll),
+
+		// DISAGG positions
 		ProdMercLong:      socrataFloat(sr.ProdMercPositionsLong),
 		ProdMercShort:     socrataFloat(sr.ProdMercPositionsShort),
 		SwapDealerLong:    socrataFloat(sr.SwapPositionsLong),
 		SwapDealerShort:   socrataFloat(sr.SwapPositionsShort),
 		ManagedMoneyLong:  socrataFloat(sr.MMoneyPositionsLong),
 		ManagedMoneyShort: socrataFloat(sr.MMoneyPositionsShort),
+
+		// DISAGG spread
+		ManagedMoneySpread: socrataFloat(sr.MMoneyPositionsSpread),
+
+		// DISAGG WoW changes
+		ProdMercLongChg:      socrataFloat(sr.ChangeProdMercLong),
+		ProdMercShortChg:     socrataFloat(sr.ChangeProdMercShort),
+		SwapLongChg:          socrataFloat(sr.ChangeSwapLong),
+		SwapShortChg:         socrataFloat(sr.ChangeSwapShort),
+		ManagedMoneyLongChg:  socrataFloat(sr.ChangeMMoneyLong),
+		ManagedMoneyShortChg: socrataFloat(sr.ChangeMMoneyShort),
+
+		// DISAGG trader counts
+		MMoneyLongTraders:    socrataInt(sr.TradersMMoneyLong),
+		MMoneyShortTraders:   socrataInt(sr.TradersMMoneyShort),
+		ProdMercLongTraders:  socrataInt(sr.TradersProdMercLong),
+		ProdMercShortTraders: socrataInt(sr.TradersProdMercShort),
+		TotalTradersDisag:    socrataInt(sr.TradersTotDisag),
 
 		// Shared
 		SmallLong:  socrataFloat(sr.NonReptPositionsLong),
@@ -326,6 +374,12 @@ func socrataToRecord(sr domain.SocrataRecord, contract domain.COTContract) domai
 		Top8Long:  socrataFloat(sr.Top8Long),
 		Top8Short: socrataFloat(sr.Top8Short),
 	}
+
+	// Populate NetChange from API-provided change fields (more accurate than history diff).
+	// Falls back to zero — analyzer will compute from history if needed.
+	rec.NetChange = rec.GetSmartMoneyNetChangeAPI(contract.ReportType)
+
+	return rec
 }
 
 // csvRowToRecord converts a CSV row to a COTRecord.

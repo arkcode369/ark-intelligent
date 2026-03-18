@@ -13,6 +13,7 @@ type NewsEvent struct {
 	Impact     string    `json:"impact"` // "high", "medium", "low", "non"
 	Forecast   string    `json:"forecast"`
 	Previous   string    `json:"previous"`
+	OldPrevious string   `json:"old_previous,omitempty"` // previous value before revision
 	Actual     string    `json:"actual"`
 	Status     string    `json:"status"` // "upcoming", "released", "pending_retry", "missed"
 	RetryCount int       `json:"retry_count"`
@@ -20,9 +21,18 @@ type NewsEvent struct {
 	// Optional meta for detailed views
 	Description string `json:"description,omitempty"`
 
+	// MQL5 post-release market impact data
+	// ImpactDirection: 0=neutral, 1=bullish for currency, 2=bearish for currency
+	ImpactDirection int     `json:"impact_direction,omitempty"`
+	// ImpactValue: magnitude of market move post-release (MQL5-computed)
+	ImpactValue     string  `json:"impact_value,omitempty"`
+
 	// P2.1 — Surprise Scoring Engine
-	SurpriseScore float64 `json:"surprise_score,omitempty"` // sigma units: (Actual - Forecast) / StdDev
-	SurpriseLabel string  `json:"surprise_label,omitempty"` // e.g., "HAWKISH SURPRISE", "IN LINE"
+	SurpriseScore   float64 `json:"surprise_score,omitempty"`  // sigma: (Actual - Forecast) / StdDev
+	SurpriseLabel   string  `json:"surprise_label,omitempty"`  // e.g., "HAWKISH SURPRISE"
+	// RevisionSurprise: sigma from previous revision (OldPrevious → Previous)
+	RevisionSurprise float64 `json:"revision_surprise,omitempty"`
+	RevisionLabel    string  `json:"revision_label,omitempty"` // e.g., "UPWARD REVISION"
 }
 
 // ---------------------------------------------------------------------------

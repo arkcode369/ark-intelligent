@@ -294,17 +294,20 @@ func convertEvents(raw []mql5Event, allowedImpacts ...string) []domain.NewsEvent
 		id := fmt.Sprintf("mql5-%d", e.ID)
 
 		results = append(results, domain.NewsEvent{
-			ID:       id,
-			Date:     wibTime.Format("Mon Jan 2"),
-			Time:     wibTime.Format("15:04"),
-			TimeWIB:  wibTime,
-			Currency: currency,
-			Event:    e.EventName,
-			Impact:   impact,
-			Forecast: e.ForecastValue,
-			Previous: e.PreviousValue,
-			Actual:   e.ActualValue,
-			Status:   statusFromProcessed(e.Processed),
+			ID:              id,
+			Date:            wibTime.Format("Mon Jan 2"),
+			Time:            wibTime.Format("15:04"),
+			TimeWIB:         wibTime,
+			Currency:        currency,
+			Event:           e.EventName,
+			Impact:          impact,
+			Forecast:        e.ForecastValue,
+			Previous:        e.PreviousValue,
+			OldPrevious:     e.OldPreviousValue,
+			Actual:          e.ActualValue,
+			Status:          statusFromProcessed(e.Processed),
+			ImpactDirection: e.ImpactDirection,
+			ImpactValue:     e.ImpactValue,
 		})
 	}
 	return results

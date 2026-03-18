@@ -271,8 +271,24 @@ func (f *Formatter) FormatCOTDetailWithCode(a domain.COTAnalysis, displayCode st
 	b.WriteString(fmt.Sprintf("<b>COT Analysis: %s</b>\n", a.Contract.Name))
 	b.WriteString(fmt.Sprintf("<i>Report: %s (%s)</i>\n\n", a.ReportDate.Format("Jan 2, 2006"), rt))
 
+	// Alerts section — all warnings first
 	if a.AssetMgrAlert {
-		b.WriteString(fmt.Sprintf("⚠️ <b>WARNING: Asset Manager Structural Shift!</b> (Z-Score: %.2f)\n\n", a.AssetMgrZScore))
+		b.WriteString(fmt.Sprintf("⚠️ <b>Asset Manager Structural Shift!</b> (Z-Score: %.2f)\n", a.AssetMgrZScore))
+	}
+	if a.ThinMarketAlert {
+		b.WriteString(fmt.Sprintf("🚨 <b>THIN MARKET:</b> %s\n", a.ThinMarketDesc))
+	}
+	if a.SmartDumbDivergence {
+		b.WriteString("🔀 <b>Divergence:</b> Smart money vs commercials moving opposite\n")
+	}
+	if a.CommExtremeBull {
+		b.WriteString("🟢 <b>Commercial COT Extreme LONG</b> (contrarian bullish signal)\n")
+	}
+	if a.CommExtremeBear {
+		b.WriteString("🔴 <b>Commercial COT Extreme SHORT</b> (contrarian bearish signal)\n")
+	}
+	if a.AssetMgrAlert || a.ThinMarketAlert || a.SmartDumbDivergence || a.CommExtremeBull || a.CommExtremeBear {
+		b.WriteString("\n")
 	}
 
 	// Positioning
@@ -280,20 +296,70 @@ func (f *Formatter) FormatCOTDetailWithCode(a domain.COTAnalysis, displayCode st
 	b.WriteString(fmt.Sprintf("<code>  Net Position:   %s</code>\n", fmtutil.FmtNumSigned(a.NetPosition, 0)))
 	b.WriteString(fmt.Sprintf("<code>  Net Change:     %s</code>\n", fmtutil.FmtNumSigned(a.NetChange, 0)))
 	b.WriteString(fmt.Sprintf("<code>  L/S Ratio:      %.2f</code>\n", a.LongShortRatio))
+	b.WriteString(fmt.Sprintf("<code>  Net as %% OI:    %.1f%%</code>\n", a.PctOfOI))
 
 	b.WriteString(fmt.Sprintf("\n<b>%s:</b>\n", hedgerLabel))
 	b.WriteString(fmt.Sprintf("<code>  Net Position:   %s</code>\n", fmtutil.FmtNumSigned(a.CommercialNet, 0)))
+	b.WriteString(fmt.Sprintf("<code>  Comm %% OI:      %.1f%%</code>\n", a.CommPctOfOI))
 
 	// COT Index
 	b.WriteString(fmt.Sprintf("\n<b>COT Index (%s):</b>\n", smartMoneyLabel))
 	b.WriteString(fmt.Sprintf("<code>  52-Week:        %.1f%%</code>\n", a.COTIndex))
 	b.WriteString(f.formatProgressBar(a.COTIndex, 20))
 
-	// Scalper / Intraday Intel
+	// Momentum (4W + 8W)
+	b.WriteString("\n<b>Momentum:</b>\n")
+	b.WriteString(fmt.Sprintf("<code>  4W:             %s</code>\n", fmtutil.FmtNumSigned(a.SpecMomentum4W, 0)))
+	if a.SpecMomentum8W != 0 {
+		trendFilter := "✅ aligned"
+		if (a.SpecMomentum4W > 0) != (a.SpecMomentum8W > 0) {
+			trendFilter = "⚠️ opposing"
+		}
+		b.WriteString(fmt.Sprintf("<code>  8W:             %s (%s)</code>\n", fmtutil.FmtNumSigned(a.SpecMomentum8W, 0), trendFilter))
+	}
+	if a.ConsecutiveWeeks > 0 {
+		b.WriteString(fmt.Sprintf("<code>  Streak:         %d weeks same dir</code>\n", a.ConsecutiveWeeks))
+	}
+
+	// Open Interest
+	b.WriteString("\n<b>Open Interest:</b>\n")
+	b.WriteString(fmt.Sprintf("<code>  OI Change:      %s (%s)</code>\n", fmtutil.FmtNumSigned(a.OpenInterestChg, 0), a.OITrend))
+	if a.SpreadPctOfOI > 0 {
+		b.WriteString(fmt.Sprintf("<code>  Spread Pos:     %.1f%% of OI</code>\n", a.SpreadPctOfOI))
+	}
+
+	// Trader concentration
+	if a.TotalTraders > 0 {
+		b.WriteString(fmt.Sprintf("\n<b>Trader Depth (%s):</b>\n", a.TraderConcentration))
+		if rt == "TFF" {
+			if a.LevFundLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  Lev Fund Long:  %d traders</code>\n", a.LevFundLongTraders))
+			}
+			if a.LevFundShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  Lev Fund Short: %d traders</code>\n", a.LevFundShortTraders))
+			}
+			if a.DealerShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  Dealer Short:   %d traders</code>\n", a.DealerShortTraders))
+			}
+			if a.AssetMgrLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  AssetMgr Long:  %d traders</code>\n", a.AssetMgrLongTraders))
+			}
+		} else {
+			if a.MMoneyLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  MM Long:        %d traders</code>\n", a.MMoneyLongTraders))
+			}
+			if a.MMoneyShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  MM Short:       %d traders</code>\n", a.MMoneyShortTraders))
+			}
+		}
+		b.WriteString(fmt.Sprintf("<code>  Total:          %d traders</code>\n", a.TotalTraders))
+	}
+
+	// Scalper Intel
 	b.WriteString("\n<b>Scalper Intel:</b>\n")
-	b.WriteString(fmt.Sprintf("<code>  4W Momentum:    %s</code>\n", fmtutil.FmtNumSigned(a.SpecMomentum4W, 0)))
-	b.WriteString(fmt.Sprintf("<code>  OI Change WoW:  %s (%s)</code>\n", fmtutil.FmtNumSigned(a.OpenInterestChg, 0), a.OITrend))
 	b.WriteString(fmt.Sprintf("<code>  ST Bias:        %s</code>\n", a.ShortTermBias))
+	b.WriteString(fmt.Sprintf("<code>  Crowding:       %.0f/100</code>\n", a.CrowdingIndex))
+	b.WriteString(fmt.Sprintf("<code>  Divergence:     %v</code>\n", a.DivergenceFlag))
 
 	// Quick copy commands
 	if displayCode != "" {

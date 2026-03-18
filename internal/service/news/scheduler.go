@@ -548,6 +548,8 @@ func (s *Scheduler) buildConfluenceAlert(ctx context.Context, ev domain.NewsEven
 	// Parse numeric values
 	actualVal, hasActual := ParseNumericValue(ev.Actual)
 	forecastVal, hasForecast := ParseNumericValue(ev.Forecast)
+	previousVal, hasPrevious := ParseNumericValue(ev.Previous)
+	oldPreviousVal, hasOldPrevious := ParseNumericValue(ev.OldPrevious)
 
 	var dataDirection string
 	var beatMiss string
@@ -555,16 +557,40 @@ func (s *Scheduler) buildConfluenceAlert(ctx context.Context, ev domain.NewsEven
 
 	if hasActual && hasForecast {
 		diff := actualVal - forecastVal
-		if diff > 0 {
+
+		// Use MQL5 ImpactDirection to validate surprise sign.
+		// ImpactDirection: 1 = bullish for currency, 2 = bearish, 0 = neutral.
+		// This corrects cases where "higher number = bearish" (e.g., unemployment, CPI miss).
+		if ev.ImpactDirection == 1 {
+			// MQL5 says bullish — ensure diff is treated as positive signal
 			dataDirection = "HAWKISH"
 			beatMiss = "Beat"
-		} else if diff < 0 {
+			if diff < 0 {
+				// Inverted indicator (e.g., unemployment rate down = good)
+				diff = -diff
+			}
+		} else if ev.ImpactDirection == 2 {
+			// MQL5 says bearish
 			dataDirection = "DOVISH"
 			beatMiss = "Miss"
+			if diff > 0 {
+				// Inverted indicator
+				diff = -diff
+			}
 		} else {
-			dataDirection = "NEUTRAL"
-			beatMiss = "In Line"
+			// ImpactDirection = 0 (neutral/unknown): fall back to raw diff
+			if diff > 0 {
+				dataDirection = "HAWKISH"
+				beatMiss = "Beat"
+			} else if diff < 0 {
+				dataDirection = "DOVISH"
+				beatMiss = "Miss"
+			} else {
+				dataDirection = "NEUTRAL"
+				beatMiss = "In Line"
+			}
 		}
+
 		if forecastVal != 0 {
 			surpriseSigma = diff / math.Abs(forecastVal)
 		} else {
@@ -573,6 +599,21 @@ func (s *Scheduler) buildConfluenceAlert(ctx context.Context, ev domain.NewsEven
 	} else {
 		dataDirection = "NEUTRAL"
 		beatMiss = "Actual"
+	}
+
+	// Revision tracking: if OldPrevious exists and differs from Previous, compute revision surprise
+	if hasOldPrevious && hasPrevious {
+		revDiff := previousVal - oldPreviousVal
+		if math.Abs(revDiff) > 0.001 {
+			var revSigma float64
+			if oldPreviousVal != 0 {
+				revSigma = revDiff / math.Abs(oldPreviousVal)
+			} else {
+				revSigma = revDiff
+			}
+			// Apply revision as additive component (20% weight)
+			surpriseSigma += revSigma * 0.2
+		}
 	}
 
 	// Record raw surprise sigma in the weekly per-currency accumulator (non-fatal)
@@ -600,6 +641,9 @@ func (s *Scheduler) buildConfluenceAlert(ctx context.Context, ev domain.NewsEven
 		}}
 		regimeAdjLabel = cot.AdjustSentimentBySurprise(*analysis, surpriseRecords, macroData)
 	}
+
+	// Suppress unused variable warning
+	_ = hasOldPrevious
 
 	cotBullish := analysis.SentimentScore > 0
 	cotBias := "BULLISH"

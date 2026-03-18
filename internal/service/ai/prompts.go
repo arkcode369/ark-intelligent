@@ -44,16 +44,32 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 			fmtutil.FmtNumSigned(a.CommMomentum4W, 0),
 			fmtutil.FmtNum(a.CommLSRatio, 2)))
 		b.WriteString(fmt.Sprintf("COT Index: Spec=%.1f Comm=%.1f\n", a.COTIndex, a.COTIndexComm))
-		b.WriteString(fmt.Sprintf("Momentum 4W: Spec=%s Comm=%s\n",
+		b.WriteString(fmt.Sprintf("Momentum 4W: Spec=%s Comm=%s | 8W: Spec=%s\n",
 			fmtutil.FmtNumSigned(a.SpecMomentum4W, 0),
-			fmtutil.FmtNumSigned(a.CommMomentum4W, 0)))
+			fmtutil.FmtNumSigned(a.CommMomentum4W, 0),
+			fmtutil.FmtNumSigned(a.SpecMomentum8W, 0)))
+		if a.ConsecutiveWeeks > 0 {
+			b.WriteString(fmt.Sprintf("Trend Streak: %d consecutive weeks same direction\n", a.ConsecutiveWeeks))
+		}
 		b.WriteString(fmt.Sprintf("Intraday Context: OITrend=%s STBias=%s\n", a.OITrend, a.ShortTermBias))
+		if a.SpreadPctOfOI > 0 {
+			b.WriteString(fmt.Sprintf("Spread Positions: %.1f%% of OI\n", a.SpreadPctOfOI))
+		}
 		b.WriteString(fmt.Sprintf("Sentiment: %.1f | Crowding: %.1f | Divergence: %v\n",
 			a.SentimentScore, a.CrowdingIndex, a.DivergenceFlag))
 		b.WriteString(fmt.Sprintf("Signals: Comm=%s Spec=%s SmallSpec=%s\n",
 			a.CommercialSignal, a.SpeculatorSignal, a.SmallSpecSignal))
-		b.WriteString(fmt.Sprintf("Concentration: Top4=%.1f%% Top8=%.1f%%\n\n",
+		b.WriteString(fmt.Sprintf("Concentration: Top4=%.1f%% Top8=%.1f%%\n",
 			a.Top4Concentration, a.Top8Concentration))
+		// Trader depth — thin market is a critical risk factor
+		if a.TotalTraders > 0 {
+			b.WriteString(fmt.Sprintf("Trader Depth: %d total (%s)", a.TotalTraders, a.TraderConcentration))
+			if a.ThinMarketAlert {
+				b.WriteString(fmt.Sprintf(" ⚠️ THIN: %s", a.ThinMarketDesc))
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 	}
 
 	b.WriteString("\nProvide:\n")

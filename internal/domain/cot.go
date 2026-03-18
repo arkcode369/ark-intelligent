@@ -43,7 +43,7 @@ type COTRecord struct {
 
 	// Open Interest
 	OpenInterest    float64 `json:"open_interest"`
-	OpenInterestOld float64 `json:"open_interest_old"` // Previous week for change calc
+	OpenInterestOld float64 `json:"open_interest_old"` // Previous week (unused legacy)
 
 	// --- A. TFF (Financials: Currencies/Bonds) ---
 	DealerLong    float64 `json:"dealer_long"`
@@ -53,6 +53,30 @@ type COTRecord struct {
 	LevFundLong   float64 `json:"lev_fund_long"`
 	LevFundShort  float64 `json:"lev_fund_short"`
 
+	// TFF Spread positions (offsetting long+short by same trader)
+	DealerSpread   float64 `json:"dealer_spread"`
+	AssetMgrSpread float64 `json:"asset_mgr_spread"`
+	LevFundSpread  float64 `json:"lev_fund_spread"`
+	OtherSpread    float64 `json:"other_spread"`
+
+	// TFF WoW changes (direct from API — more accurate than manual diff)
+	DealerLongChg    float64 `json:"dealer_long_chg"`
+	DealerShortChg   float64 `json:"dealer_short_chg"`
+	AssetMgrLongChg  float64 `json:"asset_mgr_long_chg"`
+	AssetMgrShortChg float64 `json:"asset_mgr_short_chg"`
+	LevFundLongChg   float64 `json:"lev_fund_long_chg"`
+	LevFundShortChg  float64 `json:"lev_fund_short_chg"`
+	OIChangeAPI      float64 `json:"oi_change_api"` // Official WoW OI change from CFTC
+
+	// TFF Trader counts (# unique traders per category)
+	DealerLongTraders    int `json:"dealer_long_traders"`
+	DealerShortTraders   int `json:"dealer_short_traders"`
+	AssetMgrLongTraders  int `json:"asset_mgr_long_traders"`
+	AssetMgrShortTraders int `json:"asset_mgr_short_traders"`
+	LevFundLongTraders   int `json:"lev_fund_long_traders"`
+	LevFundShortTraders  int `json:"lev_fund_short_traders"`
+	TotalTraders         int `json:"total_traders"`
+
 	// --- B. Disaggregated (Physicals: Gold/Oil) ---
 	ProdMercLong      float64 `json:"prod_merc_long"`
 	ProdMercShort     float64 `json:"prod_merc_short"`
@@ -60,6 +84,24 @@ type COTRecord struct {
 	SwapDealerShort   float64 `json:"swap_dealer_short"`
 	ManagedMoneyLong  float64 `json:"managed_money_long"`
 	ManagedMoneyShort float64 `json:"managed_money_short"`
+
+	// DISAGG Spread positions
+	ManagedMoneySpread float64 `json:"managed_money_spread"`
+
+	// DISAGG WoW changes
+	ProdMercLongChg      float64 `json:"prod_merc_long_chg"`
+	ProdMercShortChg     float64 `json:"prod_merc_short_chg"`
+	SwapLongChg          float64 `json:"swap_long_chg"`
+	SwapShortChg         float64 `json:"swap_short_chg"`
+	ManagedMoneyLongChg  float64 `json:"managed_money_long_chg"`
+	ManagedMoneyShortChg float64 `json:"managed_money_short_chg"`
+
+	// DISAGG Trader counts
+	ProdMercLongTraders  int `json:"prod_merc_long_traders"`
+	ProdMercShortTraders int `json:"prod_merc_short_traders"`
+	MMoneyLongTraders    int `json:"mmoney_long_traders"`
+	MMoneyShortTraders   int `json:"mmoney_short_traders"`
+	TotalTradersDisag    int `json:"total_traders_disag"`
 
 	// --- C. Non-Reportable (Small Specs - common across all) ---
 	SmallLong  float64 `json:"small_long"`
@@ -75,7 +117,8 @@ type COTRecord struct {
 	Top8Long  float64 `json:"top8_long"`
 	Top8Short float64 `json:"top8_short"`
 
-	// Changes from previous week (for the primary Speculator/Managed Money/Lev Funds category)
+	// NetChange — WoW smart money net change.
+	// Populated from API change_in_* fields (preferred) or computed from history.
 	NetChange float64 `json:"net_change"`
 
 	// --- D. Legacy/Fallback Fields (for CSV/Migration) ---
@@ -96,7 +139,6 @@ func (r *COTRecord) GetSmartMoneyNet(reportType string) float64 {
 	if reportType == "TFF" {
 		return r.LevFundLong - r.LevFundShort
 	}
-	// DISAGGREGATED or default
 	return r.ManagedMoneyLong - r.ManagedMoneyShort
 }
 
@@ -113,6 +155,24 @@ func (r *COTRecord) GetSmallSpecNet() float64 {
 	return r.SmallLong - r.SmallShort
 }
 
+// GetTotalSpread returns all spread positions (long+short offsets by same trader).
+// Spread positions = true net exposure gap from OI.
+func (r *COTRecord) GetTotalSpread(reportType string) float64 {
+	if reportType == "TFF" {
+		return r.DealerSpread + r.AssetMgrSpread + r.LevFundSpread + r.OtherSpread
+	}
+	return r.ManagedMoneySpread
+}
+
+// GetSmartMoneyNetChangeAPI returns API-provided WoW change for smart money.
+// Preferred over manual diff — uses official CFTC-computed values.
+func (r *COTRecord) GetSmartMoneyNetChangeAPI(reportType string) float64 {
+	if reportType == "TFF" {
+		return (r.LevFundLongChg) - (r.LevFundShortChg)
+	}
+	return r.ManagedMoneyLongChg - r.ManagedMoneyShortChg
+}
+
 // CurrencyToContract maps a currency code to the CFTC contract code used in COT data.
 func CurrencyToContract(currency string) string {
 	for _, c := range DefaultCOTContracts {
@@ -127,21 +187,19 @@ func CurrencyToContract(currency string) string {
 // Momentum Direction
 // ---------------------------------------------------------------------------
 
-// MomentumDirection indicates the direction and intensity of positioning changes.
 type MomentumDirection string
 
 const (
-	MomentumBuilding  MomentumDirection = "BUILDING"  // Accelerating in same direction
-	MomentumUnwinding MomentumDirection = "UNWINDING" // Reducing positions
-	MomentumStable    MomentumDirection = "STABLE"    // Little change
-	MomentumReversing MomentumDirection = "REVERSING" // Changing direction
+	MomentumBuilding  MomentumDirection = "BUILDING"
+	MomentumUnwinding MomentumDirection = "UNWINDING"
+	MomentumStable    MomentumDirection = "STABLE"
+	MomentumReversing MomentumDirection = "REVERSING"
 )
 
 // ---------------------------------------------------------------------------
 // Signal Strength
 // ---------------------------------------------------------------------------
 
-// SignalStrength rates the conviction level of a COT signal.
 type SignalStrength string
 
 const (
@@ -155,81 +213,85 @@ const (
 // COT Analysis — Computed Metrics
 // ---------------------------------------------------------------------------
 
-// COTAnalysis contains all computed metrics for a single contract.
 type COTAnalysis struct {
-	// Reference
 	Contract   COTContract `json:"contract"`
 	ReportDate time.Time   `json:"report_date"`
 
 	// --- A. Core Positioning ---
-	// --- A. Core Positioning (Focused on "Smart Money") ---
-	// Large Speculator equivalent: Lev Funds (TFF) or Managed Money (Disaggregated)
-	NetPosition float64 `json:"net_position"` // Smart Money net
-	NetChange   float64 `json:"net_change"`   // WoW change in smart net
+	NetPosition float64 `json:"net_position"`
+	NetChange   float64 `json:"net_change"`
 
-	// Breakdown
-	LevFundNet      float64 `json:"lev_fund_net"`      // TFF only
-	ManagedMoneyNet float64 `json:"managed_money_net"` // Disaggregated only
-	CommercialNet   float64 `json:"commercial_net"`    // Dealers (TFF) or Prod/Swap (Disaggregated)
-	SmallSpecNet    float64 `json:"small_spec_net"`    // Non-reportable
+	LevFundNet      float64 `json:"lev_fund_net"`
+	ManagedMoneyNet float64 `json:"managed_money_net"`
+	CommercialNet   float64 `json:"commercial_net"`
+	SmallSpecNet    float64 `json:"small_spec_net"`
 
-	LongShortRatio float64 `json:"long_short_ratio"` // Smart Money Ratio
-	PctOfOI        float64 `json:"pct_of_oi"`        // Net as % of Open Interest
+	LongShortRatio float64 `json:"long_short_ratio"`
+	PctOfOI        float64 `json:"pct_of_oi"`
 
-	// Legacy Field Support (Sync)
-	NetCommercial float64 `json:"net_commercial"`  // Same as CommercialNet
-	CommPctOfOI   float64 `json:"comm_pct_of_oi"`  // Commercial net as % of OI
-	CommLSRatio   float64 `json:"comm_ls_ratio"`   // Commercial Long/Short ratio
-	CommNetChange float64 `json:"comm_net_change"` // WoW change in commercial net
-	NetSmallSpec  float64 `json:"net_small_spec"`  // Same as SmallSpecNet
+	NetCommercial float64 `json:"net_commercial"`
+	CommPctOfOI   float64 `json:"comm_pct_of_oi"`
+	CommLSRatio   float64 `json:"comm_ls_ratio"`
+	CommNetChange float64 `json:"comm_net_change"`
+	NetSmallSpec  float64 `json:"net_small_spec"`
 
 	// --- B. COT Index & Extremes ---
-	COTIndex        float64 `json:"cot_index"`         // Williams COT Index (0-100) for specs
-	COTIndexComm    float64 `json:"cot_index_comm"`    // COT Index for commercials
-	IsExtremeBull   bool    `json:"is_extreme_bull"`   // COT Index > 90
-	IsExtremeBear   bool    `json:"is_extreme_bear"`   // COT Index < 10
-	CommExtremeBull bool    `json:"comm_extreme_bull"` // Commercial COT Index > 90
-	CommExtremeBear bool    `json:"comm_extreme_bear"` // Commercial COT Index < 10
-	WillcoIndex     float64 `json:"willco_index"`      // EMA-weighted COT Index variant
+	COTIndex        float64 `json:"cot_index"`
+	COTIndexComm    float64 `json:"cot_index_comm"`
+	IsExtremeBull   bool    `json:"is_extreme_bull"`
+	IsExtremeBear   bool    `json:"is_extreme_bear"`
+	CommExtremeBull bool    `json:"comm_extreme_bull"`
+	CommExtremeBear bool    `json:"comm_extreme_bear"`
+	WillcoIndex     float64 `json:"willco_index"`
 
 	// --- C. Smart Money vs Dumb Money ---
-	CommercialSignal    string `json:"commercial_signal"`     // Contrarian signal from commercials
-	SpeculatorSignal    string `json:"speculator_signal"`     // Trend-following signal from large specs
-	SmallSpecSignal     string `json:"small_spec_signal"`     // Contrarian signal from small specs
-	SmartDumbDivergence bool   `json:"smart_dumb_divergence"` // Commercial vs Speculator divergence
+	CommercialSignal    string `json:"commercial_signal"`
+	SpeculatorSignal    string `json:"speculator_signal"`
+	SmallSpecSignal     string `json:"small_spec_signal"`
+	SmartDumbDivergence bool   `json:"smart_dumb_divergence"`
 
 	// --- D. Open Interest Analysis ---
-	OpenInterestChg   float64 `json:"open_interest_chg"`  // Absolute change in OI WoW
-	OIPctChange       float64 `json:"oi_pct_change"`      // OI % change week-over-week
-	OITrend           string  `json:"oi_trend"`           // OI Trend: RISING, FALLING, FLAT
-	Top4Concentration float64 `json:"top4_concentration"` // Top 4 trader dominance %
-	Top8Concentration float64 `json:"top8_concentration"` // Top 8 trader dominance %
-	SpreadPctOfOI     float64 `json:"spread_pct_of_oi"`   // Spread positions as % of OI
+	OpenInterestChg   float64 `json:"open_interest_chg"`
+	OIPctChange       float64 `json:"oi_pct_change"`
+	OITrend           string  `json:"oi_trend"`
+	Top4Concentration float64 `json:"top4_concentration"`
+	Top8Concentration float64 `json:"top8_concentration"`
+	SpreadPctOfOI     float64 `json:"spread_pct_of_oi"` // Now populated from API spread fields
 
 	// --- E. Momentum & Trend ---
-	SpecMomentum4W   float64           `json:"spec_momentum_4w"`  // 4-week rate of change of net spec
-	SpecMomentum8W   float64           `json:"spec_momentum_8w"`  // 8-week rate of change
-	CommMomentum4W   float64           `json:"comm_momentum_4w"`  // 4-week commercial momentum
-	MomentumDir      MomentumDirection `json:"momentum_dir"`      // Overall momentum direction
-	ConsecutiveWeeks int               `json:"consecutive_weeks"` // Weeks in same direction
+	SpecMomentum4W   float64           `json:"spec_momentum_4w"`
+	SpecMomentum8W   float64           `json:"spec_momentum_8w"` // Now used in signal generation
+	CommMomentum4W   float64           `json:"comm_momentum_4w"`
+	MomentumDir      MomentumDirection `json:"momentum_dir"`
+	ConsecutiveWeeks int               `json:"consecutive_weeks"` // Now used in display
 
 	// --- F. Advanced Signals ---
-	ShortTermBias  string         `json:"short_term_bias"` // Intra/Swing bias (e.g., BUY DIPS)
-	DivergenceFlag bool           `json:"divergence_flag"` // Price vs positioning divergence
-	CrowdingIndex  float64        `json:"crowding_index"`  // How one-sided (0-100, >80 = extreme)
-	SentimentScore float64        `json:"sentiment_score"` // Weighted composite (-100 to +100)
-	SignalStrength SignalStrength `json:"signal_strength"` // Overall signal conviction
+	ShortTermBias  string        `json:"short_term_bias"`
+	DivergenceFlag bool          `json:"divergence_flag"`
+	CrowdingIndex  float64       `json:"crowding_index"`
+	SentimentScore float64       `json:"sentiment_score"`
+	SignalStrength SignalStrength `json:"signal_strength"`
 
 	// --- G. Institutional Outlier Alerts (TFF) ---
-	AssetMgrZScore float64 `json:"asset_mgr_z_score"` // Z-Score of Asset Mgr Net Position change
-	AssetMgrAlert  bool    `json:"asset_mgr_alert"`   // |Z-Score| > 2.0 or threshold
+	AssetMgrZScore float64 `json:"asset_mgr_z_score"`
+	AssetMgrAlert  bool    `json:"asset_mgr_alert"`
 
-	// --- H. FRED-Adjusted Scores (Gap B) ---
-	// RegimeAdjustedScore is SentimentScore adjusted by FRED macro regime multiplier per currency.
-	// Range: -100 to +100. Populated after FRED data is available.
+	// --- H. Trader Concentration (NEW: from traders_* API fields) ---
+	// Number of unique traders per category — thin market / crowding detection.
+	DealerShortTraders  int     `json:"dealer_short_traders"`  // Low = highly concentrated (risky)
+	LevFundLongTraders  int     `json:"lev_fund_long_traders"` // Low = thin consensus
+	LevFundShortTraders int     `json:"lev_fund_short_traders"`
+	AssetMgrLongTraders int     `json:"asset_mgr_long_traders"`
+	MMoneyLongTraders   int     `json:"mmoney_long_traders"`  // DISAGG
+	MMoneyShortTraders  int     `json:"mmoney_short_traders"` // DISAGG
+	TotalTraders        int     `json:"total_traders"`
+	TraderConcentration string  `json:"trader_concentration"` // "THIN", "NORMAL", "DEEP"
+	ThinMarketAlert     bool    `json:"thin_market_alert"`    // true if key category < threshold
+	ThinMarketDesc      string  `json:"thin_market_desc"`     // e.g. "Only 9 dealers short EUR"
+
+	// --- I. FRED-Adjusted Scores ---
 	RegimeAdjustedScore float64 `json:"regime_adjusted_score"`
 
-	// AI interpretation (filled by Gemini)
 	AINarrative string `json:"ai_narrative,omitempty"`
 }
 
@@ -237,40 +299,73 @@ type COTAnalysis struct {
 // Socrata API Response Mapping
 // ---------------------------------------------------------------------------
 
-// SocrataRecord maps the CFTC Socrata JSON response fields.
-// Used to parse the raw API response before converting to COTRecord.
 type SocrataRecord struct {
 	ReportDate   string `json:"report_date_as_yyyy_mm_dd"`
 	MarketName   string `json:"market_and_exchange_names"`
 	ContractCode string `json:"cftc_contract_market_code"`
 	OpenInterest string `json:"open_interest_all"`
 
-	// --- A. TFF (Financials) ---
-	// Note: Dealer uses _all suffix; AssetMgr/LevMoney/OtherRept do NOT
+	// --- A. TFF positions ---
 	DealerPositionsLong    string `json:"dealer_positions_long_all"`
 	DealerPositionsShort   string `json:"dealer_positions_short_all"`
+	DealerPositionsSpread  string `json:"dealer_positions_spread_all"`
 	AssetMgrPositionsLong  string `json:"asset_mgr_positions_long"`
 	AssetMgrPositionsShort string `json:"asset_mgr_positions_short"`
+	AssetMgrPositionsSpread string `json:"asset_mgr_positions_spread"`
 	LevMoneyPositionsLong  string `json:"lev_money_positions_long"`
 	LevMoneyPositionsShort string `json:"lev_money_positions_short"`
+	LevMoneyPositionsSpread string `json:"lev_money_positions_spread"`
+	OtherReptSpread        string `json:"other_rept_positions_spread"`
 
-	// --- B. Disaggregated (Physicals) ---
-	// Note: ProdMerc has no _all; Swap short has double-underscore (swap__)
+	// TFF WoW changes (CFTC-computed, more accurate than manual diff)
+	ChangeDealerLong    string `json:"change_in_dealer_long_all"`
+	ChangeDealerShort   string `json:"change_in_dealer_short_all"`
+	ChangeAssetMgrLong  string `json:"change_in_asset_mgr_long"`
+	ChangeAssetMgrShort string `json:"change_in_asset_mgr_short"`
+	ChangeLevMoneyLong  string `json:"change_in_lev_money_long"`
+	ChangeLevMoneyShort string `json:"change_in_lev_money_short"`
+	ChangeOI            string `json:"change_in_open_interest_all"`
+
+	// TFF Trader counts
+	TradersAssetMgrLong  string `json:"traders_asset_mgr_long_all"`
+	TradersAssetMgrShort string `json:"traders_asset_mgr_short_all"`
+	TradersDealerLong    string `json:"traders_dealer_long_all"`
+	TradersDealerShort   string `json:"traders_dealer_short_all"`
+	TradersLevMoneyLong  string `json:"traders_lev_money_long_all"`
+	TradersLevMoneyShort string `json:"traders_lev_money_short_all"`
+	TradersTotAll        string `json:"traders_tot_all"`
+
+	// --- B. Disaggregated positions ---
 	ProdMercPositionsLong  string `json:"prod_merc_positions_long"`
 	ProdMercPositionsShort string `json:"prod_merc_positions_short"`
 	SwapPositionsLong      string `json:"swap_positions_long_all"`
-	SwapPositionsShort     string `json:"swap__positions_short_all"` // double underscore: API quirk
+	SwapPositionsShort     string `json:"swap__positions_short_all"` // double underscore API quirk
 	MMoneyPositionsLong    string `json:"m_money_positions_long_all"`
 	MMoneyPositionsShort   string `json:"m_money_positions_short_all"`
+	MMoneyPositionsSpread  string `json:"m_money_positions_spread"`
 
-	// --- C. Shared (both TFF and DISAGG) ---
-	// Note: OtherRept has no _all suffix; NonRept has _all suffix
+	// DISAGG WoW changes
+	ChangeProdMercLong  string `json:"change_in_prod_merc_long"`
+	ChangeProdMercShort string `json:"change_in_prod_merc_short"`
+	ChangeSwapLong      string `json:"change_in_swap_long_all"`
+	ChangeSwapShort     string `json:"change_in_swap_short_all"`
+	ChangeMMoneyLong    string `json:"change_in_m_money_long_all"`
+	ChangeMMoneyShort   string `json:"change_in_m_money_short_all"`
+
+	// DISAGG Trader counts
+	TradersMMoneyLong    string `json:"traders_m_money_long_all"`
+	TradersMMoneyShort   string `json:"traders_m_money_short_all"`
+	TradersProdMercLong  string `json:"traders_prod_merc_long_all"`
+	TradersProdMercShort string `json:"traders_prod_merc_short_all"`
+	TradersTotDisag      string `json:"traders_tot_all"`
+
+	// --- C. Shared ---
 	OtherReptPositionsLong  string `json:"other_rept_positions_long"`
 	OtherReptPositionsShort string `json:"other_rept_positions_short"`
 	NonReptPositionsLong    string `json:"nonrept_positions_long_all"`
 	NonReptPositionsShort   string `json:"nonrept_positions_short_all"`
 
-	// Concentration — actual field: conc_gross_le_4_tdr_long (no _all)
+	// Concentration
 	Top4Long  string `json:"conc_gross_le_4_tdr_long"`
 	Top4Short string `json:"conc_gross_le_4_tdr_short"`
 	Top8Long  string `json:"conc_gross_le_8_tdr_long"`

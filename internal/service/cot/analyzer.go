@@ -185,10 +185,22 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	}
 
 	// 2. Net change (week-over-week)
-	if len(history) > 1 {
+	// Priority: use API-provided change fields (CFTC-computed, more accurate).
+	// Fallback: compute from history diff if API value is zero.
+	if current.NetChange != 0 {
+		analysis.NetChange = current.NetChange
+	} else if len(history) > 1 {
 		prev := history[1]
 		analysis.NetChange = analysis.NetPosition - prev.GetSmartMoneyNet(rt)
-		analysis.CommNetChange = analysis.CommercialNet - prev.GetCommercialNet(rt)
+	}
+	if len(history) > 1 {
+		prev := history[1]
+		// CommNetChange: use API dealer change if TFF, else compute
+		if rt == "TFF" && current.DealerLongChg != 0 || current.DealerShortChg != 0 {
+			analysis.CommNetChange = current.DealerLongChg - current.DealerShortChg
+		} else {
+			analysis.CommNetChange = analysis.CommercialNet - prev.GetCommercialNet(rt)
+		}
 	}
 
 	// 3. Long/Short ratios
@@ -207,13 +219,24 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 		analysis.CommPctOfOI = analysis.CommercialNet / oi * 100
 	}
 
-	// 5. Open Interest change
-	if len(history) > 1 {
+	// 5. Open Interest change — use API field if available
+	if current.OIChangeAPI != 0 {
+		analysis.OpenInterestChg = current.OIChangeAPI
+		if current.OpenInterest > 0 {
+			analysis.OIPctChange = current.OIChangeAPI / (current.OpenInterest - current.OIChangeAPI) * 100
+		}
+	} else if len(history) > 1 {
 		prevOI := history[1].OpenInterest
 		if prevOI > 0 {
 			analysis.OpenInterestChg = current.OpenInterest - prevOI
 			analysis.OIPctChange = analysis.OpenInterestChg / prevOI * 100
 		}
+	}
+
+	// 5b. Spread positions as % of OI — now populated from API
+	totalSpread := current.GetTotalSpread(rt)
+	if current.OpenInterest > 0 && totalSpread > 0 {
+		analysis.SpreadPctOfOI = totalSpread / current.OpenInterest * 100
 	}
 	// Determine OI Context (Trend)
 	analysis.OITrend = "FLAT"
@@ -252,6 +275,42 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 		// 10. Momentum direction
 		analysis.MomentumDir = classifyMomentumDir(analysis.SpecMomentum4W, analysis.CommMomentum4W)
+	}
+
+	if len(history) >= 9 {
+		// 10b. SpecMomentum8W — longer-term trend filter (now used in signal logic)
+		smartNets8 := extractNets(history[:minInt(9, len(history))], func(r domain.COTRecord) float64 {
+			return r.GetSmartMoneyNet(rt)
+		})
+		analysis.SpecMomentum8W = mathutil.Momentum(smartNets8, 8)
+	}
+
+	// 10c. ConsecutiveWeeks — count weeks spec net has been moving same direction
+	if len(history) >= 2 {
+		direction := 0
+		if analysis.NetChange > 0 {
+			direction = 1
+		} else if analysis.NetChange < 0 {
+			direction = -1
+		}
+		count := 0
+		for i := 0; i < len(history)-1 && i < 26; i++ {
+			curr := history[i].GetSmartMoneyNet(rt)
+			prev := history[i+1].GetSmartMoneyNet(rt)
+			diff := curr - prev
+			weekDir := 0
+			if diff > 0 {
+				weekDir = 1
+			} else if diff < 0 {
+				weekDir = -1
+			}
+			if weekDir == direction {
+				count++
+			} else {
+				break
+			}
+		}
+		analysis.ConsecutiveWeeks = count
 	}
 
 	// === Sentiment & Signal Metrics ===
@@ -297,19 +356,28 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	// 15. Divergence flag (commercials vs smart money moving opposite)
 	analysis.DivergenceFlag = detectDivergence(analysis.NetChange, analysis.CommNetChange)
 
-	// 15b. Scalper/Intraday Bias (Short-term context based on OI and Momentum)
+	// 15b. Scalper/Intraday Bias — uses 4W momentum + 8W trend filter
+	// SpecMomentum8W acts as a higher-timeframe trend filter to reduce noise.
 	analysis.ShortTermBias = "NEUTRAL"
-	if analysis.SpecMomentum4W > 0 {
-		if analysis.OITrend == "RISING" {
+	m4 := analysis.SpecMomentum4W
+	m8 := analysis.SpecMomentum8W // 0 if not enough history
+	trendConfirmed := m8 == 0 || (m4 > 0 && m8 > 0) || (m4 < 0 && m8 < 0)
+
+	if m4 > 0 {
+		if analysis.OITrend == "RISING" && trendConfirmed {
 			analysis.ShortTermBias = "STRONG BUY (Trend Confirmed)"
+		} else if analysis.OITrend == "RISING" && !trendConfirmed {
+			analysis.ShortTermBias = "BUY DIPS (8W trend opposing — caution)"
 		} else if analysis.OITrend == "FALLING" {
 			analysis.ShortTermBias = "WEAK BUY (Short Covering)"
 		} else {
 			analysis.ShortTermBias = "BUY DIPS"
 		}
-	} else if analysis.SpecMomentum4W < 0 {
-		if analysis.OITrend == "RISING" {
+	} else if m4 < 0 {
+		if analysis.OITrend == "RISING" && trendConfirmed {
 			analysis.ShortTermBias = "STRONG SELL (Trend Confirmed)"
+		} else if analysis.OITrend == "RISING" && !trendConfirmed {
+			analysis.ShortTermBias = "SELL RALLIES (8W trend opposing — caution)"
 		} else if analysis.OITrend == "FALLING" {
 			analysis.ShortTermBias = "WEAK SELL (Long Liquidation)"
 		} else {
@@ -336,6 +404,56 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 	// === Signal Strength ===
 	analysis.SignalStrength = classifySignalStrength(analysis)
+
+	// === Trader Concentration Analysis (NEW) ===
+	// Populate trader counts from record
+	if rt == "TFF" {
+		analysis.DealerShortTraders  = current.DealerShortTraders
+		analysis.LevFundLongTraders  = current.LevFundLongTraders
+		analysis.LevFundShortTraders = current.LevFundShortTraders
+		analysis.AssetMgrLongTraders = current.AssetMgrLongTraders
+		analysis.TotalTraders        = current.TotalTraders
+	} else {
+		analysis.MMoneyLongTraders  = current.MMoneyLongTraders
+		analysis.MMoneyShortTraders = current.MMoneyShortTraders
+		analysis.TotalTraders       = current.TotalTradersDisag
+	}
+
+	// Thin market detection: flag when key category has very few traders
+	const thinThreshold = 15 // < 15 traders in a dominant category = concentrated
+	analysis.ThinMarketAlert = false
+	if rt == "TFF" {
+		switch {
+		case current.DealerShortTraders > 0 && current.DealerShortTraders < thinThreshold:
+			analysis.ThinMarketAlert = true
+			analysis.ThinMarketDesc = fmt.Sprintf("Only %d dealers short — extreme concentration, reversal risk HIGH", current.DealerShortTraders)
+		case current.LevFundLongTraders > 0 && current.LevFundLongTraders < thinThreshold:
+			analysis.ThinMarketAlert = true
+			analysis.ThinMarketDesc = fmt.Sprintf("Only %d lev funds long — thin longs, squeeze risk", current.LevFundLongTraders)
+		case current.LevFundShortTraders > 0 && current.LevFundShortTraders < thinThreshold:
+			analysis.ThinMarketAlert = true
+			analysis.ThinMarketDesc = fmt.Sprintf("Only %d lev funds short — thin shorts, short-squeeze risk", current.LevFundShortTraders)
+		}
+	} else {
+		switch {
+		case current.MMoneyLongTraders > 0 && current.MMoneyLongTraders < thinThreshold:
+			analysis.ThinMarketAlert = true
+			analysis.ThinMarketDesc = fmt.Sprintf("Only %d managed money long — thin longs", current.MMoneyLongTraders)
+		case current.MMoneyShortTraders > 0 && current.MMoneyShortTraders < thinThreshold:
+			analysis.ThinMarketAlert = true
+			analysis.ThinMarketDesc = fmt.Sprintf("Only %d managed money short — thin shorts", current.MMoneyShortTraders)
+		}
+	}
+
+	// Trader concentration label
+	switch {
+	case analysis.TotalTraders > 200:
+		analysis.TraderConcentration = "DEEP"
+	case analysis.TotalTraders > 100:
+		analysis.TraderConcentration = "NORMAL"
+	case analysis.TotalTraders > 0:
+		analysis.TraderConcentration = "THIN"
+	}
 
 	// === Gap B — Regime-Adjusted Score ===
 	// Populate RegimeAdjustedScore when FRED regime is available.
