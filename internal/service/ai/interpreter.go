@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/internal/ports"
-	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 )
 
 // allowedTags are the only HTML tags Telegram Bot API accepts in HTML parse mode.

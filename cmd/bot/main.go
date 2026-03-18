@@ -18,14 +18,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/adapter/storage"
-	tgbot "github.com/arkcode369/ff-calendar-bot/internal/adapter/telegram"
-	"github.com/arkcode369/ff-calendar-bot/internal/config"
-	"github.com/arkcode369/ff-calendar-bot/internal/ports"
-	"github.com/arkcode369/ff-calendar-bot/internal/scheduler"
-	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
-	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
-	newssvc "github.com/arkcode369/ff-calendar-bot/internal/service/news"
+	"github.com/arkcode369/ark-intelligent/internal/adapter/storage"
+	tgbot "github.com/arkcode369/ark-intelligent/internal/adapter/telegram"
+	"github.com/arkcode369/ark-intelligent/internal/config"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/scheduler"
+	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
+	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
+	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
 )
 
 //go:embed CHANGELOG.md

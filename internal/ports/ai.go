@@ -3,8 +3,8 @@ package ports
 import (
 	"context"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 )
 
 // ---------------------------------------------------------------------------

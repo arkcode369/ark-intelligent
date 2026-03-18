@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 // ---------------------------------------------------------------------------

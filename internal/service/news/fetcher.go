@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 // MQL5Fetcher fetches economic calendar data from MQL5's hidden POST endpoint.

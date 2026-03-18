@@ -21,13 +21,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/adapter/storage"
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/internal/ports"
-	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
-	cotsvc "github.com/arkcode369/ff-calendar-bot/internal/service/cot"
-	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
-	"github.com/arkcode369/ff-calendar-bot/pkg/timeutil"
+	"github.com/arkcode369/ark-intelligent/internal/adapter/storage"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
+	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
 )
 
 // ---------------------------------------------------------------------------

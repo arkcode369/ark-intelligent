@@ -1,7 +1,7 @@
 package news
 
 import (
-	"github.com/arkcode369/ff-calendar-bot/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
 )
 
 // Analyzer implements mathematical logic for News processing

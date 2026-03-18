@@ -14,11 +14,11 @@
 
 
 services:
-  ff-calendar-bot:
+  ark-intelligent:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ff-calendar-bot
+    container_name: ark-intelligent
     restart: unless-stopped
 
     # Environment variables
@@ -52,7 +52,7 @@ services:
 
     # Health check
     healthcheck:
-      test: ["CMD", "pgrep", "ff-calendar-bot"]
+      test: ["CMD", "pgrep", "ark-intelligent"]
       interval: 60s
       timeout: 5s
       retries: 3

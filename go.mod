@@ -1,4 +1,4 @@
-module github.com/arkcode369/ff-calendar-bot
+module github.com/arkcode369/ark-intelligent
 
 go 1.22
 

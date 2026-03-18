@@ -36,8 +36,8 @@ Hexagonal (ports & adapters) architecture in Go 1.22:
 
    Or build and run directly:
    ```bash
-   go build -o ff-calendar-bot ./cmd/bot
-   ./ff-calendar-bot
+   go build -o ark-intelligent ./cmd/bot
+   ./ark-intelligent
    ```
 
 ## Telegram Commands

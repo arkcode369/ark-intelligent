@@ -6,10 +6,10 @@ import (
 	"log"
 	"math"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/internal/ports"
-	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
-	"github.com/arkcode369/ff-calendar-bot/pkg/mathutil"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 )
 
 // Analyzer computes all 20+ COT metrics from raw positioning data.

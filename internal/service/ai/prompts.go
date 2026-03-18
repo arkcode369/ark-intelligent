@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/internal/ports"
-	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
-	"github.com/arkcode369/ff-calendar-bot/pkg/fmtutil"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/fmtutil"
 )
 
 // SystemPrompt is the base system instruction for all financial analysis.

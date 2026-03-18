@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 // NewsRepository defines the storage interface for Economic Calendar events.

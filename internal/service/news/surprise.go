@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/arkcode369/ff-calendar-bot/pkg/mathutil"
+	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 )
 
 // ComputeSurprise returns the normalized surprise in sigma units.

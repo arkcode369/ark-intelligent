@@ -5,9 +5,9 @@ package cot
 import (
 	"fmt"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/internal/service/fred"
-	"github.com/arkcode369/ff-calendar-bot/pkg/mathutil"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 )
 
 // ConfluenceScoreV2 computes the institutional-grade confluence score for a currency.

@@ -3,7 +3,7 @@ package cot
 import (
 	"testing"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 func baseContract(reportType string) domain.COTContract {

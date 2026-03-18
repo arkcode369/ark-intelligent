@@ -9,7 +9,7 @@ import (
 
 	badger "github.com/dgraph-io/badger/v4"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 // CacheTTL is the default TTL for AI cache entries (7 days).

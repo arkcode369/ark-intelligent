@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
-	"github.com/arkcode369/ff-calendar-bot/pkg/fmtutil"
-	"github.com/arkcode369/ff-calendar-bot/pkg/mathutil"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/pkg/fmtutil"
+	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 )
 
 // IndexCalculator computes extended COT Index variants beyond

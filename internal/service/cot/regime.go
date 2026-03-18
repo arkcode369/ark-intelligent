@@ -2,7 +2,7 @@
 package cot
 
 import (
-	"github.com/arkcode369/ff-calendar-bot/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 // RegimeType classifies the macro risk environment.
