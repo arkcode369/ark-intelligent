@@ -42,6 +42,7 @@ const (
 	SignalMomentumShift   SignalType = "MOMENTUM_SHIFT"
 	SignalConcentration   SignalType = "CONCENTRATION"
 	SignalCrowdContrarian SignalType = "CROWD_CONTRARIAN"
+	SignalThinMarket     SignalType = "THIN_MARKET"
 )
 
 // DetectAll runs all signal detectors on a set of analyses.
@@ -68,6 +69,9 @@ func (sd *SignalDetector) DetectAll(analyses []domain.COTAnalysis, historyMap ma
 			signals = append(signals, *s)
 		}
 		if s := sd.detectCrowdContrarian(a); s != nil {
+			signals = append(signals, *s)
+		}
+		if s := sd.detectThinMarket(a); s != nil {
 			signals = append(signals, *s)
 		}
 	}
@@ -382,6 +386,63 @@ func (sd *SignalDetector) detectCrowdContrarian(a domain.COTAnalysis) *Signal {
 		Strength:     strength,
 		Confidence:   confidence,
 		Description:  fmt.Sprintf("Crowd contrarian %s: Small specs crowded (%.0f) — fading the crowd", direction, a.CrowdingIndex),
+		Factors:      factors,
+	}
+}
+
+// detectThinMarket flags when a key trader category has very few participants.
+// Thin markets are prone to sharp reversals when even a single large trader exits.
+func (sd *SignalDetector) detectThinMarket(a domain.COTAnalysis) *Signal {
+	if !a.ThinMarketAlert || a.ThinMarketDesc == "" {
+		return nil
+	}
+
+	// Direction: thin market in dominant side = reversal risk
+	direction := "BEARISH"
+	if a.NetPosition < 0 {
+		direction = "BULLISH" // thin shorts = squeeze risk
+	}
+
+	strength := 3
+	// Very thin (< 10 traders in key category) = higher severity
+	minTraders := a.TotalTraders
+	if a.Contract.ReportType == "TFF" {
+		if a.DealerShortTraders > 0 && a.DealerShortTraders < minTraders {
+			minTraders = a.DealerShortTraders
+		}
+		if a.LevFundLongTraders > 0 && a.LevFundLongTraders < minTraders {
+			minTraders = a.LevFundLongTraders
+		}
+	} else {
+		if a.MMoneyLongTraders > 0 && a.MMoneyLongTraders < minTraders {
+			minTraders = a.MMoneyLongTraders
+		}
+		if a.MMoneyShortTraders > 0 && a.MMoneyShortTraders < minTraders {
+			minTraders = a.MMoneyShortTraders
+		}
+	}
+	if minTraders < 10 {
+		strength = 5
+	} else if minTraders < 12 {
+		strength = 4
+	}
+
+	confidence := mathutil.Clamp(float64(100-minTraders*5), 40, 90)
+
+	factors := []string{
+		a.ThinMarketDesc,
+		fmt.Sprintf("Total traders: %d (%s)", a.TotalTraders, a.TraderConcentration),
+		fmt.Sprintf("Net position: %s", fmtutil.FmtNumSigned(a.NetPosition, 0)),
+	}
+
+	return &Signal{
+		ContractCode: a.Contract.Code,
+		Currency:     a.Contract.Currency,
+		Type:         SignalThinMarket,
+		Direction:    direction,
+		Strength:     strength,
+		Confidence:   confidence,
+		Description:  fmt.Sprintf("Thin market %s: %s — reversal risk elevated", direction, a.ThinMarketDesc),
 		Factors:      factors,
 	}
 }

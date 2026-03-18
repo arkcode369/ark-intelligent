@@ -97,9 +97,20 @@ func (f *Formatter) FormatCalendarDay(dateStr string, events []domain.NewsEvent,
 
 		if e.Actual != "" {
 			arrow := directionArrow(e.Actual, e.Forecast)
-			b.WriteString(fmt.Sprintf("   ✅ Actual: <b>%s</b> %s (Fcast: %s | Prev: %s)\n", e.Actual, arrow, e.Forecast, e.Previous))
+			line := fmt.Sprintf("   ✅ Actual: <b>%s</b> %s (Fcast: %s | Prev: %s)", e.Actual, arrow, e.Forecast, e.Previous)
+			if e.SurpriseLabel != "" {
+				line += fmt.Sprintf(" — <i>%s</i>", e.SurpriseLabel)
+			}
+			b.WriteString(line + "\n")
+			if e.OldPrevious != "" && e.OldPrevious != e.Previous {
+				b.WriteString(fmt.Sprintf("   ↻ <i>Revised from %s to %s</i>\n", e.OldPrevious, e.Previous))
+			}
 		} else {
-			b.WriteString(fmt.Sprintf("   Fcast: %s | Prev: %s\n", e.Forecast, e.Previous))
+			line := fmt.Sprintf("   Fcast: %s | Prev: %s", e.Forecast, e.Previous)
+			if e.OldPrevious != "" && e.OldPrevious != e.Previous {
+				line += fmt.Sprintf(" (↻ rev from %s)", e.OldPrevious)
+			}
+			b.WriteString(line + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -150,6 +161,9 @@ func (f *Formatter) FormatCalendarWeek(weekStart string, events []domain.NewsEve
 		if e.Actual != "" {
 			arrow := directionArrow(e.Actual, e.Forecast)
 			line += fmt.Sprintf(" — ✅<b>%s</b>%s", e.Actual, arrow)
+			if e.SurpriseLabel != "" {
+				line += fmt.Sprintf(" <i>%s</i>", e.SurpriseLabel)
+			}
 		}
 		b.WriteString(line + "\n")
 	}
@@ -401,6 +415,34 @@ func (f *Formatter) FormatCOTRaw(r domain.COTRecord) string {
 		b.WriteString("<b>Dealers (Commercials):</b>\n")
 		b.WriteString(fmt.Sprintf("<code>  Long:     %s</code>\n", fmtutil.FmtNum(r.DealerLong, 0)))
 		b.WriteString(fmt.Sprintf("<code>  Short:    %s</code>\n", fmtutil.FmtNum(r.DealerShort, 0)))
+	}
+
+	// Trader counts
+	if r.TotalTraders > 0 || r.TotalTradersDisag > 0 {
+		b.WriteString("\n<b>Trader Depth:</b>\n")
+		if r.ContractName == "Gold" || r.ContractName == "Crude Oil WTI" {
+			if r.MMoneyLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  MM Long:  %d traders</code>\n", r.MMoneyLongTraders))
+			}
+			if r.MMoneyShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  MM Short: %d traders</code>\n", r.MMoneyShortTraders))
+			}
+			b.WriteString(fmt.Sprintf("<code>  Total:    %d traders</code>\n", r.TotalTradersDisag))
+		} else {
+			if r.DealerLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  Dlr Long: %d traders</code>\n", r.DealerLongTraders))
+			}
+			if r.DealerShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  Dlr Short:%d traders</code>\n", r.DealerShortTraders))
+			}
+			if r.LevFundLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  LF Long:  %d traders</code>\n", r.LevFundLongTraders))
+			}
+			if r.LevFundShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  LF Short: %d traders</code>\n", r.LevFundShortTraders))
+			}
+			b.WriteString(fmt.Sprintf("<code>  Total:    %d traders</code>\n", r.TotalTraders))
+		}
 	}
 
 	b.WriteString("\n<i>Data sourced directly from CFTC</i>")

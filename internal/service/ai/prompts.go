@@ -39,8 +39,9 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 			fmtutil.FmtNumSigned(a.NetPosition, 0),
 			fmtutil.FmtNumSigned(a.NetChange, 0),
 			fmtutil.FmtNum(a.LongShortRatio, 2)))
-		b.WriteString(fmt.Sprintf("Comm Net: %s (momentum 4W: %s) | L/S Ratio: %s\n",
+		b.WriteString(fmt.Sprintf("Comm Net: %s (chg: %s, mom4W: %s) | L/S: %s\n",
 			fmtutil.FmtNumSigned(a.NetCommercial, 0),
+			fmtutil.FmtNumSigned(a.CommNetChange, 0),
 			fmtutil.FmtNumSigned(a.CommMomentum4W, 0),
 			fmtutil.FmtNum(a.CommLSRatio, 2)))
 		b.WriteString(fmt.Sprintf("COT Index: Spec=%.1f Comm=%.1f\n", a.COTIndex, a.COTIndexComm))
@@ -51,7 +52,8 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 		if a.ConsecutiveWeeks > 0 {
 			b.WriteString(fmt.Sprintf("Trend Streak: %d consecutive weeks same direction\n", a.ConsecutiveWeeks))
 		}
-		b.WriteString(fmt.Sprintf("Intraday Context: OITrend=%s STBias=%s\n", a.OITrend, a.ShortTermBias))
+		b.WriteString(fmt.Sprintf("OI Context: Trend=%s Chg=%s (%.1f%%) | STBias=%s\n",
+			a.OITrend, fmtutil.FmtNumSigned(a.OpenInterestChg, 0), a.OIPctChange, a.ShortTermBias))
 		if a.SpreadPctOfOI > 0 {
 			b.WriteString(fmt.Sprintf("Spread Positions: %.1f%% of OI\n", a.SpreadPctOfOI))
 		}
@@ -175,9 +177,16 @@ func BuildNewsOutlookPrompt(events []domain.NewsEvent, lang string, macroRegime 
 	b.WriteString("=== ECONOMIC CALENDAR ===\n")
 	for _, e := range events {
 		if e.Impact == "high" || e.Impact == "medium" {
-			b.WriteString(fmt.Sprintf("%s | %s - %s | Impact: %s | Fcast: %s | Prev: %s | Act: %s\n",
+			line := fmt.Sprintf("%s | %s - %s | Impact: %s | Fcast: %s | Prev: %s | Act: %s",
 				e.Date, e.Currency, e.Event, e.Impact,
-				e.Forecast, e.Previous, e.Actual))
+				e.Forecast, e.Previous, e.Actual)
+			if e.SurpriseScore != 0 {
+				line += fmt.Sprintf(" | Surprise: %.1fσ %s", e.SurpriseScore, e.SurpriseLabel)
+			}
+			if e.OldPrevious != "" && e.OldPrevious != e.Previous {
+				line += fmt.Sprintf(" | Rev: %s→%s", e.OldPrevious, e.Previous)
+			}
+			b.WriteString(line + "\n")
 		}
 	}
 
@@ -222,8 +231,12 @@ func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
 	b.WriteString("\n=== 2. UPCOMING CATALYSTS (HIGH IMPACT) ===\n")
 	for _, e := range data.NewsEvents {
 		if e.Impact == "high" {
-			b.WriteString(fmt.Sprintf("%s | %s - %s | Fcast: %s | Act: %s\n",
-				e.Date, e.Currency, e.Event, e.Forecast, e.Actual))
+			line := fmt.Sprintf("%s | %s - %s | Fcast: %s | Act: %s",
+				e.Date, e.Currency, e.Event, e.Forecast, e.Actual)
+			if e.SurpriseScore != 0 {
+				line += fmt.Sprintf(" | %.1fσ %s", e.SurpriseScore, e.SurpriseLabel)
+			}
+			b.WriteString(line + "\n")
 		}
 	}
 
@@ -378,8 +391,12 @@ func BuildCombinedWithFREDPrompt(data ports.WeeklyData, regime fred.MacroRegime)
 	b.WriteString("\n=== 2. UPCOMING CATALYSTS (HIGH IMPACT) ===\n")
 	for _, e := range data.NewsEvents {
 		if e.Impact == "high" {
-			b.WriteString(fmt.Sprintf("%s | %s - %s | Fcast: %s | Act: %s\n",
-				e.Date, e.Currency, e.Event, e.Forecast, e.Actual))
+			line := fmt.Sprintf("%s | %s - %s | Fcast: %s | Act: %s",
+				e.Date, e.Currency, e.Event, e.Forecast, e.Actual)
+			if e.SurpriseScore != 0 {
+				line += fmt.Sprintf(" | %.1fσ %s", e.SurpriseScore, e.SurpriseLabel)
+			}
+			b.WriteString(line + "\n")
 		}
 	}
 
@@ -477,7 +494,23 @@ func BuildActualReleasePrompt(event domain.NewsEvent, lang string) string {
 	}
 
 	b.WriteString(fmt.Sprintf("Event: %s\nCurrency: %s\nImpact: %s\n", event.Event, event.Currency, event.Impact))
-	b.WriteString(fmt.Sprintf("Previous: %s\nForecast: %s\nActual: %s\n\n", event.Previous, event.Forecast, event.Actual))
+	b.WriteString(fmt.Sprintf("Previous: %s\nForecast: %s\nActual: %s\n", event.Previous, event.Forecast, event.Actual))
+	if event.SurpriseScore != 0 {
+		b.WriteString(fmt.Sprintf("Surprise: %.2f sigma (%s)\n", event.SurpriseScore, event.SurpriseLabel))
+	}
+	if event.ImpactDirection == 1 {
+		b.WriteString("MQL5 Impact: BULLISH for currency (higher actual = positive)\n")
+	} else if event.ImpactDirection == 2 {
+		b.WriteString("MQL5 Impact: BEARISH for currency (higher actual = negative)\n")
+	}
+	if event.OldPrevious != "" && event.OldPrevious != event.Previous {
+		b.WriteString(fmt.Sprintf("Revision: Previous revised from %s to %s", event.OldPrevious, event.Previous))
+		if event.RevisionLabel != "" {
+			b.WriteString(fmt.Sprintf(" (%s)", event.RevisionLabel))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 
 	b.WriteString("Provide a 3-sentence maximum flash analysis covering:\n")
 	b.WriteString("1. The deviation (did it beat or miss expectations?).\n")

@@ -39,7 +39,14 @@ func (ic *IndexCalculator) ComputeMultiTimeframe(history []domain.COTRecord) *Mu
 	}
 
 	specNets := extractNetsFloat(history, func(r domain.COTRecord) float64 {
-		return r.SpecLong - r.SpecShort
+		// Use modern TFF/DISAGG fields — legacy SpecLong/SpecShort are only populated from CSV
+		if r.LevFundLong != 0 || r.LevFundShort != 0 {
+			return r.LevFundLong - r.LevFundShort
+		}
+		if r.ManagedMoneyLong != 0 || r.ManagedMoneyShort != 0 {
+			return r.ManagedMoneyLong - r.ManagedMoneyShort
+		}
+		return r.SpecLong - r.SpecShort // final fallback for legacy CSV data
 	})
 
 	mtf := &MultiTimeframeIndex{
@@ -101,6 +108,12 @@ func (ic *IndexCalculator) ComputeROC(history []domain.COTRecord) *IndexRateOfCh
 
 	// Compute weekly COT indices to get ROC
 	specNets := extractNetsFloat(history, func(r domain.COTRecord) float64 {
+		if r.LevFundLong != 0 || r.LevFundShort != 0 {
+			return r.LevFundLong - r.LevFundShort
+		}
+		if r.ManagedMoneyLong != 0 || r.ManagedMoneyShort != 0 {
+			return r.ManagedMoneyLong - r.ManagedMoneyShort
+		}
 		return r.SpecLong - r.SpecShort
 	})
 
@@ -162,12 +175,20 @@ func (ic *IndexCalculator) ComputeComposite(analysis domain.COTAnalysis) Composi
 	cs.Components["cot_index"] = indexComponent
 
 	// Momentum component (normalize to 0-100, 25% weight)
+	// Blend 4W (70%) and 8W (30%) momentum for trend-confirmed scoring.
 	// Positive momentum -> higher score
 	momentumNorm := 50.0
 	if analysis.SpecMomentum4W != 0 {
-		// Cap momentum at +/-50000 for normalization
-		capped := mathutil.Clamp(analysis.SpecMomentum4W, -50000, 50000)
-		momentumNorm = 50 + (capped/50000)*50
+		capped4W := mathutil.Clamp(analysis.SpecMomentum4W, -50000, 50000)
+		mom4WNorm := 50 + (capped4W/50000)*50
+
+		if analysis.SpecMomentum8W != 0 {
+			capped8W := mathutil.Clamp(analysis.SpecMomentum8W, -50000, 50000)
+			mom8WNorm := 50 + (capped8W/50000)*50
+			momentumNorm = mom4WNorm*0.70 + mom8WNorm*0.30
+		} else {
+			momentumNorm = mom4WNorm
+		}
 	}
 	cs.Components["momentum"] = momentumNorm
 
