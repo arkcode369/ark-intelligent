@@ -8,13 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rs/zerolog"
-
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
-
-// Ensure zerolog import is used.
-var _ zerolog.Logger
 
 var log = logger.Component("config")
 
@@ -42,6 +37,7 @@ type Config struct {
 	// AI
 	AICacheTTL time.Duration // How long to cache AI responses
 	AIMaxRPM   int           // Max requests per minute to Gemini
+	AIMaxDaily int           // Max AI calls per day
 
 	// Logging
 	LogLevel string // "debug", "info", "warn", "error"
@@ -73,6 +69,7 @@ func MustLoad() *Config {
 		// AI
 		AICacheTTL: getDuration("AI_CACHE_TTL", 1*time.Hour),
 		AIMaxRPM:   getInt("AI_MAX_RPM", 15),
+		AIMaxDaily: getInt("AI_MAX_DAILY", 200),
 
 		// Logging
 		LogLevel: getEnv("LOG_LEVEL", "info"),

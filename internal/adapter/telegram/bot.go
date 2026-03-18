@@ -96,6 +96,7 @@ type CallbackHandler func(ctx context.Context, chatID string, msgID int, userID 
 type Bot struct {
 	token      string
 	defaultID  string // default chat ID
+	ownerID    int64  // owner user ID (exempt from rate limits)
 	apiBase    string
 	httpClient *http.Client
 
@@ -109,19 +110,28 @@ type Bot struct {
 	// Rate limiting: Telegram allows ~30 msg/sec to same chat
 	sendMu   sync.Mutex
 	lastSend time.Time
+
+	// Per-user command rate limiter
+	userLimiter *userRateLimiter
 }
 
 // NewBot creates a new Telegram bot with the given token and default chat ID.
+// The default chat ID is also used to identify the bot owner (exempt from rate limits).
 func NewBot(token, defaultChatID string) *Bot {
+	// Parse owner ID from default chat ID (for private chats, chat ID == user ID).
+	ownerID, _ := strconv.ParseInt(strings.Split(defaultChatID, ":")[0], 10, 64)
+
 	return &Bot{
 		token:     token,
 		defaultID: defaultChatID,
+		ownerID:   ownerID,
 		apiBase:   fmt.Sprintf("https://api.telegram.org/bot%s", token),
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second, // long-polling timeout + buffer
 		},
-		commands:  make(map[string]CommandHandler),
-		callbacks: make(map[string]CallbackHandler),
+		commands:    make(map[string]CommandHandler),
+		callbacks:   make(map[string]CallbackHandler),
+		userLimiter: newUserRateLimiter(),
 	}
 }
 
@@ -246,6 +256,13 @@ func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 		userID = msg.From.ID
 	}
 
+	// Per-user rate limit check (owner is exempt)
+	if userID != 0 && !b.isOwner(userID) && !b.userLimiter.Allow(userID) {
+		log.Warn().Int64("user_id", userID).Str("command", cmd).Msg("user rate limited")
+		_, _ = b.SendHTML(ctx, chatID, "\u23f3 Rate limited \u2014 please wait a moment before sending more commands.")
+		return
+	}
+
 	handler, ok := b.commands[cmd]
 	if !ok {
 		log.Warn().Str("command", cmd).Int64("user_id", userID).Msg("unknown command")
@@ -275,6 +292,13 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 
 	userID := cb.From.ID
 	log.Info().Str("data", cb.Data).Int64("user_id", userID).Msg("callback received")
+
+	// Per-user rate limit check (owner is exempt)
+	if !b.isOwner(userID) && !b.userLimiter.Allow(userID) {
+		log.Warn().Int64("user_id", userID).Str("data", cb.Data).Msg("user rate limited (callback)")
+		_ = b.AnswerCallback(ctx, cb.ID, "\u23f3 Rate limited \u2014 please wait a moment.")
+		return
+	}
 
 	// Find handler by prefix match
 	for prefix, handler := range b.callbacks {
@@ -713,4 +737,9 @@ func (b *Bot) EditWithKeyboardChunked(ctx context.Context, chatID string, msgID 
 // DefaultChatID returns the configured default chat ID.
 func (b *Bot) DefaultChatID() string {
 	return b.defaultID
+}
+
+// isOwner returns true if the given user ID matches the bot owner.
+func (b *Bot) isOwner(userID int64) bool {
+	return b.ownerID != 0 && userID == b.ownerID
 }

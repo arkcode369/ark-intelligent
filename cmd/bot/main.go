@@ -113,7 +113,7 @@ func main() {
 	var cachedAI *aisvc.CachedInterpreter
 
 	if cfg.HasGemini() {
-		gemini, err := aisvc.NewGeminiClient(ctx, cfg.GeminiAPIKey)
+		gemini, err := aisvc.NewGeminiClient(ctx, cfg.GeminiAPIKey, cfg.AIMaxRPM, cfg.AIMaxDaily)
 		if err != nil {
 			log.Warn().Err(err).Msg("Gemini init failed, AI features disabled")
 		} else {

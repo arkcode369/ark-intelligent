@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,19 +12,23 @@ import (
 	"google.golang.org/api/option"
 )
 
+// ErrAIRateLimited is returned when the AI rate limiter rejects a request.
+var ErrAIRateLimited = errors.New("AI rate limited — try again later")
+
 var geminiLog = logger.Component("gemini")
 
 // GeminiClient wraps the Google Generative AI SDK for structured
 // financial analysis prompts. It manages the client lifecycle,
 // model configuration, and retry logic.
 type GeminiClient struct {
-	client *genai.Client
-	model  *genai.GenerativeModel
-	apiKey string
+	client  *genai.Client
+	model   *genai.GenerativeModel
+	apiKey  string
+	limiter *aiRateLimiter
 }
 
-// NewGeminiClient creates a Gemini client with the given API key.
-func NewGeminiClient(ctx context.Context, apiKey string) (*GeminiClient, error) {
+// NewGeminiClient creates a Gemini client with the given API key and rate limits.
+func NewGeminiClient(ctx context.Context, apiKey string, maxRPM int, maxDaily int) (*GeminiClient, error) {
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
 		return nil, fmt.Errorf("create gemini client: %w", err)
@@ -44,15 +49,22 @@ func NewGeminiClient(ctx context.Context, apiKey string) (*GeminiClient, error) 
 	}
 
 	return &GeminiClient{
-		client: client,
-		model:  model,
-		apiKey: apiKey,
+		client:  client,
+		model:   model,
+		apiKey:  apiKey,
+		limiter: newAIRateLimiter(maxRPM, maxDaily),
 	}, nil
 }
 
 // Generate sends a prompt and returns the text response.
 // Includes retry logic with exponential backoff for transient errors.
 func (gc *GeminiClient) Generate(ctx context.Context, prompt string) (string, error) {
+	if gc.limiter != nil && !gc.limiter.Allow() {
+		rpm, used, max := gc.limiter.Stats()
+		geminiLog.Warn().Int("rpm", rpm).Int("daily_used", used).Int("daily_max", max).Msg("AI rate limited")
+		return "", ErrAIRateLimited
+	}
+
 	var lastErr error
 
 	for attempt := 0; attempt < 3; attempt++ {
@@ -86,6 +98,12 @@ func (gc *GeminiClient) Generate(ctx context.Context, prompt string) (string, er
 
 // GenerateWithSystem sends a prompt with a system instruction.
 func (gc *GeminiClient) GenerateWithSystem(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	if gc.limiter != nil && !gc.limiter.Allow() {
+		rpm, used, max := gc.limiter.Stats()
+		geminiLog.Warn().Int("rpm", rpm).Int("daily_used", used).Int("daily_max", max).Msg("AI rate limited")
+		return "", ErrAIRateLimited
+	}
+
 	// Clone model config with system instruction
 	model := gc.client.GenerativeModel("gemini-3.1-flash-lite-preview")
 	model.SetTemperature(0.3)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
@@ -44,6 +45,10 @@ type Handler struct {
 
 	// changelog is the embedded CHANGELOG.md content, injected at startup.
 	changelog string
+
+	// Per-user AI cooldown to prevent rapid-fire expensive commands.
+	aiCooldownMu sync.Mutex
+	aiCooldown   map[int64]time.Time // userID -> last AI command time
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
@@ -71,6 +76,7 @@ func NewHandler(
 		aiAnalyzer:    aiAnalyzer,
 		changelog:     changelog,
 		newsScheduler: newsScheduler,
+		aiCooldown:    make(map[int64]time.Time),
 	}
 
 	// Register all commands
@@ -345,6 +351,12 @@ func (h *Handler) cbCOTDetail(ctx context.Context, chatID string, msgID int, use
 func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, args string) error {
 	if h.aiAnalyzer == nil || !h.aiAnalyzer.IsAvailable() {
 		_, err := h.bot.SendHTML(ctx, chatID, "AI outlook is unavailable. Gemini API key not configured.")
+		return err
+	}
+
+	// Per-user cooldown for expensive AI commands (30s) — owner is exempt
+	if !h.bot.isOwner(userID) && !h.checkAICooldown(userID) {
+		_, err := h.bot.SendHTML(ctx, chatID, "Please wait before requesting another AI analysis.")
 		return err
 	}
 
@@ -633,6 +645,29 @@ func (h *Handler) cmdSignals(ctx context.Context, chatID string, userID int64, a
 	html := h.fmt.FormatSignalsHTML(signals, filterCurrency)
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
+}
+
+// ---------------------------------------------------------------------------
+// AI cooldown helper
+// ---------------------------------------------------------------------------
+
+// aiCooldownDuration is the minimum interval between AI-heavy commands per user.
+const aiCooldownDuration = 30 * time.Second
+
+// checkAICooldown returns true if the user is allowed to make an AI call,
+// and records the current time. Returns false if the user is still in cooldown.
+func (h *Handler) checkAICooldown(userID int64) bool {
+	h.aiCooldownMu.Lock()
+	defer h.aiCooldownMu.Unlock()
+
+	now := time.Now()
+	if last, ok := h.aiCooldown[userID]; ok {
+		if now.Sub(last) < aiCooldownDuration {
+			return false
+		}
+	}
+	h.aiCooldown[userID] = now
+	return true
 }
 
 // ---------------------------------------------------------------------------
