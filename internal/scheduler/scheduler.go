@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arkcode369/ff-calendar-bot/internal/adapter/storage"
 	"github.com/arkcode369/ff-calendar-bot/internal/domain"
 	"github.com/arkcode369/ff-calendar-bot/internal/ports"
 	aisvc "github.com/arkcode369/ff-calendar-bot/internal/service/ai"
@@ -42,6 +43,7 @@ type Deps struct {
 	PrefsRepo   ports.PrefsRepository
 	ChatID      string
 	CachedAI    *aisvc.CachedInterpreter
+	DB          *storage.DB
 }
 
 // Intervals configures how often each job runs.
@@ -91,7 +93,10 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 	// FRED alert monitor (checks every hour for regime changes)
 	s.startJob(ctx, "fred-alerts", 1*time.Hour, s.jobFREDAlerts)
 
-	log.Printf("[SCHED] Started 3 background jobs")
+	// Data retention cleanup (runs daily at 03:00 WIB)
+	s.startJob(ctx, "retention-cleanup", 1*time.Hour, s.jobRetentionCleanup)
+
+	log.Printf("[SCHED] Started 4 background jobs")
 }
 
 // Stop signals all jobs to stop and waits for them to finish.
@@ -399,6 +404,29 @@ func formatStrongSignalAlert(signals []cotsvc.Signal) string {
 	}
 	b.WriteString("<i>Use /signals for full signal list</i>")
 	return b.String()
+}
+
+// jobRetentionCleanup deletes expired data once per day at 03:00 WIB.
+func (s *Scheduler) jobRetentionCleanup(ctx context.Context) error {
+	now := timeutil.NowWIB()
+	// Only run at 03:xx WIB to minimize impact
+	if now.Hour() != 3 {
+		return nil
+	}
+
+	if s.deps.DB == nil {
+		return nil
+	}
+
+	policy := storage.DefaultRetentionPolicy()
+	deleted, err := s.deps.DB.RunRetentionCleanup(ctx, policy)
+	if err != nil {
+		return fmt.Errorf("retention cleanup: %w", err)
+	}
+	if deleted > 0 {
+		log.Printf("[SCHED:retention] Cleaned %d expired keys", deleted)
+	}
+	return nil
 }
 
 // gatherWeeklyData collects all data needed for the weekly outlook.

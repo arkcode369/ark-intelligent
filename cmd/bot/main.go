@@ -127,6 +127,7 @@ func main() {
 		PrefsRepo:   prefsRepo,
 		ChatID:      cfg.ChatID,
 		CachedAI:    cachedAI,
+		DB:          db,
 	})
 
 	sched.Start(ctx, &scheduler.Intervals{
