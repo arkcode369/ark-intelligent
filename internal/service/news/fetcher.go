@@ -5,19 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/pkg/circuitbreaker"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var log = logger.Component("mql5")
 
 // MQL5Fetcher fetches economic calendar data from MQL5's hidden POST endpoint.
 // No API key required. Returns all impact levels (low, medium, high, holiday).
 type MQL5Fetcher struct {
 	httpClient *http.Client
+	cb         *circuitbreaker.Breaker
 }
 
 // NewMQL5Fetcher creates a new MQL5Fetcher.
@@ -26,6 +30,7 @@ func NewMQL5Fetcher() *MQL5Fetcher {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		cb: circuitbreaker.New("mql5", 5, 3*time.Minute),
 	}
 }
 
@@ -137,7 +142,7 @@ func getMonthRange(monthType string) (dateMode, from, to string) {
 // week: "this" | "next" | "prev"
 func (f *MQL5Fetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain.NewsEvent, error) {
 	fromStr, toStr := getWeekRange(week)
-	log.Printf("[MQL5] ScrapeCalendar week=%s from=%s to=%s", week, fromStr, toStr)
+	log.Info().Str("week", week).Str("from", fromStr).Str("to", toStr).Msg("ScrapeCalendar")
 
 	raw, err := f.fetchMQL5(ctx, "1", fromStr, toStr)
 	if err != nil {
@@ -145,7 +150,7 @@ func (f *MQL5Fetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain
 	}
 
 	events := convertEvents(raw, "low", "medium", "high", "holiday", "none")
-	log.Printf("[MQL5] ScrapeCalendar returned %d events (all impact)", len(events))
+	log.Info().Int("events", len(events)).Msg("ScrapeCalendar returned events (all impact)")
 	return events, nil
 }
 
@@ -154,7 +159,7 @@ func (f *MQL5Fetcher) ScrapeCalendar(ctx context.Context, week string) ([]domain
 func (f *MQL5Fetcher) ScrapeActuals(ctx context.Context, date string) ([]domain.NewsEvent, error) {
 	t, err := time.ParseInLocation("20060102", date, wibLocation)
 	if err != nil {
-		log.Printf("[MQL5] ScrapeActuals: bad date %q, falling back to this week: %v", date, err)
+		log.Warn().Str("date", date).Err(err).Msg("ScrapeActuals: bad date, falling back to this week")
 		return f.ScrapeCalendar(ctx, "this")
 	}
 
@@ -162,13 +167,13 @@ func (f *MQL5Fetcher) ScrapeActuals(ctx context.Context, date string) ([]domain.
 	from := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, wibLocation).UTC().Format("2006-01-02T15:04:05")
 	to := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, wibLocation).UTC().Format("2006-01-02T15:04:05")
 
-	log.Printf("[MQL5] ScrapeActuals date=%s from=%s to=%s", date, from, to)
+	log.Info().Str("date", date).Str("from", from).Str("to", to).Msg("ScrapeActuals")
 	raw, err := f.fetchMQL5(ctx, "1", from, to)
 	if err != nil {
 		return nil, fmt.Errorf("mql5 fetch actuals failed: %w", err)
 	}
 	events := convertEvents(raw, "low", "medium", "high", "holiday", "none")
-	log.Printf("[MQL5] ScrapeActuals returned %d events", len(events))
+	log.Info().Int("events", len(events)).Msg("ScrapeActuals returned events")
 	return events, nil
 }
 
@@ -176,7 +181,7 @@ func (f *MQL5Fetcher) ScrapeActuals(ctx context.Context, date string) ([]domain.
 // monthType: "current" | "prev" | "next"
 func (f *MQL5Fetcher) ScrapeMonth(ctx context.Context, monthType string) ([]domain.NewsEvent, error) {
 	dateMode, fromStr, toStr := getMonthRange(monthType)
-	log.Printf("[MQL5] ScrapeMonth type=%s dateMode=%s from=%s to=%s", monthType, dateMode, fromStr, toStr)
+	log.Info().Str("type", monthType).Str("date_mode", dateMode).Str("from", fromStr).Str("to", toStr).Msg("ScrapeMonth")
 
 	raw, err := f.fetchMQL5(ctx, dateMode, fromStr, toStr)
 	if err != nil {
@@ -184,13 +189,13 @@ func (f *MQL5Fetcher) ScrapeMonth(ctx context.Context, monthType string) ([]doma
 	}
 
 	events := convertEvents(raw, "low", "medium", "high", "holiday", "none")
-	log.Printf("[MQL5] ScrapeMonth returned %d events", len(events))
+	log.Info().Int("events", len(events)).Msg("ScrapeMonth returned events")
 	return events, nil
 }
 
 // ScrapeRange fetches events with an explicit date_mode, from, and to.
 func (f *MQL5Fetcher) ScrapeRange(ctx context.Context, dateMode, from, to string) ([]domain.NewsEvent, error) {
-	log.Printf("[MQL5] ScrapeRange dateMode=%s from=%s to=%s", dateMode, from, to)
+	log.Info().Str("date_mode", dateMode).Str("from", from).Str("to", to).Msg("ScrapeRange")
 
 	raw, err := f.fetchMQL5(ctx, dateMode, from, to)
 	if err != nil {
@@ -198,7 +203,7 @@ func (f *MQL5Fetcher) ScrapeRange(ctx context.Context, dateMode, from, to string
 	}
 
 	events := convertEvents(raw, "low", "medium", "high", "holiday", "none")
-	log.Printf("[MQL5] ScrapeRange returned %d events", len(events))
+	log.Info().Int("events", len(events)).Msg("ScrapeRange returned events")
 	return events, nil
 }
 
@@ -206,8 +211,25 @@ func (f *MQL5Fetcher) ScrapeRange(ctx context.Context, dateMode, from, to string
 // Internal HTTP fetch
 // ---------------------------------------------------------------------------
 
-// fetchMQL5 performs the POST request to MQL5 and returns the raw event list.
+// fetchMQL5 performs the POST request to MQL5 with circuit breaker and retry.
 func (f *MQL5Fetcher) fetchMQL5(ctx context.Context, dateMode, from, to string) ([]mql5Event, error) {
+	var result []mql5Event
+	err := f.cb.Execute(func() error {
+		var fetchErr error
+		result, fetchErr = f.doFetchMQL5(ctx, dateMode, from, to)
+		if fetchErr != nil {
+			// Retry once on transient failure
+			log.Warn().Err(fetchErr).Msg("MQL5 fetch failed, retrying in 3s")
+			time.Sleep(3 * time.Second)
+			result, fetchErr = f.doFetchMQL5(ctx, dateMode, from, to)
+		}
+		return fetchErr
+	})
+	return result, err
+}
+
+// doFetchMQL5 performs the raw POST request to MQL5.
+func (f *MQL5Fetcher) doFetchMQL5(ctx context.Context, dateMode, from, to string) ([]mql5Event, error) {
 	form := url.Values{}
 	form.Set("date_mode", dateMode)
 	form.Set("from", from)
@@ -272,7 +294,7 @@ func convertEvents(raw []mql5Event, allowedImpacts ...string) []domain.NewsEvent
 		// Parse FullDate as UTC (confirmed: MQL5 FullDate is UTC, not New York time)
 		t, err := time.ParseInLocation("2006-01-02T15:04:05", e.FullDate, time.UTC)
 		if err != nil {
-			log.Printf("[MQL5] skip event %d %q: bad date %q: %v", e.ID, e.EventName, e.FullDate, err)
+			log.Warn().Int("id", e.ID).Str("event", e.EventName).Str("date", e.FullDate).Err(err).Msg("skip event: bad date")
 			continue
 		}
 

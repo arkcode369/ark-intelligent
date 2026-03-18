@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var cacheLog = logger.Component("cache")
 
 // CacheTTL is the default TTL for AI cache entries (7 days).
 // Because keys embed the data version, stale entries auto-expire
@@ -106,6 +108,6 @@ func (r *CacheRepo) InvalidateByPrefix(_ context.Context, prefix string) error {
 		return fmt.Errorf("flush cache delete: %w", err)
 	}
 
-	log.Printf("[cache] Invalidated %d entries with prefix %q", len(deleteKeys), prefix)
+	cacheLog.Info().Int("count", len(deleteKeys)).Str("prefix", prefix).Msg("Invalidated cache entries")
 	return nil
 }

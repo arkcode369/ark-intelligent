@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -94,7 +93,7 @@ func NewHandler(
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
 
-	log.Printf("[HANDLER] Registered 10 commands and 6 callback prefixes")
+	log.Info().Int("commands", 10).Int("callbacks", 6).Msg("registered commands and callback prefixes")
 	return h
 }
 
@@ -523,7 +522,7 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 				prefs.CurrencyFilter = newFilter
 			}
 		} else {
-			log.Printf("[HANDLER] Unknown settings action: %s", action)
+			log.Warn().Str("action", action).Msg("unknown settings action")
 			return nil
 		}
 	}

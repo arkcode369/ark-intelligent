@@ -4,11 +4,19 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/rs/zerolog"
+
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+// Ensure zerolog import is used.
+var _ zerolog.Logger
+
+var log = logger.Component("config")
 
 // Config holds all application configuration.
 type Config struct {
@@ -82,7 +90,7 @@ func (c *Config) HasGemini() bool {
 // validate performs additional validation beyond required env vars.
 func (c *Config) validate() {
 	if c.COTHistoryWeeks < 4 {
-		log.Fatal("[CONFIG] COT_HISTORY_WEEKS must be >= 4")
+		log.Fatal().Msg("COT_HISTORY_WEEKS must be >= 4")
 	}
 }
 
@@ -93,7 +101,7 @@ func (c *Config) validate() {
 func mustGetEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Fatalf("[CONFIG] Required env var %s is not set", key)
+		log.Fatal().Str("key", key).Msg("Required env var is not set")
 	}
 	return v
 }
@@ -105,11 +113,16 @@ func getEnv(key, defaultVal string) string {
 	return defaultVal
 }
 
+// GetEnvDefault is the exported version of getEnv for use outside the config package.
+func GetEnvDefault(key, defaultVal string) string {
+	return getEnv(key, defaultVal)
+}
+
 func getDuration(key string, defaultVal time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			log.Printf("[CONFIG] Invalid duration for %s=%q, using default %v", key, v, defaultVal)
+			log.Warn().Str("key", key).Str("value", v).Dur("default", defaultVal).Msg("Invalid duration, using default")
 			return defaultVal
 		}
 		return d
@@ -121,7 +134,7 @@ func getInt(key string, defaultVal int) int {
 	if v := os.Getenv(key); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			log.Printf("[CONFIG] Invalid int for %s=%q, using default %d", key, v, defaultVal)
+			log.Warn().Str("key", key).Str("value", v).Int("default", defaultVal).Msg("Invalid int, using default")
 			return defaultVal
 		}
 		return n

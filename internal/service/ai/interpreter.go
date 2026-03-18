@@ -3,7 +3,6 @@ package ai
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -11,7 +10,10 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var log = logger.Component("ai")
 
 // allowedTags are the only HTML tags Telegram Bot API accepts in HTML parse mode.
 var allowedTags = map[string]bool{
@@ -92,7 +94,7 @@ func (ip *Interpreter) AnalyzeCOT(ctx context.Context, analyses []domain.COTAnal
 
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
 	if err != nil {
-		log.Printf("[ai] COT analysis failed: %v", err)
+		log.Error().Err(err).Msg("COT analysis failed")
 		return ip.fallbackCOTSummary(analyses), nil
 	}
 
@@ -118,7 +120,7 @@ func (ip *Interpreter) GenerateWeeklyOutlook(ctx context.Context, data ports.Wee
 
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
 	if err != nil {
-		log.Printf("[ai] weekly outlook failed: %v", err)
+		log.Error().Err(err).Msg("weekly outlook failed")
 		return ip.fallbackWeeklyOutlook(outlookData), nil
 	}
 
@@ -131,7 +133,7 @@ func (ip *Interpreter) AnalyzeCrossMarket(ctx context.Context, cotData map[strin
 
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
 	if err != nil {
-		log.Printf("[ai] cross-market failed: %v", err)
+		log.Error().Err(err).Msg("cross-market analysis failed")
 		return "Cross-market analysis unavailable.", nil
 	}
 
@@ -156,7 +158,7 @@ func (ip *Interpreter) AnalyzeNewsOutlook(ctx context.Context, events []domain.N
 	prompt := BuildNewsOutlookPrompt(events, lang, macroRegime)
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
 	if err != nil {
-		log.Printf("[ai] news outlook failed: %v", err)
+		log.Error().Err(err).Msg("news outlook failed")
 		return "News outlook unavailable.", nil
 	}
 
@@ -180,7 +182,7 @@ func (ip *Interpreter) AnalyzeCombinedOutlook(ctx context.Context, data ports.We
 
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
 	if err != nil {
-		log.Printf("[ai] combined outlook failed: %v", err)
+		log.Error().Err(err).Msg("combined outlook failed")
 		return "Combined outlook unavailable.", nil
 	}
 
@@ -198,7 +200,7 @@ func (ip *Interpreter) AnalyzeFREDOutlook(ctx context.Context, data *fred.MacroD
 
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
 	if err != nil {
-		log.Printf("[ai] FRED outlook failed: %v", err)
+		log.Error().Err(err).Msg("FRED outlook failed")
 		return ip.fallbackFREDSummary(data, regime), nil
 	}
 
@@ -226,7 +228,7 @@ func (ip *Interpreter) AnalyzeActualRelease(ctx context.Context, event domain.Ne
 
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
 	if err != nil {
-		log.Printf("[ai] actual release flash failed: %v", err)
+		log.Error().Err(err).Msg("actual release flash failed")
 		return "", err
 	}
 
@@ -243,7 +245,7 @@ func (ip *Interpreter) GenerateAllInsights(ctx context.Context, data WeeklyOutlo
 	if len(data.COTAnalyses) > 0 {
 		cotResult, err := ip.AnalyzeCOT(ctx, data.COTAnalyses)
 		if err != nil {
-			log.Printf("[ai] batch COT: %v", err)
+			log.Error().Err(err).Msg("batch COT failed")
 		} else {
 			results["cot"] = cotResult
 		}
@@ -256,7 +258,7 @@ func (ip *Interpreter) GenerateAllInsights(ctx context.Context, data WeeklyOutlo
 	}
 	weeklyResult, err := ip.GenerateWeeklyOutlook(ctx, weeklyData)
 	if err != nil {
-		log.Printf("[ai] batch weekly: %v", err)
+		log.Error().Err(err).Msg("batch weekly failed")
 	} else {
 		results["weekly"] = weeklyResult
 	}
@@ -272,14 +274,14 @@ func (ip *Interpreter) GenerateAllInsights(ctx context.Context, data WeeklyOutlo
 		}
 		crossResult, err := ip.AnalyzeCrossMarket(ctx, cotMap)
 		if err != nil {
-			log.Printf("[ai] batch cross-market: %v", err)
+			log.Error().Err(err).Msg("batch cross-market failed")
 		} else {
 			results["cross_market"] = crossResult
 		}
 		throttle()
 	}
 
-	log.Printf("[ai] generated %d insights", len(results))
+	log.Info().Int("count", len(results)).Msg("generated insights")
 	return results, nil
 }
 

@@ -11,13 +11,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var log = logger.Component("fred")
 
 // SeriesTrend holds a time-series value with trend direction.
 type SeriesTrend struct {
@@ -245,20 +248,20 @@ func fetchSeries(ctx context.Context, client *http.Client, seriesID, apiKey stri
 	url := buildFREDURL(seriesID, apiKey, limit)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Printf("[FRED] failed to build request for %s: %v", seriesID, err)
+		log.Error().Str("series", seriesID).Err(err).Msg("failed to build request")
 		return nil
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[FRED] request failed for %s: %v", seriesID, err)
+		log.Error().Str("series", seriesID).Err(err).Msg("request failed")
 		return nil
 	}
 	defer resp.Body.Close()
 
 	var result fredResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("[FRED] decode failed for %s: %v", seriesID, err)
+		log.Error().Str("series", seriesID).Err(err).Msg("decode failed")
 		return nil
 	}
 

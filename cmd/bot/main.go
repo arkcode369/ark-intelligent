@@ -11,7 +11,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"runtime"
@@ -21,15 +20,19 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/adapter/storage"
 	tgbot "github.com/arkcode369/ark-intelligent/internal/adapter/telegram"
 	"github.com/arkcode369/ark-intelligent/internal/config"
+	"github.com/arkcode369/ark-intelligent/internal/health"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	"github.com/arkcode369/ark-intelligent/internal/scheduler"
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
 	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
 
 //go:embed CHANGELOG.md
 var changelogContent string
+
+var log = logger.Component("main")
 
 const banner = `
 ╔══════════════════════════════════════════════════╗
@@ -38,16 +41,24 @@ const banner = `
 ╚══════════════════════════════════════════════════╝`
 
 func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 	fmt.Println(banner)
-	log.Printf("[MAIN] Starting ARK Community Intelligent v1.0 (Go %s, %s/%s)",
-		runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	// -----------------------------------------------------------------------
 	// 1. Configuration
 	// -----------------------------------------------------------------------
 	cfg := config.MustLoad()
-	log.Printf("[MAIN] Config: %s", cfg)
+	logger.Init(cfg.LogLevel)
+	// Re-initialize component logger after Init
+	log = logger.Component("main")
+
+	log.Info().
+		Str("version", "v1.0").
+		Str("go", runtime.Version()).
+		Str("os", runtime.GOOS).
+		Str("arch", runtime.GOARCH).
+		Msg("Starting ARK Community Intelligent")
+
+	log.Info().Str("config", cfg.String()).Msg("Config loaded")
 
 	// -----------------------------------------------------------------------
 	// 2. Root context with cancellation (drives graceful shutdown)
@@ -60,11 +71,11 @@ func main() {
 	// -----------------------------------------------------------------------
 	db, err := storage.Open(cfg.DataDir)
 	if err != nil {
-		log.Fatalf("[MAIN] Failed to open storage: %v", err)
+		log.Fatal().Err(err).Msg("Failed to open storage")
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			log.Printf("[MAIN] Storage close error: %v", err)
+			log.Error().Err(err).Msg("Storage close error")
 		}
 	}()
 
@@ -74,15 +85,26 @@ func main() {
 	newsRepo := storage.NewNewsRepo(db)
 	cacheRepo := storage.NewCacheRepo(db)
 
-	log.Println("[MAIN] Storage layer initialized")
+	log.Info().Msg("Storage layer initialized")
 	logStorageSize(db)
+
+	// -----------------------------------------------------------------------
+	// 3b. Health check endpoint
+	// -----------------------------------------------------------------------
+	healthChecker := health.New(func() error {
+		// Simple DB liveness check via Size() — if it panics, DB is dead
+		db.Size()
+		return nil
+	})
+	healthAddr := config.GetEnvDefault("HEALTH_ADDR", ":8080")
+	go healthChecker.Start(ctx, healthAddr)
 
 	// -----------------------------------------------------------------------
 	// 4. Telegram bot
 	// -----------------------------------------------------------------------
 	bot := tgbot.NewBot(cfg.BotToken, cfg.ChatID)
 
-	log.Println("[MAIN] Telegram bot created")
+	log.Info().Msg("Telegram bot created")
 
 	// -----------------------------------------------------------------------
 	// 5. AI layer (optional — graceful degradation)
@@ -93,15 +115,15 @@ func main() {
 	if cfg.HasGemini() {
 		gemini, err := aisvc.NewGeminiClient(ctx, cfg.GeminiAPIKey)
 		if err != nil {
-			log.Printf("[MAIN] WARNING: Gemini init failed, AI features disabled: %v", err)
+			log.Warn().Err(err).Msg("Gemini init failed, AI features disabled")
 		} else {
 			rawAI := aisvc.NewInterpreter(gemini, eventRepo, cotRepo)
 			cachedAI = aisvc.NewCachedInterpreter(rawAI, cacheRepo)
 			aiAnalyzer = cachedAI
-			log.Println("[MAIN] Gemini AI initialized (with cache layer)")
+			log.Info().Msg("Gemini AI initialized (with cache layer)")
 		}
 	} else {
-		log.Println("[MAIN] No GEMINI_API_KEY — AI features disabled (template fallback active)")
+		log.Info().Msg("No GEMINI_API_KEY — AI features disabled (template fallback active)")
 	}
 
 	// -----------------------------------------------------------------------
@@ -114,7 +136,7 @@ func main() {
 
 	// News services (uses MQL5 Economic Calendar API — no API key required)
 	newsFetcher := newssvc.NewMQL5Fetcher()
-	log.Println("[MAIN] Service layer initialized")
+	log.Info().Msg("Service layer initialized")
 
 	// -----------------------------------------------------------------------
 	// 7. Background schedulers
@@ -145,7 +167,7 @@ func main() {
 	}
 
 	newsSched.Start(ctx)
-	log.Println("[MAIN] News Background scheduler started")
+	log.Info().Msg("News Background scheduler started")
 
 	// -----------------------------------------------------------------------
 	// 8. Telegram handler (registers commands on bot)
@@ -165,9 +187,9 @@ func main() {
 		newsSched,      // SurpriseProvider: weekly per-currency surprise accumulator
 	)
 
-	log.Println("[MAIN] Telegram handler registered")
+	log.Info().Msg("Telegram handler registered")
 
-	log.Println("[MAIN] Background schedulers started")
+	log.Info().Msg("Background schedulers started")
 
 	// -----------------------------------------------------------------------
 	// 9. Initial data load (non-blocking)
@@ -176,27 +198,27 @@ func main() {
 		initCtx, initCancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer initCancel()
 
-		log.Println("[MAIN] Running initial data load...")
+		log.Info().Msg("Running initial data load...")
 
 		// Fetch and sync COT history (this pulls 52 weeks for all contracts)
-		log.Println("[MAIN] Syncing COT history (this may take a moment)...")
+		log.Info().Msg("Syncing COT history (this may take a moment)...")
 		if err := cotAnalyzer.SyncHistory(initCtx); err != nil {
-			log.Printf("[MAIN] COT history sync failed: %v", err)
+			log.Error().Err(err).Msg("COT history sync failed")
 			// Even if full history sync fails, attempt a fresh fetch of latest data
-			log.Println("[MAIN] Attempting fallback: fetch latest COT only...")
+			log.Info().Msg("Attempting fallback: fetch latest COT only...")
 			if _, err2 := cotAnalyzer.AnalyzeAll(initCtx); err2 != nil {
-				log.Printf("[MAIN] Fallback COT fetch also failed: %v", err2)
+				log.Error().Err(err2).Msg("Fallback COT fetch also failed")
 			} else {
-				log.Println("[MAIN] Fallback COT fetch succeeded")
+				log.Info().Msg("Fallback COT fetch succeeded")
 			}
 		} else {
-			log.Println("[MAIN] COT history sync complete")
+			log.Info().Msg("COT history sync complete")
 		}
 
 		// Gap B — Backfill RegimeAdjustedScore for any stored analyses that predate the feature.
 		// Non-fatal: logs warning and continues if FRED data is unavailable.
 		if err := cotAnalyzer.BackfillRegimeScores(initCtx); err != nil {
-			log.Printf("[MAIN] backfill regime scores (non-fatal): %v", err)
+			log.Warn().Err(err).Msg("backfill regime scores (non-fatal)")
 		}
 
 		// Send startup notification
@@ -210,7 +232,7 @@ func main() {
 			aiStatus(aiAnalyzer),
 		)
 		if _, err := bot.SendHTML(initCtx, cfg.ChatID, startupMsg); err != nil {
-			log.Printf("[MAIN] Failed to send startup notification: %v", err)
+			log.Error().Err(err).Msg("Failed to send startup notification")
 		}
 	}()
 
@@ -224,16 +246,16 @@ func main() {
 	pollDone := make(chan struct{})
 	go func() {
 		defer close(pollDone)
-		log.Println("[MAIN] Starting Telegram long-polling...")
+		log.Info().Msg("Starting Telegram long-polling...")
 		if err := bot.StartPolling(ctx); err != nil {
-			log.Printf("[MAIN] Polling exited with error: %v", err)
+			log.Error().Err(err).Msg("Polling exited with error")
 		}
-		log.Println("[MAIN] Polling stopped")
+		log.Info().Msg("Polling stopped")
 	}()
 
 	// Block until signal
 	sig := <-sigCh
-	log.Printf("[MAIN] Received signal: %v — initiating graceful shutdown", sig)
+	log.Info().Str("signal", sig.String()).Msg("Received signal — initiating graceful shutdown")
 
 	// Phase 1: Cancel context (stops polling + schedulers)
 	cancel()
@@ -241,17 +263,17 @@ func main() {
 	// Phase 2: Wait for polling to drain (max 10s)
 	select {
 	case <-pollDone:
-		log.Println("[MAIN] Polling drained cleanly")
+		log.Info().Msg("Polling drained cleanly")
 	case <-time.After(10 * time.Second):
-		log.Println("[MAIN] WARNING: Polling drain timed out after 10s")
+		log.Warn().Msg("Polling drain timed out after 10s")
 	}
 
 	// Phase 3: Stop scheduler
 	sched.Stop()
-	log.Println("[MAIN] Scheduler stopped")
+	log.Info().Msg("Scheduler stopped")
 
 	// Phase 4: Close storage (handled by defer)
-	log.Println("[MAIN] Shutdown complete. Goodbye.")
+	log.Info().Msg("Shutdown complete. Goodbye.")
 }
 
 // ---------------------------------------------------------------------------
@@ -271,10 +293,16 @@ func logStorageSize(db *storage.DB) {
 	lsm, vlog := db.Size()
 	total := lsm + vlog
 	if total > 1<<20 {
-		log.Printf("[MAIN] Storage size: %.1f MB (LSM=%.1f MB, VLog=%.1f MB)",
-			float64(total)/(1<<20), float64(lsm)/(1<<20), float64(vlog)/(1<<20))
+		log.Info().
+			Float64("total_mb", float64(total)/(1<<20)).
+			Float64("lsm_mb", float64(lsm)/(1<<20)).
+			Float64("vlog_mb", float64(vlog)/(1<<20)).
+			Msg("Storage size")
 	} else {
-		log.Printf("[MAIN] Storage size: %d KB (LSM=%d KB, VLog=%d KB)",
-			total>>10, lsm>>10, vlog>>10)
+		log.Info().
+			Int64("total_kb", total>>10).
+			Int64("lsm_kb", lsm>>10).
+			Int64("vlog_kb", vlog>>10).
+			Msg("Storage size")
 	}
 }

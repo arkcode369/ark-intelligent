@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/dgraph-io/badger/v4 v4.5.0
 	github.com/google/generative-ai-go v0.19.0
+	github.com/rs/zerolog v1.34.0
 	google.golang.org/api v0.214.0
 )
 
@@ -28,6 +29,8 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect

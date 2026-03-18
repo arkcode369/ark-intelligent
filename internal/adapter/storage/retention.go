@@ -3,12 +3,15 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
+
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var retentionLog = logger.Component("retention")
 
 // RetentionPolicy defines data retention windows.
 type RetentionPolicy struct {
@@ -77,7 +80,7 @@ func (d *DB) RunRetentionCleanup(ctx context.Context, policy RetentionPolicy) (i
 	totalDeleted += n
 
 	if totalDeleted > 0 {
-		log.Printf("[retention] Cleaned up %d expired keys", totalDeleted)
+		retentionLog.Info().Int("deleted", totalDeleted).Msg("Cleaned up expired keys")
 	}
 	return totalDeleted, nil
 }
@@ -139,6 +142,6 @@ func (d *DB) deleteByDatePrefix(prefix string, dateSegmentIndex int, cutoff time
 		return 0, fmt.Errorf("flush deletes: %w", err)
 	}
 
-	log.Printf("[retention] Deleted %d keys with prefix %q (cutoff: %s)", len(deleteKeys), prefix, cutoffStr)
+	retentionLog.Info().Int("deleted", len(deleteKeys)).Str("prefix", prefix).Str("cutoff", cutoffStr).Msg("Deleted expired keys")
 	return len(deleteKeys), nil
 }

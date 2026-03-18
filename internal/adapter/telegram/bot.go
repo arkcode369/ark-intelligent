@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var log = logger.Component("telegram")
 
 // ---------------------------------------------------------------------------
 // Telegram Bot API types
@@ -65,6 +68,12 @@ type apiResponse struct {
 	Result      json.RawMessage `json:"result,omitempty"`
 	Description string          `json:"description,omitempty"`
 	ErrorCode   int             `json:"error_code,omitempty"`
+	Parameters  *responseParams `json:"parameters,omitempty"`
+}
+
+// responseParams holds optional response parameters from Telegram (e.g. retry_after).
+type responseParams struct {
+	RetryAfter int `json:"retry_after,omitempty"`
 }
 
 // sentMessage is the minimal response from sendMessage.
@@ -129,14 +138,14 @@ func (b *Bot) RegisterCommand(cmd string, handler CommandHandler) {
 		cmd = "/" + cmd
 	}
 	b.commands[cmd] = handler
-	log.Printf("[BOT] Registered command: %s", cmd)
+	log.Info().Str("command", cmd).Msg("registered command")
 }
 
 // RegisterCallback registers a handler for callbacks matching a prefix.
 // E.g., RegisterCallback("cot:", handler) matches "cot:USD", "cot:EUR", etc.
 func (b *Bot) RegisterCallback(prefix string, handler CallbackHandler) {
 	b.callbacks[prefix] = handler
-	log.Printf("[BOT] Registered callback prefix: %s", prefix)
+	log.Info().Str("prefix", prefix).Msg("registered callback prefix")
 }
 
 // ---------------------------------------------------------------------------
@@ -145,12 +154,12 @@ func (b *Bot) RegisterCallback(prefix string, handler CallbackHandler) {
 
 // StartPolling begins the long-polling loop. Blocks until ctx is cancelled.
 func (b *Bot) StartPolling(ctx context.Context) error {
-	log.Printf("[BOT] Starting long-polling loop")
+	log.Info().Msg("starting long-polling loop")
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[BOT] Polling stopped: %v", ctx.Err())
+			log.Info().Err(ctx.Err()).Msg("polling stopped")
 			return ctx.Err()
 		default:
 		}
@@ -160,7 +169,7 @@ func (b *Bot) StartPolling(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			log.Printf("[BOT] getUpdates error: %v, retrying in 5s", err)
+			log.Error().Err(err).Msg("getUpdates error, retrying in 5s")
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -182,7 +191,7 @@ func (b *Bot) getUpdates(ctx context.Context, offset, limit, timeout int) ([]Upd
 	}
 
 	var updates []Update
-	if err := b.apiCall(ctx, "getUpdates", params, &updates); err != nil {
+	if err := b.apiCallWithRetry(ctx, "getUpdates", params, &updates); err != nil {
 		return nil, err
 	}
 	return updates, nil
@@ -192,7 +201,7 @@ func (b *Bot) getUpdates(ctx context.Context, offset, limit, timeout int) ([]Upd
 func (b *Bot) handleUpdate(ctx context.Context, update Update) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[BOT] PANIC in handler: %v", r)
+			log.Error().Interface("panic", r).Msg("panic in handler")
 		}
 	}()
 
@@ -239,7 +248,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 
 	handler, ok := b.commands[cmd]
 	if !ok {
-		log.Printf("[BOT] Unknown command: %s from user %d", cmd, userID)
+		log.Warn().Str("command", cmd).Int64("user_id", userID).Msg("unknown command")
 		_, _ = b.SendHTML(ctx, chatID, fmt.Sprintf(
 			"Unknown command <code>%s</code>\nType /help for available commands.",
 			cmd,
@@ -247,9 +256,9 @@ func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 		return
 	}
 
-	log.Printf("[BOT] Command %s from user %d in chat %s", cmd, userID, chatID)
+	log.Info().Str("command", cmd).Int64("user_id", userID).Str("chat_id", chatID).Msg("command received")
 	if err := handler(ctx, chatID, userID, args); err != nil {
-		log.Printf("[BOT] Handler error for %s: %v", cmd, err)
+		log.Error().Err(err).Str("command", cmd).Msg("handler error")
 		_, _ = b.SendHTML(ctx, chatID,
 			fmt.Sprintf("Error processing <code>%s</code>: %s", cmd, err.Error()))
 	}
@@ -265,13 +274,13 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 	}
 
 	userID := cb.From.ID
-	log.Printf("[BOT] Callback %q from user %d", cb.Data, userID)
+	log.Info().Str("data", cb.Data).Int64("user_id", userID).Msg("callback received")
 
 	// Find handler by prefix match
 	for prefix, handler := range b.callbacks {
 		if strings.HasPrefix(cb.Data, prefix) {
 			if err := handler(ctx, chatID, msgID, userID, cb.Data); err != nil {
-				log.Printf("[BOT] Callback handler error for %q: %v", cb.Data, err)
+				log.Error().Err(err).Str("data", cb.Data).Msg("callback handler error")
 				_ = b.AnswerCallback(ctx, cb.ID, "Error processing request")
 				return
 			}
@@ -280,7 +289,7 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 		}
 	}
 
-	log.Printf("[BOT] Unhandled callback: %q", cb.Data)
+	log.Warn().Str("data", cb.Data).Msg("unhandled callback")
 	_ = b.AnswerCallback(ctx, cb.ID, "Unknown action")
 }
 
@@ -314,7 +323,7 @@ func (b *Bot) SendMessage(ctx context.Context, chatID string, text string) (int,
 	b.setChatID(params, chatID)
 
 	var msg sentMessage
-	if err := b.apiCall(ctx, "sendMessage", params, &msg); err != nil {
+	if err := b.apiCallWithRetry(ctx, "sendMessage", params, &msg); err != nil {
 		return 0, fmt.Errorf("sendMessage: %w", err)
 	}
 	return msg.MessageID, nil
@@ -340,7 +349,7 @@ func (b *Bot) SendHTML(ctx context.Context, chatID string, html string) (int, er
 		b.setChatID(params, chatID)
 
 		var msg sentMessage
-		if err := b.apiCall(ctx, "sendMessage", params, &msg); err != nil {
+		if err := b.apiCallWithRetry(ctx, "sendMessage", params, &msg); err != nil {
 			return lastMsgID, fmt.Errorf("sendHTML: %w", err)
 		}
 		lastMsgID = msg.MessageID
@@ -368,7 +377,7 @@ func (b *Bot) SendWithKeyboard(ctx context.Context, chatID string, text string, 
 	b.setChatID(params, chatID)
 
 	var msg sentMessage
-	if err := b.apiCall(ctx, "sendMessage", params, &msg); err != nil {
+	if err := b.apiCallWithRetry(ctx, "sendMessage", params, &msg); err != nil {
 		return 0, fmt.Errorf("sendWithKeyboard: %w", err)
 	}
 	return msg.MessageID, nil
@@ -488,13 +497,11 @@ func (b *Bot) apiCall(ctx context.Context, method string, params map[string]inte
 	}
 
 	if !apiResp.OK {
-		// Handle rate limiting (429)
-		if apiResp.ErrorCode == 429 {
-			log.Printf("[BOT] Rate limited on %s, waiting 5s", method)
-			time.Sleep(5 * time.Second)
-			return b.apiCall(ctx, method, params, result) // retry once
+		return &apiError{
+			Code:        apiResp.ErrorCode,
+			Description: apiResp.Description,
+			RetryAfter:  retryAfterFromResp(apiResp),
 		}
-		return fmt.Errorf("api error %d: %s", apiResp.ErrorCode, apiResp.Description)
 	}
 
 	if result != nil && len(apiResp.Result) > 0 {
@@ -506,9 +513,78 @@ func (b *Bot) apiCall(ctx context.Context, method string, params map[string]inte
 	return nil
 }
 
+// apiError represents a Telegram API error with optional retry-after hint.
+type apiError struct {
+	Code        int
+	Description string
+	RetryAfter  int // seconds, 0 if not rate-limited
+}
+
+func (e *apiError) Error() string {
+	return fmt.Sprintf("api error %d: %s", e.Code, e.Description)
+}
+
+// retryAfterFromResp extracts the retry_after value from a Telegram API response.
+func retryAfterFromResp(resp apiResponse) int {
+	if resp.Parameters != nil && resp.Parameters.RetryAfter > 0 {
+		return resp.Parameters.RetryAfter
+	}
+	return 0
+}
+
+// maxRetries is the maximum number of retries for rate-limited API calls.
+const maxRetries = 3
+
+// apiCallWithRetry wraps apiCall with exponential backoff retry for 429 rate limits.
+// Base delays: 5s, 10s, 20s (with jitter). If Telegram provides retry_after, that
+// value is used instead. Gives up after maxRetries attempts.
+func (b *Bot) apiCallWithRetry(ctx context.Context, method string, params map[string]interface{}, result interface{}) error {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err := b.apiCall(ctx, method, params, result)
+		if err == nil {
+			return nil
+		}
+
+		ae, ok := err.(*apiError)
+		if !ok || ae.Code != 429 {
+			return err // non-retryable error
+		}
+		lastErr = err
+
+		if attempt == maxRetries {
+			break
+		}
+
+		// Determine wait duration: use Telegram's retry_after if provided,
+		// otherwise exponential backoff (5s, 10s, 20s) + jitter.
+		waitSec := ae.RetryAfter
+		if waitSec <= 0 {
+			waitSec = 5 * (1 << attempt) // 5, 10, 20
+		}
+		jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
+		wait := time.Duration(waitSec)*time.Second + jitter
+
+		log.Warn().
+			Str("method", method).
+			Int("attempt", attempt+1).
+			Int("retry_after", waitSec).
+			Dur("wait", wait).
+			Msg("rate limited (429), retrying")
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+
+	return fmt.Errorf("rate limited after %d retries: %w", maxRetries, lastErr)
+}
+
 // apiCallNoResult makes a Telegram API call without parsing the result.
 func (b *Bot) apiCallNoResult(ctx context.Context, method string, params map[string]interface{}) error {
-	return b.apiCall(ctx, method, params, nil)
+	return b.apiCallWithRetry(ctx, method, params, nil)
 }
 
 // buildInlineKeyboard converts ports.InlineKeyboard to Telegram API format.

@@ -16,7 +16,6 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -27,8 +26,11 @@ import (
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
 )
+
+var log = logger.Component("scheduler")
 
 // ---------------------------------------------------------------------------
 // Dependencies & Configuration
@@ -79,7 +81,7 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 	defer s.mu.Unlock()
 
 	if s.running {
-		log.Println("[SCHED] Already running")
+		log.Info().Msg("already running")
 		return
 	}
 	s.running = true
@@ -96,7 +98,7 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 	// Data retention cleanup (runs daily at 03:00 WIB)
 	s.startJob(ctx, "retention-cleanup", 1*time.Hour, s.jobRetentionCleanup)
 
-	log.Printf("[SCHED] Started 4 background jobs")
+	log.Info().Msg("started 4 background jobs")
 }
 
 // Stop signals all jobs to stop and waits for them to finish.
@@ -108,11 +110,11 @@ func (s *Scheduler) Stop() {
 		return
 	}
 
-	log.Println("[SCHED] Stopping all jobs...")
+	log.Info().Msg("stopping all jobs")
 	close(s.stopCh)
 	s.wg.Wait()
 	s.running = false
-	log.Println("[SCHED] All jobs stopped")
+	log.Info().Msg("all jobs stopped")
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +148,7 @@ func (s *Scheduler) startJobWithDelay(ctx context.Context, name string, interval
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		log.Printf("[SCHED] Job %q started (interval=%v, delay=%v)", name, interval, delay)
+		log.Info().Str("job", name).Dur("interval", interval).Dur("delay", delay).Msg("job started")
 
 		// Run immediately on first start (don't wait for first tick)
 		s.runJob(ctx, name, fn)
@@ -156,10 +158,10 @@ func (s *Scheduler) startJobWithDelay(ctx context.Context, name string, interval
 			case <-ticker.C:
 				s.runJob(ctx, name, fn)
 			case <-ctx.Done():
-				log.Printf("[SCHED] Job %q: context cancelled", name)
+				log.Info().Str("job", name).Msg("context cancelled")
 				return
 			case <-s.stopCh:
-				log.Printf("[SCHED] Job %q: stop signal received", name)
+				log.Info().Str("job", name).Msg("stop signal received")
 				return
 			}
 		}
@@ -177,14 +179,14 @@ func (s *Scheduler) runJob(ctx context.Context, name string, fn jobFunc) {
 	// Panic recovery
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[SCHED] PANIC in job %q: %v", name, r)
+			log.Error().Str("job", name).Interface("panic", r).Msg("PANIC in job")
 		}
 	}()
 
 	if err := fn(jobCtx); err != nil {
-		log.Printf("[SCHED] Job %q failed (took %v): %v", name, time.Since(start), err)
+		log.Error().Str("job", name).Dur("took", time.Since(start)).Err(err).Msg("job failed")
 	} else {
-		log.Printf("[SCHED] Job %q completed (took %v)", name, time.Since(start))
+		log.Info().Str("job", name).Dur("took", time.Since(start)).Msg("job completed")
 	}
 }
 
@@ -206,11 +208,11 @@ func (s *Scheduler) jobCOTFetch(ctx context.Context) error {
 	// 3. Check for new release
 	newLatest, _ := s.deps.COTRepo.GetLatestReportDate(ctx)
 	if !newLatest.IsZero() && newLatest.After(oldLatest) {
-		log.Printf("[SCHED:cot-fetch] NEW DATA DETECTED: %s", newLatest.Format("2006-01-02"))
+		log.Info().Str("date", newLatest.Format("2006-01-02")).Msg("new COT data detected")
 		s.broadcastCOTRelease(ctx, newLatest, analyses)
 	}
 
-	log.Println("[SCHED:cot-fetch] COT data fetched and analyzed")
+	log.Info().Msg("COT data fetched and analyzed")
 	// Invalidate AI caches that depend on COT data
 	if s.deps.CachedAI != nil {
 		s.deps.CachedAI.InvalidateOnCOTUpdate(ctx)
@@ -222,7 +224,7 @@ func (s *Scheduler) jobCOTFetch(ctx context.Context) error {
 func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, analyses []domain.COTAnalysis) {
 	activeUsers, err := s.deps.PrefsRepo.GetAllActive(ctx)
 	if err != nil {
-		log.Printf("[SCHED:broadcast] Failed to get active users: %v", err)
+		log.Error().Err(err).Msg("failed to get active users for broadcast")
 		return
 	}
 
@@ -242,7 +244,7 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	log.Printf("[SCHED:broadcast] Sent COT release alert to %d users", count)
+	log.Info().Int("users", count).Msg("sent COT release alert")
 
 	// Signal detection — alert on strong signals (Strength >= 4)
 	historyMap := make(map[string][]domain.COTRecord)
@@ -269,7 +271,7 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 				_, _ = s.deps.Bot.SendHTML(ctx, prefs.ChatID, signalHTML)
 			}
 		}
-		log.Printf("[SCHED:broadcast] Sent strong signal alert (%d signals) to active users", len(strongSignals))
+		log.Info().Int("signals", len(strongSignals)).Msg("sent strong signal alert to active users")
 	}
 
 	// Thin market and concentration alerts
@@ -314,7 +316,7 @@ func (s *Scheduler) jobWeeklyOutlook(ctx context.Context) error {
 
 	// Check if AI is available
 	if s.deps.AIAnalyzer == nil || !s.deps.AIAnalyzer.IsAvailable() {
-		log.Println("[SCHED:weekly-outlook] AI not available, skipping")
+		log.Info().Msg("AI not available, skipping weekly outlook")
 		return nil
 	}
 
@@ -336,7 +338,7 @@ func (s *Scheduler) jobWeeklyOutlook(ctx context.Context) error {
 		return fmt.Errorf("send outlook: %w", err)
 	}
 
-	log.Println("[SCHED:weekly-outlook] Weekly outlook sent")
+	log.Info().Msg("weekly outlook sent")
 	return nil
 }
 
@@ -358,7 +360,7 @@ func (s *Scheduler) jobFREDAlerts(ctx context.Context) error {
 		return nil
 	}
 
-	log.Printf("[SCHED:fred-alerts] %d alert(s) detected", len(alerts))
+	log.Info().Int("alerts", len(alerts)).Msg("FRED alerts detected")
 
 	activeUsers, err := s.deps.PrefsRepo.GetAllActive(ctx)
 	if err != nil {
@@ -378,7 +380,7 @@ func (s *Scheduler) jobFREDAlerts(ctx context.Context) error {
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
-		log.Printf("[SCHED:fred-alerts] Alert %q sent to %d users", alert.Type, count)
+		log.Info().Str("alert_type", string(alert.Type)).Int("users", count).Msg("FRED alert sent")
 	}
 
 	// Invalidate AI caches that depend on FRED data
@@ -424,7 +426,7 @@ func (s *Scheduler) jobRetentionCleanup(ctx context.Context) error {
 		return fmt.Errorf("retention cleanup: %w", err)
 	}
 	if deleted > 0 {
-		log.Printf("[SCHED:retention] Cleaned %d expired keys", deleted)
+		log.Info().Int("deleted", deleted).Msg("retention cleanup completed")
 	}
 	return nil
 }
@@ -436,7 +438,7 @@ func (s *Scheduler) gatherWeeklyData(ctx context.Context) (ports.WeeklyData, err
 	// COT analyses
 	analyses, err := s.deps.COTRepo.GetAllLatestAnalyses(ctx)
 	if err != nil {
-		log.Printf("[SCHED:weekly-outlook] COT analyses unavailable: %v", err)
+		log.Warn().Err(err).Msg("COT analyses unavailable for weekly outlook")
 	} else {
 		data.COTAnalyses = analyses
 	}

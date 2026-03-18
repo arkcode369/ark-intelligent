@@ -3,7 +3,6 @@ package news
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"strings"
 	"sync"
@@ -13,8 +12,11 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	"github.com/arkcode369/ark-intelligent/internal/service/cot"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
 )
+
+var schedLog = logger.Component("news-scheduler")
 
 // Scheduler manages background pulling of economic data and dispatching alerts.
 type Scheduler struct {
@@ -72,7 +74,7 @@ func (s *Scheduler) SetNewsInvalidateFunc(fn func(ctx context.Context)) {
 
 // Start begins the background monitoring loop.
 func (s *Scheduler) Start(ctx context.Context) {
-	log.Println("[NEWS SCHEDULER] Starting background monitors...")
+	schedLog.Info().Msg("starting background monitors")
 
 	// 0. Initial Sync (Run once on startup if empty)
 	go s.runInitialSync(ctx)
@@ -106,16 +108,16 @@ func (s *Scheduler) runWeeklySyncLoop(ctx context.Context) {
 			now := timeutil.NowWIB()
 			// Condition: Sunday and Hour == 23
 			if now.Weekday() == time.Sunday && now.Hour() == 23 {
-				log.Println("[NEWS SCHEDULER] Triggering Weekly Sync Scrape")
+				schedLog.Info().Msg("triggering weekly sync scrape")
 				events, err := s.fetcher.ScrapeCalendar(ctx, "next")
 				if err != nil {
-					log.Printf("[NEWS SCHEDULER] Weekly sync failed: %v", err)
+					schedLog.Error().Err(err).Msg("weekly sync failed")
 					continue
 				}
 				if err := s.repo.SaveEvents(ctx, events); err != nil {
-					log.Printf("[NEWS SCHEDULER] Failed to save weekly events: %v", err)
+					schedLog.Error().Err(err).Msg("failed to save weekly events")
 				}
-				log.Printf("[NEWS SCHEDULER] Weekly sync successful, parsed %d events", len(events))
+				schedLog.Info().Int("events", len(events)).Msg("weekly sync successful")
 			}
 		}
 	}
@@ -141,7 +143,7 @@ func (s *Scheduler) runDailyReminderLoop(ctx context.Context) {
 
 			// Condition: 06:00 AM WIB and not already sent today
 			if now.Hour() == 6 && now.Minute() == 0 && lastSentDate != dateStr {
-				log.Println("[NEWS SCHEDULER] Triggering Daily Morning Reminder")
+				schedLog.Info().Msg("triggering daily morning reminder")
 				s.broadcastDailyReminder(ctx, now)
 				lastSentDate = dateStr
 			}
@@ -160,7 +162,7 @@ func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 
 	activeUsers, err := s.prefsRepo.GetAllActive(ctx)
 	if err != nil {
-		log.Printf("[NEWS SCHEDULER] broadcastDailyReminder: get users failed: %v", err)
+		schedLog.Error().Err(err).Msg("broadcastDailyReminder: get users failed")
 		return
 	}
 
@@ -225,7 +227,7 @@ func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 		}
 
 		if _, sendErr := s.messenger.SendHTML(ctx, prefs.ChatID, html); sendErr != nil {
-			log.Printf("[NEWS SCHEDULER] Failed to send daily reminder to user %d: %v", userID, sendErr)
+			schedLog.Error().Int64("user_id", userID).Err(sendErr).Msg("failed to send daily reminder")
 		}
 		time.Sleep(50 * time.Millisecond) // Avoid Telegram flood
 	}
@@ -402,7 +404,7 @@ func (s *Scheduler) evaluatePreEventReminders(ctx context.Context) {
 			}
 
 			if _, sendErr := s.messenger.SendHTML(ctx, prefs.ChatID, html); sendErr != nil {
-				log.Printf("[NEWS SCHEDULER] Failed to send pre-event alert to user %d: %v", userID, sendErr)
+				schedLog.Error().Int64("user_id", userID).Err(sendErr).Msg("failed to send pre-event alert")
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
@@ -432,7 +434,7 @@ func (s *Scheduler) evaluatePendingScrapes(ctx context.Context) {
 	dateStr := now.Format("20060102")
 
 	if now.Minute() == 0 {
-		log.Println("[NEWS SCHEDULER] Running Hourly Slow-Poll Sweep")
+		schedLog.Info().Msg("running hourly slow-poll sweep")
 		s.triggerMicroScrape(ctx, dateStr, "hourly")
 		return
 	}
@@ -454,7 +456,7 @@ func (s *Scheduler) evaluatePendingScrapes(ctx context.Context) {
 			if minsSinceRelease == 1 || minsSinceRelease == 3 || minsSinceRelease == 5 ||
 				minsSinceRelease == 10 || minsSinceRelease == 15 || minsSinceRelease == 20 ||
 				minsSinceRelease == 30 {
-				log.Printf("[NEWS SCHEDULER] Micro-scrape triggered by %s %s (+%dm)", e.Currency, e.Event, minsSinceRelease)
+				schedLog.Info().Str("currency", e.Currency).Str("event", e.Event).Int("mins_since", minsSinceRelease).Msg("micro-scrape triggered")
 				triggerScrape = true
 				break
 			}
@@ -469,7 +471,7 @@ func (s *Scheduler) evaluatePendingScrapes(ctx context.Context) {
 func (s *Scheduler) triggerMicroScrape(ctx context.Context, dateStr string, reason string) {
 	newEvents, err := s.fetcher.ScrapeActuals(ctx, dateStr)
 	if err != nil {
-		log.Printf("[NEWS SCHEDULER] Micro-Scrape failed (%s): %v", reason, err)
+		schedLog.Error().Str("reason", reason).Err(err).Msg("micro-scrape failed")
 		return
 	}
 
@@ -504,11 +506,11 @@ func (s *Scheduler) getEventByID(ctx context.Context, dateStr string, id string)
 // onNewRelease broadcasts an actual-release alert to all eligible users.
 // P1.1: Cross-checks the release against COT positioning for the same currency.
 func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
-	log.Printf("[NEWS SCHEDULER] New Release Detected: %s %s -> %s", ev.Currency, ev.Event, ev.Actual)
+	schedLog.Info().Str("currency", ev.Currency).Str("event", ev.Event).Str("actual", ev.Actual).Msg("new release detected")
 
 	activeUsers, err := s.prefsRepo.GetAllActive(ctx)
 	if err != nil {
-		log.Printf("[NEWS SCHEDULER] onNewRelease: get users failed: %v", err)
+		schedLog.Error().Err(err).Msg("onNewRelease: get users failed")
 		return
 	}
 
@@ -565,7 +567,7 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 			Magnitude:     math.Abs(ev.RevisionSurprise),
 		}
 		if saveErr := s.repo.SaveRevision(ctx, revRecord); saveErr != nil {
-			log.Printf("[NEWS SCHEDULER] Failed to save revision for %s %s: %v", ev.Currency, ev.Event, saveErr)
+			schedLog.Error().Str("currency", ev.Currency).Str("event", ev.Event).Err(saveErr).Msg("failed to save revision")
 		}
 	}
 
@@ -593,7 +595,7 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 		}
 
 		if _, sendErr := s.messenger.SendHTML(ctx, prefs.ChatID, html); sendErr != nil {
-			log.Printf("[NEWS SCHEDULER] Failed to send release alert to user %d: %v", userID, sendErr)
+			schedLog.Error().Int64("user_id", userID).Err(sendErr).Msg("failed to send release alert")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -869,23 +871,23 @@ func (s *Scheduler) runInitialSync(ctx context.Context) {
 
 	events, _ := s.repo.GetByDate(ctx, dateStr)
 	if len(events) > 0 {
-		log.Println("[NEWS SCHEDULER] Initial sync skipped: data already exists for today.")
-		log.Println("[NEWS SCHEDULER] Running startup missed-actuals check...")
+		schedLog.Info().Msg("initial sync skipped: data already exists for today")
+		schedLog.Info().Msg("running startup missed-actuals check")
 		s.triggerMicroScrape(ctx, dateStr, "startup-check")
 		return
 	}
 
-	log.Println("[NEWS SCHEDULER] Triggering Initial Sync Scrape for current week")
+	schedLog.Info().Msg("triggering initial sync scrape for current week")
 	newEvents, err := s.fetcher.ScrapeCalendar(ctx, "this")
 	if err != nil {
-		log.Printf("[NEWS SCHEDULER] Initial sync failed: %v", err)
+		schedLog.Error().Err(err).Msg("initial sync failed")
 		return
 	}
 
 	if err := s.repo.SaveEvents(ctx, newEvents); err != nil {
-		log.Printf("[NEWS SCHEDULER] Failed to save initial events: %v", err)
+		schedLog.Error().Err(err).Msg("failed to save initial events")
 	} else {
-		log.Printf("[NEWS SCHEDULER] Initial sync successful, saved %d events for the week", len(newEvents))
+		schedLog.Info().Int("events", len(newEvents)).Msg("initial sync successful")
 	}
 }
 

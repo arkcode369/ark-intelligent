@@ -3,13 +3,15 @@ package ai
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )
+
+var geminiLog = logger.Component("gemini")
 
 // GeminiClient wraps the Google Generative AI SDK for structured
 // financial analysis prompts. It manages the client lifecycle,
@@ -56,7 +58,7 @@ func (gc *GeminiClient) Generate(ctx context.Context, prompt string) (string, er
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
 			backoff := time.Duration(attempt*attempt) * time.Second
-			log.Printf("[gemini] retry %d after %v", attempt, backoff)
+			geminiLog.Warn().Int("attempt", attempt).Dur("backoff", backoff).Msg("retrying request")
 			time.Sleep(backoff)
 		}
 

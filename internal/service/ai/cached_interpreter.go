@@ -3,14 +3,16 @@ package ai
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
 )
+
+var clog = logger.Component("ai-cache")
 
 // CachedInterpreter wraps an AIAnalyzer with BadgerDB-backed caching.
 // Cache keys embed data versions (report dates, week starts) so when
@@ -48,7 +50,7 @@ func (c *CachedInterpreter) AnalyzeCOT(ctx context.Context, analyses []domain.CO
 	key := fmt.Sprintf("aicache:cot:%s", version)
 
 	if cached, ok := c.cache.Get(ctx, key); ok {
-		log.Printf("[ai-cache] HIT %s", key)
+		clog.Debug().Str("key", key).Msg("cache HIT")
 		return cached, nil
 	}
 
@@ -58,9 +60,9 @@ func (c *CachedInterpreter) AnalyzeCOT(ctx context.Context, analyses []domain.CO
 	}
 
 	if sErr := c.cache.Set(ctx, key, result, "cot", version); sErr != nil {
-		log.Printf("[ai-cache] store failed %s: %v", key, sErr)
+		clog.Warn().Err(sErr).Str("key", key).Msg("store failed")
 	} else {
-		log.Printf("[ai-cache] STORE %s", key)
+		clog.Debug().Str("key", key).Msg("cache STORE")
 	}
 	return result, nil
 }
@@ -79,7 +81,7 @@ func (c *CachedInterpreter) GenerateWeeklyOutlook(ctx context.Context, data port
 	key := fmt.Sprintf("aicache:weekly:%s:%s", version, lang)
 
 	if cached, ok := c.cache.Get(ctx, key); ok {
-		log.Printf("[ai-cache] HIT %s", key)
+		clog.Debug().Str("key", key).Msg("cache HIT")
 		return cached, nil
 	}
 
@@ -89,9 +91,9 @@ func (c *CachedInterpreter) GenerateWeeklyOutlook(ctx context.Context, data port
 	}
 
 	if sErr := c.cache.Set(ctx, key, result, "weekly", version); sErr != nil {
-		log.Printf("[ai-cache] store failed %s: %v", key, sErr)
+		clog.Warn().Err(sErr).Str("key", key).Msg("store failed")
 	} else {
-		log.Printf("[ai-cache] STORE %s", key)
+		clog.Debug().Str("key", key).Msg("cache STORE")
 	}
 	return result, nil
 }
@@ -106,7 +108,7 @@ func (c *CachedInterpreter) AnalyzeCrossMarket(ctx context.Context, cotData map[
 	key := fmt.Sprintf("aicache:cross:%s", version)
 
 	if cached, ok := c.cache.Get(ctx, key); ok {
-		log.Printf("[ai-cache] HIT %s", key)
+		clog.Debug().Str("key", key).Msg("cache HIT")
 		return cached, nil
 	}
 
@@ -116,9 +118,9 @@ func (c *CachedInterpreter) AnalyzeCrossMarket(ctx context.Context, cotData map[
 	}
 
 	if sErr := c.cache.Set(ctx, key, result, "cross", version); sErr != nil {
-		log.Printf("[ai-cache] store failed %s: %v", key, sErr)
+		clog.Warn().Err(sErr).Str("key", key).Msg("store failed")
 	} else {
-		log.Printf("[ai-cache] STORE %s", key)
+		clog.Debug().Str("key", key).Msg("cache STORE")
 	}
 	return result, nil
 }
@@ -136,7 +138,7 @@ func (c *CachedInterpreter) AnalyzeNewsOutlook(ctx context.Context, events []dom
 	key := fmt.Sprintf("aicache:news:%s:%s", version, lang)
 
 	if cached, ok := c.cache.Get(ctx, key); ok {
-		log.Printf("[ai-cache] HIT %s", key)
+		clog.Debug().Str("key", key).Msg("cache HIT")
 		return cached, nil
 	}
 
@@ -146,9 +148,9 @@ func (c *CachedInterpreter) AnalyzeNewsOutlook(ctx context.Context, events []dom
 	}
 
 	if sErr := c.cache.Set(ctx, key, result, "news", version); sErr != nil {
-		log.Printf("[ai-cache] store failed %s: %v", key, sErr)
+		clog.Warn().Err(sErr).Str("key", key).Msg("store failed")
 	} else {
-		log.Printf("[ai-cache] STORE %s", key)
+		clog.Debug().Str("key", key).Msg("cache STORE")
 	}
 	return result, nil
 }
@@ -171,7 +173,7 @@ func (c *CachedInterpreter) AnalyzeCombinedOutlook(ctx context.Context, data por
 	key := fmt.Sprintf("aicache:combined:%s:%s:%s", version, lang, hasFred)
 
 	if cached, ok := c.cache.Get(ctx, key); ok {
-		log.Printf("[ai-cache] HIT %s", key)
+		clog.Debug().Str("key", key).Msg("cache HIT")
 		return cached, nil
 	}
 
@@ -181,9 +183,9 @@ func (c *CachedInterpreter) AnalyzeCombinedOutlook(ctx context.Context, data por
 	}
 
 	if sErr := c.cache.Set(ctx, key, result, "combined", version); sErr != nil {
-		log.Printf("[ai-cache] store failed %s: %v", key, sErr)
+		clog.Warn().Err(sErr).Str("key", key).Msg("store failed")
 	} else {
-		log.Printf("[ai-cache] STORE %s", key)
+		clog.Debug().Str("key", key).Msg("cache STORE")
 	}
 	return result, nil
 }
@@ -201,7 +203,7 @@ func (c *CachedInterpreter) AnalyzeFREDOutlook(ctx context.Context, data *fred.M
 	key := fmt.Sprintf("aicache:fred:%s:%s", version, lang)
 
 	if cached, ok := c.cache.Get(ctx, key); ok {
-		log.Printf("[ai-cache] HIT %s", key)
+		clog.Debug().Str("key", key).Msg("cache HIT")
 		return cached, nil
 	}
 
@@ -211,9 +213,9 @@ func (c *CachedInterpreter) AnalyzeFREDOutlook(ctx context.Context, data *fred.M
 	}
 
 	if sErr := c.cache.Set(ctx, key, result, "fred", version); sErr != nil {
-		log.Printf("[ai-cache] store failed %s: %v", key, sErr)
+		clog.Warn().Err(sErr).Str("key", key).Msg("store failed")
 	} else {
-		log.Printf("[ai-cache] STORE %s", key)
+		clog.Debug().Str("key", key).Msg("cache STORE")
 	}
 	return result, nil
 }
@@ -232,10 +234,10 @@ func (c *CachedInterpreter) InvalidateOnCOTUpdate(ctx context.Context) {
 	prefixes := []string{"aicache:cot:", "aicache:weekly:", "aicache:cross:", "aicache:combined:"}
 	for _, p := range prefixes {
 		if err := c.cache.InvalidateByPrefix(ctx, p); err != nil {
-			log.Printf("[ai-cache] invalidate %s failed: %v", p, err)
+			clog.Warn().Err(err).Str("prefix", p).Msg("invalidation failed")
 		}
 	}
-	log.Println("[ai-cache] Invalidated caches on COT update")
+	clog.Info().Msg("invalidated caches on COT update")
 }
 
 // InvalidateOnNewsUpdate should be called when calendar events change significantly.
@@ -247,10 +249,10 @@ func (c *CachedInterpreter) InvalidateOnNewsUpdate(ctx context.Context) {
 	prefixes := []string{"aicache:news:", "aicache:combined:"}
 	for _, p := range prefixes {
 		if err := c.cache.InvalidateByPrefix(ctx, p); err != nil {
-			log.Printf("[ai-cache] invalidate %s failed: %v", p, err)
+			clog.Warn().Err(err).Str("prefix", p).Msg("invalidation failed")
 		}
 	}
-	log.Println("[ai-cache] Invalidated caches on news update")
+	clog.Info().Msg("invalidated caches on news update")
 }
 
 // InvalidateOnFREDUpdate should be called when FRED macro data changes.
@@ -262,10 +264,10 @@ func (c *CachedInterpreter) InvalidateOnFREDUpdate(ctx context.Context) {
 	prefixes := []string{"aicache:fred:", "aicache:weekly:", "aicache:combined:"}
 	for _, p := range prefixes {
 		if err := c.cache.InvalidateByPrefix(ctx, p); err != nil {
-			log.Printf("[ai-cache] invalidate %s failed: %v", p, err)
+			clog.Warn().Err(err).Str("prefix", p).Msg("invalidation failed")
 		}
 	}
-	log.Println("[ai-cache] Invalidated caches on FRED update")
+	clog.Info().Msg("invalidated caches on FRED update")
 }
 
 // InvalidateAll clears all AI cache entries.
@@ -274,9 +276,9 @@ func (c *CachedInterpreter) InvalidateAll(ctx context.Context) {
 		return
 	}
 	if err := c.cache.InvalidateByPrefix(ctx, "aicache:"); err != nil {
-		log.Printf("[ai-cache] invalidate all failed: %v", err)
+		clog.Warn().Err(err).Msg("invalidate all failed")
 	}
-	log.Println("[ai-cache] Invalidated ALL caches")
+	clog.Info().Msg("invalidated ALL caches")
 }
 
 // --- helpers ---

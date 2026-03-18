@@ -2,11 +2,14 @@ package storage
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
+
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var log = logger.Component("storage")
 
 // DB wraps a BadgerDB instance with lifecycle management.
 type DB struct {
@@ -39,7 +42,7 @@ func Open(path string) (*DB, error) {
 	}
 	go d.runGC()
 
-	log.Printf("[storage] BadgerDB opened at %s", path)
+	log.Info().Str("path", path).Msg("BadgerDB opened")
 	return d, nil
 }
 
@@ -49,7 +52,7 @@ func (d *DB) Close() error {
 	if err := d.db.Close(); err != nil {
 		return fmt.Errorf("badger close: %w", err)
 	}
-	log.Println("[storage] BadgerDB closed")
+	log.Info().Msg("BadgerDB closed")
 	return nil
 }
 
@@ -88,7 +91,7 @@ func (d *DB) DropAll() error {
 	if err := d.db.DropAll(); err != nil {
 		return fmt.Errorf("badger drop all: %w", err)
 	}
-	log.Println("[storage] all data dropped")
+	log.Info().Msg("all data dropped")
 	return nil
 }
 

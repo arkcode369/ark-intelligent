@@ -3,14 +3,16 @@ package cot
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 )
+
+var log = logger.Component("cot")
 
 // Analyzer computes all 20+ COT metrics from raw positioning data.
 // It processes historical records to derive net positions, ratios,
@@ -42,7 +44,7 @@ func (a *Analyzer) AnalyzeAll(ctx context.Context) ([]domain.COTAnalysis, error)
 
 	// Save raw records
 	if err := a.cotRepo.SaveRecords(ctx, records); err != nil {
-		log.Printf("[cot] warn: save records: %v", err)
+		log.Warn().Err(err).Msg("failed to save records")
 	}
 
 	// Gap B — Best-effort FRED regime fetch for RegimeAdjustedScore population
@@ -51,7 +53,7 @@ func (a *Analyzer) AnalyzeAll(ctx context.Context) ([]domain.COTAnalysis, error)
 		r := fred.ClassifyMacroRegime(macroData)
 		cachedRegime = &r
 		a.lastRegime = cachedRegime
-		log.Printf("[cot] FRED regime loaded for scoring: %s", r.Name)
+		log.Info().Str("regime", r.Name).Msg("FRED regime loaded for scoring")
 	}
 
 	var analyses []domain.COTAnalysis
@@ -60,7 +62,7 @@ func (a *Analyzer) AnalyzeAll(ctx context.Context) ([]domain.COTAnalysis, error)
 		// Get historical data for index calculation (52 weeks)
 		history, err := a.cotRepo.GetHistory(ctx, record.ContractCode, 52)
 		if err != nil {
-			log.Printf("[cot] warn: get history for %s: %v", record.ContractCode, err)
+			log.Warn().Str("contract", record.ContractCode).Err(err).Msg("failed to get history")
 			history = []domain.COTRecord{record} // use just current if no history
 		}
 
@@ -73,7 +75,7 @@ func (a *Analyzer) AnalyzeAll(ctx context.Context) ([]domain.COTAnalysis, error)
 		return analyses, fmt.Errorf("save analyses: %w", err)
 	}
 
-	log.Printf("[cot] analyzed %d contracts", len(analyses))
+	log.Info().Int("contracts", len(analyses)).Msg("analyzed contracts")
 	return analyses, nil
 }
 
@@ -90,7 +92,7 @@ func (a *Analyzer) SyncHistory(ctx context.Context) error {
 		return fmt.Errorf("save history records: %w", err)
 	}
 
-	log.Printf("[cot] history synced: saved %d records", len(records))
+	log.Info().Int("records", len(records)).Msg("history synced")
 
 	// Run initial analysis on the synced data for each contract
 	_, err = a.AnalyzeAll(ctx)
@@ -122,7 +124,7 @@ func (a *Analyzer) BackfillRegimeScores(ctx context.Context) error {
 	}
 
 	if updated == 0 {
-		log.Println("[cot] backfill: all analyses already have RegimeAdjustedScore, skipping save")
+		log.Info().Msg("backfill: all analyses already have RegimeAdjustedScore, skipping save")
 		return nil
 	}
 
@@ -130,7 +132,7 @@ func (a *Analyzer) BackfillRegimeScores(ctx context.Context) error {
 		return fmt.Errorf("backfill: save analyses: %w", err)
 	}
 
-	log.Printf("[cot] backfill: populated RegimeAdjustedScore for %d/%d analyses", updated, len(analyses))
+	log.Info().Int("updated", updated).Int("total", len(analyses)).Msg("backfill: populated RegimeAdjustedScore")
 	return nil
 }
 

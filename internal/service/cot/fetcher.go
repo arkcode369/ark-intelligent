@@ -6,14 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/pkg/circuitbreaker"
+	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
+
+var fetchLog = logger.Component("cot-fetcher")
 
 // Fetcher retrieves COT data from CFTC Socrata API with CSV fallback.
 // Primary: CFTC Socrata Open Data API (JSON)
@@ -22,6 +25,8 @@ type Fetcher struct {
 	httpClient *http.Client
 	endpoints  map[string]string // reportType -> url
 	defaultCSV string
+	cbSocrata  *circuitbreaker.Breaker
+	cbCSV      *circuitbreaker.Breaker
 }
 
 // NewFetcher creates a COT fetcher with modern CFTC endpoints.
@@ -33,25 +38,40 @@ func NewFetcher() *Fetcher {
 			"DISAGGREGATED": "https://publicreporting.cftc.gov/resource/kh3c-gbw2.json", // Disaggregated Combined
 		},
 		defaultCSV: "https://www.cftc.gov/dea/newcot/deafut.txt", // Legacy fallback (still useful)
+		cbSocrata:  circuitbreaker.New("cftc-socrata", 3, 5*time.Minute),
+		cbCSV:      circuitbreaker.New("cftc-csv", 3, 5*time.Minute),
 	}
 }
 
 // FetchLatest retrieves the most recent COT records for all tracked contracts.
 // It compares Socrata API and CSV fallback and picks the one with the more recent data.
+// Both sources are protected by circuit breakers.
 func (f *Fetcher) FetchLatest(ctx context.Context, contracts []domain.COTContract) ([]domain.COTRecord, error) {
-	socrataRecords, sErr := f.fetchFromSocrata(ctx, contracts)
-	csvRecords, cErr := f.fetchFromCSV(ctx, contracts)
+	var socrataRecords []domain.COTRecord
+	var csvRecords []domain.COTRecord
+	var sErr, cErr error
+
+	sErr = f.cbSocrata.Execute(func() error {
+		var err error
+		socrataRecords, err = f.fetchFromSocrata(ctx, contracts)
+		return err
+	})
+	cErr = f.cbCSV.Execute(func() error {
+		var err error
+		csvRecords, err = f.fetchFromCSV(ctx, contracts)
+		return err
+	})
 
 	if sErr != nil && cErr != nil {
 		return nil, fmt.Errorf("both Socrata (%v) and CSV (%v) failed", sErr, cErr)
 	}
 
 	if sErr != nil {
-		log.Printf("[cot] Socrata failed, using CSV: %v", sErr)
+		fetchLog.Warn().Err(sErr).Msg("Socrata failed, using CSV")
 		return csvRecords, nil
 	}
 	if cErr != nil {
-		log.Printf("[cot] CSV failed, using Socrata: %v", cErr)
+		fetchLog.Warn().Err(cErr).Msg("CSV failed, using Socrata")
 		return socrataRecords, nil
 	}
 
@@ -60,8 +80,10 @@ func (f *Fetcher) FetchLatest(ctx context.Context, contracts []domain.COTContrac
 	cDate := getLatestDate(csvRecords)
 
 	if cDate.After(sDate) {
-		log.Printf("[cot] CSV data (%s) is newer than Socrata (%s), using CSV",
-			cDate.Format("2006-01-02"), sDate.Format("2006-01-02"))
+		fetchLog.Info().
+			Str("csv_date", cDate.Format("2006-01-02")).
+			Str("socrata_date", sDate.Format("2006-01-02")).
+			Msg("CSV data is newer than Socrata, using CSV")
 		return csvRecords, nil
 	}
 
@@ -125,10 +147,10 @@ func (f *Fetcher) FetchHistory(ctx context.Context, contract domain.COTContract,
 func (f *Fetcher) FetchAllHistory(ctx context.Context, contracts []domain.COTContract) ([]domain.COTRecord, error) {
 	var allRecords []domain.COTRecord
 	for _, c := range contracts {
-		log.Printf("[cot] Syncing history for %s...", c.Name)
+		fetchLog.Info().Str("contract", c.Name).Msg("syncing history")
 		history, err := f.FetchHistory(ctx, c, 52)
 		if err != nil {
-			log.Printf("[cot] warn: failed to fetch history for %s: %v", c.Name, err)
+			fetchLog.Warn().Str("contract", c.Name).Err(err).Msg("failed to fetch history")
 			continue
 		}
 		allRecords = append(allRecords, history...)
@@ -152,7 +174,7 @@ func (f *Fetcher) fetchFromSocrata(ctx context.Context, contracts []domain.COTCo
 	for reportType, reportContracts := range byReport {
 		url, ok := f.endpoints[reportType]
 		if !ok {
-			log.Printf("[cot] warn: no endpoint for report type %s", reportType)
+			fetchLog.Warn().Str("report_type", reportType).Msg("no endpoint for report type")
 			continue
 		}
 
