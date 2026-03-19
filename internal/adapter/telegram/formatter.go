@@ -862,6 +862,8 @@ func cotLabel(idx float64) string {
 
 // buildBestPairs generates the top 3 long/short pair recommendations.
 // Long the highest-ranked currency, short the lowest-ranked.
+// Direction is derived from the pair name: if the base currency (first 3 chars)
+// matches the favored currency → LONG; if the base is the weak currency → SHORT.
 func buildBestPairs(entries []rankEntry) []string {
 	if len(entries) < 2 {
 		return nil
@@ -887,10 +889,9 @@ func buildBestPairs(entries []rankEntry) []string {
 			}
 			seen[pairName] = true
 
-			direction := "LONG"
-			spreadSign := "+"
-			pairs = append(pairs, fmt.Sprintf("→ %s <b>%s</b> (spread %s%.0f)",
-				direction, pairName, spreadSign, math.Abs(spread)))
+			direction := pairDirection(pairName, long.Currency)
+			pairs = append(pairs, fmt.Sprintf("→ %s <b>%s</b> (spread +%.0f)",
+				direction, pairName, math.Abs(spread)))
 		}
 	}
 
@@ -900,10 +901,22 @@ func buildBestPairs(entries []rankEntry) []string {
 		short := entries[len(entries)-1]
 		spread := long.Score - short.Score
 		pairName := formatPairName(long.Currency, short.Currency)
-		pairs = append(pairs, fmt.Sprintf("→ LONG <b>%s</b> (spread +%.0f)", pairName, spread))
+		direction := pairDirection(pairName, long.Currency)
+		pairs = append(pairs, fmt.Sprintf("→ %s <b>%s</b> (spread +%.0f)", direction, pairName, spread))
 	}
 
 	return pairs
+}
+
+// pairDirection returns "LONG" if the favored currency is the base (first) in
+// the pair, or "SHORT" if the favored currency ended up as the quote (second).
+// Example: favored=USD, pair=AUDUSD → base is AUD (not favored) → SHORT AUDUSD.
+//          favored=EUR, pair=EURUSD → base is EUR (favored)     → LONG EURUSD.
+func pairDirection(pairName, favoredCurrency string) string {
+	if strings.HasPrefix(pairName, favoredCurrency) {
+		return "LONG"
+	}
+	return "SHORT"
 }
 
 // formatPairName formats a forex pair name from two currency codes.
