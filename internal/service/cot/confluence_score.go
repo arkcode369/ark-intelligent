@@ -66,10 +66,10 @@ func ConfluenceScoreV2(
 				gdpFactor = 10
 			case macroData.GDPGrowth > 1.5:
 				gdpFactor = 5
+			case macroData.GDPGrowth > 0:
+				gdpFactor = 0 // low positive growth → neutral (not bearish)
 			case macroData.GDPGrowth < 0:
 				gdpFactor = -15
-			case macroData.GDPGrowth < 1.0:
-				gdpFactor = -5
 			}
 			// Blend GDP into the FRED component (reduce FRED weight slightly, add GDP)
 			fredScore += gdpFactor * 0.3

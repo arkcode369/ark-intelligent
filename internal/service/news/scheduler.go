@@ -481,7 +481,9 @@ func (s *Scheduler) triggerMicroScrape(ctx context.Context, dateStr string, reas
 			if originalEvt != nil && originalEvt.Actual == "" {
 				s.onNewRelease(ctx, ev)
 			}
-			_ = s.repo.UpdateActual(ctx, ev.ID, ev.Actual)
+			if err := s.repo.UpdateActual(ctx, ev.ID, ev.Actual); err != nil {
+				schedLog.Error().Str("id", ev.ID).Err(err).Msg("failed to persist actual value")
+			}
 		}
 	}
 }
@@ -808,10 +810,14 @@ func (s *Scheduler) buildStandardReleaseAlert(ctx context.Context, ev domain.New
 
 	direction := "⚪"
 	if ev.Actual != "" && ev.Forecast != "" && ev.Actual != ev.Forecast {
-		if ev.Actual > ev.Forecast {
-			direction = "🟢"
-		} else {
-			direction = "🔴"
+		actualVal, aOk := ParseNumericValue(ev.Actual)
+		forecastVal, fOk := ParseNumericValue(ev.Forecast)
+		if aOk && fOk {
+			if actualVal > forecastVal {
+				direction = "🟢"
+			} else {
+				direction = "🔴"
+			}
 		}
 	}
 

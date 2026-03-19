@@ -162,6 +162,9 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 	// If specific currency requested: /cot USD or /cot raw USD
 	if args != "" {
 		parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
+		if len(parts) == 0 {
+			return h.sendCOTOverview(ctx, chatID)
+		}
 		isRaw := false
 		code := parts[0]
 
