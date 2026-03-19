@@ -139,12 +139,21 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string, macroRegime *
 		b.WriteString("NOTE: Adjust currency biases above considering this macro regime context.\n\n")
 	}
 
-	b.WriteString("\nProvide a structured weekly outlook in INDONESIAN:\n")
-	b.WriteString("1. MACRO THEME: Tema utama penggerak pasar minggu ini\n")
-	b.WriteString("2. CURRENCY OUTLOOK: Bias Bullish/Bearish untuk mata uang G8 beserta alasannya\n")
-	b.WriteString("3. TOP TRADES: 3 ide trading dengan keyakinan tertinggi beserta logikanya\n")
-	b.WriteString("4. KEY RISKS: Skenario yang dapat membatalkan analisis ini\n")
-	b.WriteString("5. SCALPER INTEL: Rekomendasi Intraday/Swing (Buy Dips/Sell Rallies) berdasarkan data 4W Momentum & OI Trend\n")
+	if lang == "en" {
+		b.WriteString("\nProvide a structured weekly outlook in ENGLISH:\n")
+		b.WriteString("1. MACRO THEME: Key market drivers for this week\n")
+		b.WriteString("2. CURRENCY OUTLOOK: Bullish/Bearish bias for G8 currencies with reasoning\n")
+		b.WriteString("3. TOP TRADES: 3 highest conviction trade ideas with rationale\n")
+		b.WriteString("4. KEY RISKS: Scenarios that could invalidate the analysis\n")
+		b.WriteString("5. SCALPER INTEL: Intraday/Swing recommendations (Buy Dips/Sell Rallies) based on 4W Momentum & OI Trend data\n")
+	} else {
+		b.WriteString("\nProvide a structured weekly outlook in INDONESIAN:\n")
+		b.WriteString("1. MACRO THEME: Tema utama penggerak pasar minggu ini\n")
+		b.WriteString("2. CURRENCY OUTLOOK: Bias Bullish/Bearish untuk mata uang G8 beserta alasannya\n")
+		b.WriteString("3. TOP TRADES: 3 ide trading dengan keyakinan tertinggi beserta logikanya\n")
+		b.WriteString("4. KEY RISKS: Skenario yang dapat membatalkan analisis ini\n")
+		b.WriteString("5. SCALPER INTEL: Rekomendasi Intraday/Swing (Buy Dips/Sell Rallies) berdasarkan data 4W Momentum & OI Trend\n")
+	}
 
 	return b.String()
 }
@@ -217,11 +226,19 @@ func BuildNewsOutlookPrompt(events []domain.NewsEvent, lang string, macroRegime 
 		b.WriteString("NOTE: Adjust currency biases above considering this macro regime context.\n")
 	}
 
-	b.WriteString("\nProvide a structured outlook:\n")
-	b.WriteString("1. Currency Strength Context: Discuss which pairs will be most volatile based on event density.\n")
-	b.WriteString("2. Storm Days Detection: Identify days with multiple clustered high-impact events across countries.\n")
-	b.WriteString("3. Fundamental Tracking: Analyze the trajectory of repeating data (e.g. CPI/NFP trends) based on Forecast vs Previous.\n")
-	b.WriteString("4. Central Bank Watch: Highlight any rate decisions, speeches, or minutes acting as macro catalysts.\n")
+	if lang == "en" {
+		b.WriteString("\nProvide a structured outlook:\n")
+		b.WriteString("1. Currency Strength Context: Discuss which pairs will be most volatile based on event density.\n")
+		b.WriteString("2. Storm Days Detection: Identify days with multiple clustered high-impact events across countries.\n")
+		b.WriteString("3. Fundamental Tracking: Analyze the trajectory of repeating data (e.g. CPI/NFP trends) based on Forecast vs Previous.\n")
+		b.WriteString("4. Central Bank Watch: Highlight any rate decisions, speeches, or minutes acting as macro catalysts.\n")
+	} else {
+		b.WriteString("\nBerikan outlook terstruktur:\n")
+		b.WriteString("1. Currency Strength Context: Diskusikan pasangan mana yang paling volatil berdasarkan kepadatan event.\n")
+		b.WriteString("2. Storm Days Detection: Identifikasi hari dengan beberapa event high-impact yang berkluster di berbagai negara.\n")
+		b.WriteString("3. Fundamental Tracking: Analisis tren data berulang (Contoh: tren CPI/NFP) berdasarkan Forecast vs Previous.\n")
+		b.WriteString("4. Central Bank Watch: Sorot keputusan suku bunga, pidato, atau minutes yang menjadi katalis makro.\n")
+	}
 
 	return b.String()
 }
@@ -259,10 +276,17 @@ func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
 		}
 	}
 
-	b.WriteString("\nProvide a structured fused outlook:\n")
-	b.WriteString("1. Positioning Extreme + Catalyst Alignment: Identify 'Crowded exit risks'. e.g., if EUR is heavily net long and ECB is upcoming, what is the fragility risk?\n")
-	b.WriteString("2. The Volatility Window: Highlight which pairs will experience liquidity compression before their respective events.\n")
-	b.WriteString("3. Surprise Factor Scenarios: For the top 2 events, model what happens if Actual significantly beats or misses Forecast against the current COT positioning.\n")
+	if data.Language == "en" {
+		b.WriteString("\nProvide a structured fused outlook:\n")
+		b.WriteString("1. Positioning Extreme + Catalyst Alignment: Identify 'Crowded exit risks'. e.g., if EUR is heavily net long and ECB is upcoming, what is the fragility risk?\n")
+		b.WriteString("2. The Volatility Window: Highlight which pairs will experience liquidity compression before their respective events.\n")
+		b.WriteString("3. Surprise Factor Scenarios: For the top 2 events, model what happens if Actual significantly beats or misses Forecast against the current COT positioning.\n")
+	} else {
+		b.WriteString("\nBerikan analisis fusi terstruktur:\n")
+		b.WriteString("1. Positioning Extreme + Catalyst Alignment: Identifikasi 'Crowded exit risks'. Contoh: jika EUR net long besar dan ECB akan datang, apa risiko kerapuhannya?\n")
+		b.WriteString("2. The Volatility Window: Sorot pasangan mana yang akan mengalami kompresi likuiditas sebelum event masing-masing.\n")
+		b.WriteString("3. Surprise Factor Scenarios: Untuk 2 event teratas, modelkan apa yang terjadi jika Actual jauh melampaui atau meleset dari Forecast terhadap positioning COT saat ini.\n")
+	}
 
 	return b.String()
 }
@@ -495,11 +519,19 @@ func BuildCombinedWithFREDPrompt(data ports.WeeklyData, regime fred.MacroRegime)
 	}
 
 	b.WriteString("\n=== ANALYSIS REQUESTED ===\n")
-	b.WriteString("Provide a fused trading outlook:\n")
-	b.WriteString("1. MACRO-COT ALIGNMENT: Where do FRED macro signals confirm or conflict with COT positioning? Identify high-conviction setups.\n")
-	b.WriteString("2. CATALYST + POSITIONING RISK: For top upcoming events, overlay current COT crowding to identify fragile setups (crowded longs/shorts facing catalyst risk).\n")
-	b.WriteString("3. REGIME-ADJUSTED TRADES: Given the macro regime, which COT-driven trade ideas have the strongest macro tailwind?\n")
-	b.WriteString("4. RISK SCENARIOS: What would change the outlook? (e.g., FOMC surprise, inflation shock, weak NFP)\n")
+	if data.Language == "en" {
+		b.WriteString("Provide a fused trading outlook:\n")
+		b.WriteString("1. MACRO-COT ALIGNMENT: Where do FRED macro signals confirm or conflict with COT positioning? Identify high-conviction setups.\n")
+		b.WriteString("2. CATALYST + POSITIONING RISK: For top upcoming events, overlay current COT crowding to identify fragile setups (crowded longs/shorts facing catalyst risk).\n")
+		b.WriteString("3. REGIME-ADJUSTED TRADES: Given the macro regime, which COT-driven trade ideas have the strongest macro tailwind?\n")
+		b.WriteString("4. RISK SCENARIOS: What would change the outlook? (e.g., FOMC surprise, inflation shock, weak NFP)\n")
+	} else {
+		b.WriteString("Berikan outlook trading fusi:\n")
+		b.WriteString("1. MACRO-COT ALIGNMENT: Di mana sinyal makro FRED mengkonfirmasi atau bertentangan dengan positioning COT? Identifikasi setup high-conviction.\n")
+		b.WriteString("2. CATALYST + POSITIONING RISK: Untuk event besar mendatang, overlay crowding COT saat ini untuk identifikasi setup rapuh (crowded longs/shorts menghadapi risiko katalis).\n")
+		b.WriteString("3. REGIME-ADJUSTED TRADES: Berdasarkan regime makro, ide trading COT mana yang memiliki tailwind makro paling kuat?\n")
+		b.WriteString("4. RISK SCENARIOS: Apa yang bisa mengubah outlook? (Contoh: kejutan FOMC, kejutan inflasi, NFP lemah)\n")
+	}
 
 	return b.String()
 }

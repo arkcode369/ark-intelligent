@@ -67,18 +67,21 @@ func (c *CachedInterpreter) AnalyzeCOT(ctx context.Context, analyses []domain.CO
 	return result, nil
 }
 
-// GenerateWeeklyOutlook caches by week start + language.
+// GenerateWeeklyOutlook caches by week start + language + latest COT report date.
+// Including the report date ensures the cache auto-misses when new COT data arrives
+// mid-week, even before explicit invalidation.
 func (c *CachedInterpreter) GenerateWeeklyOutlook(ctx context.Context, data ports.WeeklyData) (string, error) {
 	if c.cache == nil {
 		return c.inner.GenerateWeeklyOutlook(ctx, data)
 	}
 
-	version := currentWeekStart()
+	weekVer := currentWeekStart()
+	cotVer := latestReportDate(data.COTAnalyses)
 	lang := data.Language
 	if lang == "" {
 		lang = "id"
 	}
-	key := fmt.Sprintf("aicache:weekly:%s:%s", version, lang)
+	key := fmt.Sprintf("aicache:weekly:%s:%s:%s", weekVer, cotVer, lang)
 
 	if cached, ok := c.cache.Get(ctx, key); ok {
 		clog.Debug().Str("key", key).Msg("cache HIT")
@@ -90,7 +93,7 @@ func (c *CachedInterpreter) GenerateWeeklyOutlook(ctx context.Context, data port
 		return result, err
 	}
 
-	if sErr := c.cache.Set(ctx, key, result, "weekly", version); sErr != nil {
+	if sErr := c.cache.Set(ctx, key, result, "weekly", weekVer+":"+cotVer); sErr != nil {
 		clog.Warn().Err(sErr).Str("key", key).Msg("store failed")
 	} else {
 		clog.Debug().Str("key", key).Msg("cache STORE")
@@ -256,12 +259,12 @@ func (c *CachedInterpreter) InvalidateOnNewsUpdate(ctx context.Context) {
 }
 
 // InvalidateOnFREDUpdate should be called when FRED macro data changes.
-// Invalidates: fred, weekly, combined caches (all are FRED-aware via Gap E).
+// Invalidates: fred, weekly, news, combined caches (all are FRED-aware via Gap E).
 func (c *CachedInterpreter) InvalidateOnFREDUpdate(ctx context.Context) {
 	if c.cache == nil {
 		return
 	}
-	prefixes := []string{"aicache:fred:", "aicache:weekly:", "aicache:combined:"}
+	prefixes := []string{"aicache:fred:", "aicache:weekly:", "aicache:news:", "aicache:combined:"}
 	for _, p := range prefixes {
 		if err := c.cache.InvalidateByPrefix(ctx, p); err != nil {
 			clog.Warn().Err(err).Str("prefix", p).Msg("invalidation failed")
