@@ -92,7 +92,7 @@ func (ip *Interpreter) AnalyzeCOT(ctx context.Context, analyses []domain.COTAnal
 
 	prompt := BuildCOTAnalysisPrompt(analyses)
 
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
 		log.Error().Err(err).Msg("COT analysis failed")
 		return ip.fallbackCOTSummary(analyses), nil
@@ -118,7 +118,7 @@ func (ip *Interpreter) GenerateWeeklyOutlook(ctx context.Context, data ports.Wee
 
 	prompt := BuildWeeklyOutlookPrompt(outlookData, data.Language, macroRegime)
 
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
 		log.Error().Err(err).Msg("weekly outlook failed")
 		return ip.fallbackWeeklyOutlook(outlookData), nil
@@ -131,7 +131,7 @@ func (ip *Interpreter) GenerateWeeklyOutlook(ctx context.Context, data ports.Wee
 func (ip *Interpreter) AnalyzeCrossMarket(ctx context.Context, cotData map[string]*domain.COTAnalysis) (string, error) {
 	prompt := BuildCrossMarketPrompt(cotData)
 
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
 		log.Error().Err(err).Msg("cross-market analysis failed")
 		return "Cross-market analysis unavailable.", nil
@@ -156,7 +156,7 @@ func (ip *Interpreter) AnalyzeNewsOutlook(ctx context.Context, events []domain.N
 	}
 
 	prompt := BuildNewsOutlookPrompt(events, lang, macroRegime)
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
 		log.Error().Err(err).Msg("news outlook failed")
 		return "News outlook unavailable.", nil
@@ -180,7 +180,7 @@ func (ip *Interpreter) AnalyzeCombinedOutlook(ctx context.Context, data ports.We
 		header = "FUSED OUTLOOK (COT + NEWS)"
 	}
 
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
 		log.Error().Err(err).Msg("combined outlook failed")
 		return "Combined outlook unavailable.", nil
@@ -198,7 +198,7 @@ func (ip *Interpreter) AnalyzeFREDOutlook(ctx context.Context, data *fred.MacroD
 	regime := fred.ClassifyMacroRegime(data)
 	prompt := BuildFREDOutlookPrompt(data, regime, lang)
 
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
 		log.Error().Err(err).Msg("FRED outlook failed")
 		return ip.fallbackFREDSummary(data, regime), nil
@@ -226,7 +226,7 @@ func (ip *Interpreter) fallbackFREDSummary(data *fred.MacroData, regime fred.Mac
 func (ip *Interpreter) AnalyzeActualRelease(ctx context.Context, event domain.NewsEvent, lang string) (string, error) {
 	prompt := BuildActualReleasePrompt(event, lang)
 
-	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt, prompt)
+	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
 		log.Error().Err(err).Msg("actual release flash failed")
 		return "", err

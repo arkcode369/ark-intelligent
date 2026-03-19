@@ -192,11 +192,10 @@ func main() {
 	log.Info().Msg("Background schedulers started")
 
 	// -----------------------------------------------------------------------
-	// 9. Initial data load (non-blocking)
+	// 9. Initial data load (BLOCKING — must complete before polling)
 	// -----------------------------------------------------------------------
-	go func() {
+	{
 		initCtx, initCancel := context.WithTimeout(ctx, 5*time.Minute)
-		defer initCancel()
 
 		log.Info().Msg("Running initial data load...")
 
@@ -221,20 +220,25 @@ func main() {
 			log.Warn().Err(err).Msg("backfill regime scores (non-fatal)")
 		}
 
-		// Send startup notification
-		startupMsg := fmt.Sprintf(
-			"🦅 <b>ARK Intelligence Online</b>\n"+
-				"<i>Systems synchronized</i>\n\n"+
-				"<code>AI Engine :</code> %s\n"+
-				"<code>Calendar  :</code> MQL5 Economic Calendar\n"+
-				"<code>COT Data  :</code> CFTC Socrata\n\n"+
-				"Type /help for commands",
-			aiStatus(aiAnalyzer),
-		)
-		if _, err := bot.SendHTML(initCtx, cfg.ChatID, startupMsg); err != nil {
-			log.Error().Err(err).Msg("Failed to send startup notification")
-		}
-	}()
+		initCancel()
+		logStorageSize(db)
+
+		// Send startup notification (non-blocking — bot is about to start polling)
+		go func() {
+			startupMsg := fmt.Sprintf(
+				"🦅 <b>ARK Intelligence Online</b>\n"+
+					"<i>Systems synchronized</i>\n\n"+
+					"<code>AI Engine :</code> %s\n"+
+					"<code>Calendar  :</code> MQL5 Economic Calendar\n"+
+					"<code>COT Data  :</code> CFTC Socrata\n\n"+
+					"Type /help for commands",
+				aiStatus(aiAnalyzer),
+			)
+			if _, err := bot.SendHTML(ctx, cfg.ChatID, startupMsg); err != nil {
+				log.Error().Err(err).Msg("Failed to send startup notification")
+			}
+		}()
+	}
 
 	// -----------------------------------------------------------------------
 	// 10. Signal handling & graceful shutdown

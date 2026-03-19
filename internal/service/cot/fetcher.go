@@ -79,6 +79,13 @@ func (f *Fetcher) FetchLatest(ctx context.Context, contracts []domain.COTContrac
 	sDate := getLatestDate(socrataRecords)
 	cDate := getLatestDate(csvRecords)
 
+	fetchLog.Info().
+		Str("socrata_date", sDate.Format("2006-01-02")).
+		Int("socrata_count", len(socrataRecords)).
+		Str("csv_date", cDate.Format("2006-01-02")).
+		Int("csv_count", len(csvRecords)).
+		Msg("COT data comparison (Socrata vs CSV)")
+
 	if cDate.After(sDate) {
 		fetchLog.Info().
 			Str("csv_date", cDate.Format("2006-01-02")).
@@ -87,6 +94,10 @@ func (f *Fetcher) FetchLatest(ctx context.Context, contracts []domain.COTContrac
 		return csvRecords, nil
 	}
 
+	fetchLog.Info().
+		Str("date", sDate.Format("2006-01-02")).
+		Int("records", len(socrataRecords)).
+		Msg("Using Socrata data (latest)")
 	return socrataRecords, nil
 }
 
@@ -242,6 +253,16 @@ func (f *Fetcher) fetchReport(ctx context.Context, url string, contracts []domai
 		}
 		seen[sr.ContractCode] = true
 		records = append(records, socrataToRecord(sr, contract))
+	}
+
+	if len(records) > 0 {
+		latest := getLatestDate(records)
+		fetchLog.Info().
+			Str("url", url).
+			Int("raw_count", len(raw)).
+			Int("unique_contracts", len(records)).
+			Str("latest_date", latest.Format("2006-01-02")).
+			Msg("fetchReport result")
 	}
 
 	return records, nil

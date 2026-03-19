@@ -3,6 +3,7 @@ package ai
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
@@ -10,8 +11,11 @@ import (
 	"github.com/arkcode369/ark-intelligent/pkg/fmtutil"
 )
 
-// SystemPrompt is the base system instruction for all financial analysis.
-const SystemPrompt = `You are a senior institutional analyst specializing in COT (Commitments of Traders) data and macro positioning.
+// SystemPromptTemplate is the base system instruction for all financial analysis.
+// It includes a placeholder for the current date to prevent AI date hallucinations.
+const SystemPromptTemplate = `You are a senior institutional analyst specializing in COT (Commitments of Traders) data and macro positioning.
+
+Today's date: %s (UTC+7 WIB).
 
 Rules:
 - RESPOND IN THE LANGUAGE REQUESTED BY THE USER PROMPT (Indonesian/Bahasa Indonesia OR English).
@@ -22,7 +26,14 @@ Rules:
 - Format for Telegram HTML: you may use ONLY these tags: <b>bold</b>, <i>italic</i>, <code>code</code>. NO other HTML tags.
 - NEVER use angle brackets < > for anything other than the allowed HTML tags above. Write currency pairs, labels, and terms as plain text (e.g. write USD not <USD>, write rate cuts not <rate cuts>).
 - Keep responses under 800 words.
-- Use WIB (UTC+7) for all times.`
+- Use WIB (UTC+7) for all times.
+- IMPORTANT: Use ONLY the dates provided in the data. Do NOT invent or guess report dates. The COT report dates in the data are authoritative.`
+
+// SystemPrompt returns the system prompt with the current date injected.
+func SystemPrompt() string {
+	now := time.Now().UTC().Add(7 * time.Hour) // WIB = UTC+7
+	return fmt.Sprintf(SystemPromptTemplate, now.Format("Monday, 02 January 2006"))
+}
 
 // --- Prompt Builders ---
 
@@ -89,7 +100,9 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 // so the COT-focused outlook is always regime-aware, without requiring /outlook combine.
 func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string, macroRegime *fred.MacroRegime) string {
 	var b strings.Builder
+	now := time.Now().UTC().Add(7 * time.Hour) // WIB
 	b.WriteString("Generate a comprehensive weekly forex fundamental outlook.\n")
+	b.WriteString(fmt.Sprintf("Analysis date: %s (WIB).\n", now.Format("02 January 2006")))
 
 	if lang == "en" {
 		b.WriteString("PLEASE RESPOND IN ENGLISH.\n\n")
@@ -101,8 +114,9 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string, macroRegime *
 	if len(data.COTAnalyses) > 0 {
 		b.WriteString("=== COT POSITIONING ===\n")
 		for _, a := range data.COTAnalyses {
-			b.WriteString(fmt.Sprintf("%s: SpecNet=%s COTIdx=%.0f CommSignal=%s 4WMom=%s OITrend=%s STBias=%s",
+			b.WriteString(fmt.Sprintf("%s (Report: %s): SpecNet=%s COTIdx=%.0f CommSignal=%s 4WMom=%s OITrend=%s STBias=%s",
 				a.Contract.Currency,
+				a.ReportDate.Format("2006-01-02"),
 				fmtutil.FmtNumSigned(a.NetPosition, 0),
 				a.COTIndex, a.CommercialSignal,
 				fmtutil.FmtNumSigned(a.SpecMomentum4W, 0),
@@ -138,15 +152,18 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string, macroRegime *
 // BuildCrossMarketPrompt creates a prompt for cross-market COT analysis.
 func BuildCrossMarketPrompt(cotData map[string]*domain.COTAnalysis) string {
 	var b strings.Builder
-	b.WriteString("Analyze cross-market COT positioning for intermarket signals.\n")
+	now := time.Now().UTC().Add(7 * time.Hour) // WIB
+	b.WriteString(fmt.Sprintf("Analyze cross-market COT positioning for intermarket signals.\n"))
+	b.WriteString(fmt.Sprintf("Analysis date: %s (WIB).\n", now.Format("02 January 2006")))
 	b.WriteString("Look for correlations, divergences, and risk-on/risk-off signals.\n\n")
 
 	for code, a := range cotData {
 		if a == nil {
 			continue
 		}
-		b.WriteString(fmt.Sprintf("%s (%s): SpecNet=%s COTIdx=%.0f Sentiment=%.0f Crowd=%.0f\n",
+		b.WriteString(fmt.Sprintf("%s (%s) | Report: %s: SpecNet=%s COTIdx=%.0f Sentiment=%.0f Crowd=%.0f\n",
 			code, a.Contract.Currency,
+			a.ReportDate.Format("2006-01-02"),
 			fmtutil.FmtNumSigned(a.NetPosition, 0),
 			a.COTIndex, a.SentimentScore, a.CrowdingIndex))
 	}
@@ -212,7 +229,9 @@ func BuildNewsOutlookPrompt(events []domain.NewsEvent, lang string, macroRegime 
 // BuildCombinedOutlookPrompt creates a prompt for fusing COT positioning and calendar news.
 func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
 	var b strings.Builder
+	now := time.Now().UTC().Add(7 * time.Hour) // WIB
 	b.WriteString("Generate a fused analysis combining COT Speculator Positioning and Upcoming Economic Catalysts.\n")
+	b.WriteString(fmt.Sprintf("Analysis date: %s (WIB).\n", now.Format("02 January 2006")))
 
 	if data.Language == "en" {
 		b.WriteString("PLEASE RESPOND IN ENGLISH.\n\n")
@@ -372,7 +391,9 @@ func BuildFREDOutlookPrompt(data *fred.MacroData, regime fred.MacroRegime, lang 
 // alongside COT positioning and economic calendar catalysts.
 func BuildCombinedWithFREDPrompt(data ports.WeeklyData, regime fred.MacroRegime) string {
 	var b strings.Builder
+	now := time.Now().UTC().Add(7 * time.Hour) // WIB
 	b.WriteString("Generate a comprehensive market outlook fusing COT Speculator Positioning, Economic Calendar Catalysts, and FRED Macro Fundamentals.\n")
+	b.WriteString(fmt.Sprintf("Analysis date: %s (WIB).\n", now.Format("02 January 2006")))
 
 	if data.Language == "en" {
 		b.WriteString("PLEASE RESPOND IN ENGLISH.\n\n")
