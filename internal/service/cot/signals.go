@@ -259,7 +259,7 @@ func (sd *SignalDetector) detectMomentumShift(a domain.COTAnalysis, history []do
 	prevNets := extractNetsFloat(history[1:min(6, len(history))], func(r domain.COTRecord) float64 {
 		return r.GetSmartMoneyNet(a.Contract.ReportType)
 	})
-	prevMom := mathutil.Momentum(prevNets, 4)
+	prevMom := mathutil.Momentum(reverseFloats(prevNets), 4)
 
 	// Detect sign change (momentum flip)
 	if (currentMom > 0 && prevMom > 0) || (currentMom < 0 && prevMom < 0) || currentMom == 0 {

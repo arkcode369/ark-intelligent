@@ -269,13 +269,13 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 		smartNets4 := extractNets(history[:minInt(5, len(history))], func(r domain.COTRecord) float64 {
 			return r.GetSmartMoneyNet(rt)
 		})
-		analysis.SpecMomentum4W = mathutil.Momentum(smartNets4, 4)
+		analysis.SpecMomentum4W = mathutil.Momentum(reverseFloats(smartNets4), 4)
 
 		// 9. Commercial momentum (4-week)
 		commNets4 := extractNets(history[:minInt(5, len(history))], func(r domain.COTRecord) float64 {
 			return r.GetCommercialNet(rt)
 		})
-		analysis.CommMomentum4W = mathutil.Momentum(commNets4, 4)
+		analysis.CommMomentum4W = mathutil.Momentum(reverseFloats(commNets4), 4)
 
 		// 10. Momentum direction
 		analysis.MomentumDir = classifyMomentumDir(analysis.SpecMomentum4W, analysis.CommMomentum4W)
@@ -286,7 +286,7 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 		smartNets8 := extractNets(history[:minInt(9, len(history))], func(r domain.COTRecord) float64 {
 			return r.GetSmartMoneyNet(rt)
 		})
-		analysis.SpecMomentum8W = mathutil.Momentum(smartNets8, 8)
+		analysis.SpecMomentum8W = mathutil.Momentum(reverseFloats(smartNets8), 8)
 	}
 
 	// 10c. ConsecutiveWeeks — count weeks spec net has been moving same direction
@@ -694,4 +694,15 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// reverseFloats returns a new slice with elements in reverse order.
+// Used to convert newest-first data (from GetHistory) to oldest-first
+// order required by mathutil.Momentum.
+func reverseFloats(s []float64) []float64 {
+	out := make([]float64, len(s))
+	for i, v := range s {
+		out[len(s)-1-i] = v
+	}
+	return out
 }
