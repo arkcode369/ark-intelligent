@@ -250,6 +250,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 	cmd := strings.ToLower(parts[0])
 
 	// Strip @BotUsername suffix for group commands: "/today@FFCalendarBot" -> "/today"
+	// If command is targeted at a different bot, ignore it entirely.
 	if at := strings.Index(cmd, "@"); at > 0 {
 		cmd = cmd[:at]
 	}
@@ -270,9 +271,16 @@ func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 		username = msg.From.Username
 	}
 
+	isGroup := msg.Chat.Type == "group" || msg.Chat.Type == "supergroup"
+
 	// Check if command exists BEFORE authorization (so unknown commands don't consume quota)
 	handler, ok := b.commands[cmd]
 	if !ok {
+		// In group chats, silently ignore unknown commands to avoid interfering
+		// with other bots that may handle them.
+		if isGroup {
+			return
+		}
 		log.Warn().Str("command", cmd).Int64("user_id", userID).Msg("unknown command")
 		_, _ = b.SendHTML(ctx, chatID, fmt.Sprintf(
 			"Unknown command <code>%s</code>\nType /help for available commands.",
