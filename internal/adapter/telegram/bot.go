@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"math/rand"
 	"net/http"
@@ -111,15 +112,26 @@ type Bot struct {
 	sendMu   sync.Mutex
 	lastSend time.Time
 
-	// Per-user command rate limiter
+	// Per-user command rate limiter (used for callback rate limiting)
 	userLimiter *userRateLimiter
+
+	// Authorization middleware (tiered access control + quotas)
+	middleware *Middleware
 }
 
 // NewBot creates a new Telegram bot with the given token and default chat ID.
 // The default chat ID is also used to identify the bot owner (exempt from rate limits).
+// For private chats, chat ID == user ID. For groups (negative IDs), owner derivation
+// is skipped — the owner must be set via OWNER_ID env or identified at runtime.
 func NewBot(token, defaultChatID string) *Bot {
-	// Parse owner ID from default chat ID (for private chats, chat ID == user ID).
-	ownerID, _ := strconv.ParseInt(strings.Split(defaultChatID, ":")[0], 10, 64)
+	// Parse owner ID from default chat ID.
+	// Only treat it as an owner ID if it's a positive number (private chat).
+	// Group/supergroup IDs are negative and should not be used as owner IDs.
+	var ownerID int64
+	rawID := strings.Split(defaultChatID, ":")[0]
+	if parsed, err := strconv.ParseInt(rawID, 10, 64); err == nil && parsed > 0 {
+		ownerID = parsed
+	}
 
 	return &Bot{
 		token:     token,
@@ -252,32 +264,43 @@ func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 		chatID = fmt.Sprintf("%s:%d", chatID, msg.MessageThreadID)
 	}
 	userID := int64(0)
+	username := ""
 	if msg.From != nil {
 		userID = msg.From.ID
+		username = msg.From.Username
 	}
 
-	// Per-user rate limit check (owner is exempt)
-	if userID != 0 && !b.isOwner(userID) && !b.userLimiter.Allow(userID) {
-		log.Warn().Int64("user_id", userID).Str("command", cmd).Msg("user rate limited")
-		_, _ = b.SendHTML(ctx, chatID, "\u23f3 Rate limited \u2014 please wait a moment before sending more commands.")
-		return
-	}
-
+	// Check if command exists BEFORE authorization (so unknown commands don't consume quota)
 	handler, ok := b.commands[cmd]
 	if !ok {
 		log.Warn().Str("command", cmd).Int64("user_id", userID).Msg("unknown command")
 		_, _ = b.SendHTML(ctx, chatID, fmt.Sprintf(
 			"Unknown command <code>%s</code>\nType /help for available commands.",
-			cmd,
+			html.EscapeString(cmd),
 		))
+		return
+	}
+
+	// Authorization via middleware (tiered rate limiting + quotas)
+	if userID != 0 && b.middleware != nil {
+		result := b.middleware.Authorize(ctx, userID, username, cmd)
+		if !result.Allowed {
+			log.Warn().Int64("user_id", userID).Str("command", cmd).Str("reason", result.Reason).Msg("user denied by middleware")
+			_, _ = b.SendHTML(ctx, chatID, fmt.Sprintf("\xe2\x9b\x94 %s", result.Reason))
+			return
+		}
+	} else if userID != 0 && !b.isOwner(userID) && !b.userLimiter.Allow(userID) {
+		// Fallback to legacy rate limiter if middleware not installed
+		log.Warn().Int64("user_id", userID).Str("command", cmd).Msg("user rate limited")
+		_, _ = b.SendHTML(ctx, chatID, "\u23f3 Rate limited \u2014 please wait a moment before sending more commands.")
 		return
 	}
 
 	log.Info().Str("command", cmd).Int64("user_id", userID).Str("chat_id", chatID).Msg("command received")
 	if err := handler(ctx, chatID, userID, args); err != nil {
-		log.Error().Err(err).Str("command", cmd).Msg("handler error")
+		log.Error().Err(err).Str("command", cmd).Int64("user_id", userID).Msg("handler error")
 		_, _ = b.SendHTML(ctx, chatID,
-			fmt.Sprintf("Error processing <code>%s</code>: %s", cmd, err.Error()))
+			fmt.Sprintf("Error processing <code>%s</code>. Please try again later.", html.EscapeString(cmd)))
 	}
 }
 
@@ -293,8 +316,16 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 	userID := cb.From.ID
 	log.Info().Str("data", cb.Data).Int64("user_id", userID).Msg("callback received")
 
-	// Per-user rate limit check (owner is exempt)
-	if !b.isOwner(userID) && !b.userLimiter.Allow(userID) {
+	// Authorization via middleware (ban check + tiered rate limit)
+	if b.middleware != nil {
+		result := b.middleware.AuthorizeCallback(ctx, userID)
+		if !result.Allowed {
+			log.Warn().Int64("user_id", userID).Str("data", cb.Data).Str("reason", result.Reason).Msg("callback denied by middleware")
+			_ = b.AnswerCallback(ctx, cb.ID, result.Reason)
+			return
+		}
+	} else if !b.isOwner(userID) && !b.userLimiter.Allow(userID) {
+		// Fallback to legacy rate limiter if middleware not installed
 		log.Warn().Int64("user_id", userID).Str("data", cb.Data).Msg("user rate limited (callback)")
 		_ = b.AnswerCallback(ctx, cb.ID, "\u23f3 Rate limited \u2014 please wait a moment.")
 		return
@@ -742,4 +773,23 @@ func (b *Bot) DefaultChatID() string {
 // isOwner returns true if the given user ID matches the bot owner.
 func (b *Bot) isOwner(userID int64) bool {
 	return b.ownerID != 0 && userID == b.ownerID
+}
+
+// SetMiddleware installs the authorization middleware.
+// Must be called before StartPolling.
+func (b *Bot) SetMiddleware(mw *Middleware) {
+	b.middleware = mw
+}
+
+// OwnerID returns the bot owner's user ID.
+func (b *Bot) OwnerID() int64 {
+	return b.ownerID
+}
+
+// StopRateLimiter stops the legacy per-user rate limiter's background cleanup goroutine.
+// Should be called during graceful shutdown.
+func (b *Bot) StopRateLimiter() {
+	if b.userLimiter != nil {
+		b.userLimiter.Stop()
+	}
 }

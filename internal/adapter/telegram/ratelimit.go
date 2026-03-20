@@ -23,9 +23,10 @@ type userWindow struct {
 
 // userRateLimiter enforces per-user command rate limits using a sliding window.
 type userRateLimiter struct {
-	mu    sync.Mutex
-	users map[int64]*userWindow
-	stop  chan struct{}
+	mu       sync.Mutex
+	users    map[int64]*userWindow
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 // newUserRateLimiter creates a rate limiter and starts the background cleanup.
@@ -96,7 +97,7 @@ func (rl *userRateLimiter) cleanup() {
 	}
 }
 
-// Stop terminates the background cleanup goroutine.
+// Stop terminates the background cleanup goroutine. Safe to call multiple times.
 func (rl *userRateLimiter) Stop() {
-	close(rl.stop)
+	rl.stopOnce.Do(func() { close(rl.stop) })
 }

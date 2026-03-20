@@ -46,6 +46,13 @@ type Deps struct {
 	ChatID      string
 	CachedAI    *aisvc.CachedInterpreter
 	DB          *storage.DB
+
+	// FREDAlertCheck is a callback that returns whether a user should receive FRED alerts.
+	// Free-tier users are excluded. May be nil (all users receive FRED alerts).
+	FREDAlertCheck func(ctx context.Context, userID int64) bool
+
+	// IsBanned checks if a user is banned. May be nil (no ban check).
+	IsBanned func(ctx context.Context, userID int64) bool
 }
 
 // Intervals configures how often each job runs.
@@ -61,9 +68,11 @@ type Intervals struct {
 type Scheduler struct {
 	deps         *Deps
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 	wg           sync.WaitGroup
 	running      bool
-	mu           sync.Mutex
+	mu           sync.Mutex      // lifecycle mutex (Start/Stop)
+	fredMu       sync.Mutex      // protects lastFREDData
 	lastFREDData *fred.MacroData // previous FRED snapshot for alert diffing
 }
 
@@ -101,7 +110,7 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 	log.Info().Msg("started 4 background jobs")
 }
 
-// Stop signals all jobs to stop and waits for them to finish.
+// Stop signals all jobs to stop and waits for them to finish. Safe to call multiple times.
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -111,7 +120,7 @@ func (s *Scheduler) Stop() {
 	}
 
 	log.Info().Msg("stopping all jobs")
-	close(s.stopCh)
+	s.stopOnce.Do(func() { close(s.stopCh) })
 	s.wg.Wait()
 	s.running = false
 	log.Info().Msg("all jobs stopped")
@@ -233,11 +242,14 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 
 	count := 0
 	for userID, prefs := range activeUsers {
-		if !prefs.COTAlertsEnabled {
+		if !prefs.COTAlertsEnabled || prefs.ChatID == "" {
 			continue
 		}
-		chatID := fmt.Sprintf("%d", userID)
-		if _, err := s.deps.Bot.SendHTML(ctx, chatID, msg); err == nil {
+		// Skip banned users
+		if s.deps.IsBanned != nil && s.deps.IsBanned(ctx, userID) {
+			continue
+		}
+		if _, err := s.deps.Bot.SendHTML(ctx, prefs.ChatID, msg); err == nil {
 			count++
 		}
 		// Avoid flooding Telegram API
@@ -266,8 +278,11 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 
 	if len(strongSignals) > 0 {
 		signalHTML := formatStrongSignalAlert(strongSignals)
-		for _, prefs := range activeUsers {
+		for userID, prefs := range activeUsers {
 			if prefs.COTAlertsEnabled && prefs.ChatID != "" {
+				if s.deps.IsBanned != nil && s.deps.IsBanned(ctx, userID) {
+					continue
+				}
 				_, _ = s.deps.Bot.SendHTML(ctx, prefs.ChatID, signalHTML)
 			}
 		}
@@ -294,8 +309,11 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 			html += strings.Join(alerts, "\n")
 			html += "\n\n<i>Use /cot " + a.Contract.Currency + " for details</i>"
 
-			for _, prefs := range activeUsers {
+			for userID, prefs := range activeUsers {
 				if prefs.COTAlertsEnabled && prefs.ChatID != "" {
+					if s.deps.IsBanned != nil && s.deps.IsBanned(ctx, userID) {
+						continue
+					}
 					_, _ = s.deps.Bot.SendHTML(ctx, prefs.ChatID, html)
 					time.Sleep(50 * time.Millisecond)
 				}
@@ -350,10 +368,10 @@ func (s *Scheduler) jobFREDAlerts(ctx context.Context) error {
 		return fmt.Errorf("fred fetch for alerts: %w", err)
 	}
 
-	s.mu.Lock()
+	s.fredMu.Lock()
 	previous := s.lastFREDData
 	s.lastFREDData = current
-	s.mu.Unlock()
+	s.fredMu.Unlock()
 
 	alerts := fred.CheckAlerts(current, previous)
 	if len(alerts) == 0 {
@@ -371,11 +389,18 @@ func (s *Scheduler) jobFREDAlerts(ctx context.Context) error {
 		msg := fred.FormatMacroAlert(alert)
 		count := 0
 		for userID, prefs := range activeUsers {
-			if !prefs.COTAlertsEnabled {
+			if !prefs.COTAlertsEnabled || prefs.ChatID == "" {
 				continue
 			}
-			chatID := fmt.Sprintf("%d", userID)
-			if _, sendErr := s.deps.Bot.SendHTML(ctx, chatID, msg); sendErr == nil {
+			// Ban check (defensive — FREDAlertCheck also excludes banned, but this is explicit)
+			if s.deps.IsBanned != nil && s.deps.IsBanned(ctx, userID) {
+				continue
+			}
+			// Tier check: Free users don't receive FRED alerts
+			if s.deps.FREDAlertCheck != nil && !s.deps.FREDAlertCheck(ctx, userID) {
+				continue
+			}
+			if _, sendErr := s.deps.Bot.SendHTML(ctx, prefs.ChatID, msg); sendErr == nil {
 				count++
 			}
 			time.Sleep(50 * time.Millisecond)

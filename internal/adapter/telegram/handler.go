@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,9 @@ type Handler struct {
 	// Per-user AI cooldown to prevent rapid-fire expensive commands.
 	aiCooldownMu sync.Mutex
 	aiCooldown   map[int64]time.Time // userID -> last AI command time
+
+	// Authorization middleware for tiered access control.
+	middleware *Middleware
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
@@ -63,6 +67,7 @@ func NewHandler(
 	aiAnalyzer ports.AIAnalyzer,
 	changelog string,
 	newsScheduler SurpriseProvider,
+	middleware *Middleware,
 ) *Handler {
 	h := &Handler{
 		bot:           bot,
@@ -77,6 +82,7 @@ func NewHandler(
 		changelog:     changelog,
 		newsScheduler: newsScheduler,
 		aiCooldown:    make(map[int64]time.Time),
+		middleware:    middleware,
 	}
 
 	// Register all commands
@@ -91,6 +97,15 @@ func NewHandler(
 	bot.RegisterCommand("/macro", h.cmdMacro)     // P3.2 — FRED Macro Regime Dashboard
 	bot.RegisterCommand("/signals", h.cmdSignals) // COT Signal Detection
 
+	// Membership & upgrade info
+	bot.RegisterCommand("/membership", h.cmdMembership)
+
+	// Admin commands (access enforced inside handlers)
+	bot.RegisterCommand("/users", h.cmdUsers)
+	bot.RegisterCommand("/setrole", h.cmdSetRole)
+	bot.RegisterCommand("/ban", h.cmdBan)
+	bot.RegisterCommand("/unban", h.cmdUnban)
+
 	// Register callback handlers
 	bot.RegisterCallback("cot:", h.cbCOTDetail)
 	bot.RegisterCallback("alert:", h.cbAlertToggle)
@@ -99,7 +114,7 @@ func NewHandler(
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
 
-	log.Info().Int("commands", 10).Int("callbacks", 6).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 15).Int("callbacks", 6).Msg("registered commands and callback prefixes")
 	return h
 }
 
@@ -142,6 +157,7 @@ func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, arg
 
 <b>⚙️ Operations</b>
 /settings - Preference management
+/membership - Tier benefits &amp; upgrade info
 /status - System status
 
 <code>ARK Interface v3.0.0</code>`
@@ -354,12 +370,7 @@ func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, a
 		return err
 	}
 
-	// Per-user cooldown for expensive AI commands (30s) — owner is exempt
-	if !h.bot.isOwner(userID) && !h.checkAICooldown(userID) {
-		_, err := h.bot.SendHTML(ctx, chatID, "Please wait before requesting another AI analysis.")
-		return err
-	}
-
+	// Check subcmd first — show menu without consuming AI quota if no args
 	subcmd := strings.ToLower(strings.TrimSpace(args))
 	if subcmd == "" {
 		html := "🦅 <b>ARK Intelligence Outlook</b>\nSelect the type of market analysis you want to generate:\n\n" +
@@ -369,10 +380,51 @@ func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, a
 		return err
 	}
 
+	// Per-user AI quota check via middleware (only consumed when AI will actually be invoked)
+	if h.middleware != nil {
+		allowed, reason := h.middleware.CheckAIQuota(ctx, userID)
+		if !allowed {
+			_, err := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("⛔ %s", reason))
+			return err
+		}
+
+		// Tiered cooldown check (Owner=0s, Admin=10s, Member/Free=30s)
+		cooldown := h.middleware.GetAICooldown(ctx, userID)
+		if cooldown > 0 && !h.checkAICooldownDynamic(userID, cooldown) {
+			_, err := h.bot.SendHTML(ctx, chatID, "Please wait before requesting another AI analysis.")
+			return err
+		}
+	} else {
+		// Legacy fallback
+		if !h.bot.isOwner(userID) && !h.checkAICooldown(userID) {
+			_, err := h.bot.SendHTML(ctx, chatID, "Please wait before requesting another AI analysis.")
+			return err
+		}
+	}
+
 	return h.generateOutlook(ctx, chatID, userID, subcmd, 0)
 }
 
 func (h *Handler) cbOutlook(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
+	// AI quota + cooldown check for callback-triggered outlook (same as /outlook command)
+	if h.aiAnalyzer == nil || !h.aiAnalyzer.IsAvailable() {
+		return h.bot.EditMessage(ctx, chatID, msgID, "AI outlook is unavailable.")
+	}
+	if h.middleware != nil {
+		allowed, reason := h.middleware.CheckAIQuota(ctx, userID)
+		if !allowed {
+			return h.bot.EditMessage(ctx, chatID, msgID, fmt.Sprintf("\xe2\x9b\x94 %s", reason))
+		}
+		cooldown := h.middleware.GetAICooldown(ctx, userID)
+		if cooldown > 0 && !h.checkAICooldownDynamic(userID, cooldown) {
+			return h.bot.EditMessage(ctx, chatID, msgID, "Please wait before requesting another AI analysis.")
+		}
+	} else {
+		// Legacy fallback
+		if !h.bot.isOwner(userID) && !h.checkAICooldown(userID) {
+			return h.bot.EditMessage(ctx, chatID, msgID, "Please wait before requesting another AI analysis.")
+		}
+	}
 	action := strings.TrimPrefix(data, "out:") // cot, news, combine
 	return h.generateOutlook(ctx, chatID, userID, action, msgID)
 }
@@ -441,7 +493,8 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	}
 
 	if err != nil {
-		return h.bot.EditMessage(ctx, chatID, placeholderID, fmt.Sprintf("AI Generation failed: %v", err))
+		log.Error().Err(err).Msg("AI generation failed")
+		return h.bot.EditMessage(ctx, chatID, placeholderID, "AI generation failed. Please try again later.")
 	}
 
 	html := h.fmt.FormatWeeklyOutlook(result, now)
@@ -559,12 +612,13 @@ func (h *Handler) cbAlertToggle(ctx context.Context, chatID string, msgID int, u
 	}
 
 	switch action {
-	case "mute_1h":
-		// Temporarily disable alerts (would need a timer mechanism)
+	case "mute_1h", "disable":
+		// Disable alerts until manually re-enabled via /settings.
+		// Note: "mute_1h" is a legacy callback key retained for backward compatibility.
 		prefs.AlertsEnabled = false
 		_ = h.prefsRepo.Set(ctx, userID, prefs)
 		return h.bot.EditMessage(ctx, chatID, msgID,
-			"Alerts muted. Use /settings to re-enable.")
+			"Alerts disabled. Use /settings to re-enable.")
 	case "dismiss":
 		return h.bot.DeleteMessage(ctx, chatID, msgID)
 	}
@@ -661,8 +715,35 @@ func (h *Handler) checkAICooldown(userID int64) bool {
 	defer h.aiCooldownMu.Unlock()
 
 	now := time.Now()
+
+	// Opportunistic cleanup: remove entries older than 5 minutes (max cooldown is 30s,
+	// so anything >5m is stale). Only runs when map exceeds 100 entries to amortize cost.
+	if len(h.aiCooldown) > 100 {
+		cutoff := now.Add(-5 * time.Minute)
+		for uid, ts := range h.aiCooldown {
+			if ts.Before(cutoff) {
+				delete(h.aiCooldown, uid)
+			}
+		}
+	}
+
 	if last, ok := h.aiCooldown[userID]; ok {
 		if now.Sub(last) < aiCooldownDuration {
+			return false
+		}
+	}
+	h.aiCooldown[userID] = now
+	return true
+}
+
+// checkAICooldownDynamic is like checkAICooldown but with a configurable duration per tier.
+func (h *Handler) checkAICooldownDynamic(userID int64, cooldown time.Duration) bool {
+	h.aiCooldownMu.Lock()
+	defer h.aiCooldownMu.Unlock()
+
+	now := time.Now()
+	if last, ok := h.aiCooldown[userID]; ok {
+		if now.Sub(last) < cooldown {
 			return false
 		}
 	}
@@ -876,41 +957,43 @@ func (h *Handler) cbNewsNav(ctx context.Context, chatID string, msgID int, userI
 		}
 	}
 
-	activeFilter := "all"
-	var html string
+	// Load saved filter preference (instead of resetting to "all" on nav)
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+	activeFilter := prefs.CalendarFilter
+	if activeFilter == "" {
+		activeFilter = "all"
+	}
+	var htmlStr string
 	if isWeek {
-		html = h.fmt.FormatCalendarWeek(targetDate.Format("Jan 02, 2006"), events, activeFilter)
+		htmlStr = h.fmt.FormatCalendarWeek(targetDate.Format("Jan 02, 2006"), events, activeFilter)
 	} else {
-		html = h.fmt.FormatCalendarDay(targetDate.Format("Mon Jan 02, 2006"), events, activeFilter)
+		htmlStr = h.fmt.FormatCalendarDay(targetDate.Format("Mon Jan 02, 2006"), events, activeFilter)
 	}
 
 	kb := h.kb.CalendarFilter(activeFilter, targetDateStr, isWeek)
-	return h.sendCalendarChunked(ctx, chatID, msgID, html, kb)
+	return h.sendCalendarChunked(ctx, chatID, msgID, htmlStr, kb)
 }
 
 // handleMonthNav handles prevmonth / thismonth / nextmonth navigation.
-func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, navType, _ string) error {
-	var monthType string
-	switch navType {
-	case "prevmonth":
-		monthType = "prev"
-	case "nextmonth":
-		monthType = "next"
-	default: // "thismonth"
-		monthType = "current"
+// dateStr is the reference date from the callback (e.g. "20260301") to compute relative months.
+func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, navType, dateStr string) error {
+	// Parse the reference date from the callback; fall back to "now" if invalid.
+	refDate, parseErr := time.Parse("20060102", dateStr)
+	if parseErr != nil {
+		refDate = timeutil.NowWIB()
 	}
 
-	now := timeutil.NowWIB()
 	var targetYear int
 	var targetMonth time.Month
-	switch monthType {
-	case "prev":
-		prev := now.AddDate(0, -1, 0)
+	switch navType {
+	case "prevmonth":
+		prev := refDate.AddDate(0, -1, 0)
 		targetYear, targetMonth = prev.Year(), prev.Month()
-	case "next":
-		next := now.AddDate(0, 1, 0)
+	case "nextmonth":
+		next := refDate.AddDate(0, 1, 0)
 		targetYear, targetMonth = next.Year(), next.Month()
-	default:
+	default: // "thismonth"
+		now := timeutil.NowWIB()
 		targetYear, targetMonth = now.Year(), now.Month()
 	}
 
@@ -923,9 +1006,20 @@ func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, 
 
 	if len(events) == 0 {
 		_ = h.bot.EditMessage(ctx, chatID, msgID, "Fetching monthly calendar from MQL5... (15-20s) ⏳")
-		fetched, err := h.newsFetcher.ScrapeMonth(ctx, monthType)
+		// Map navType to ScrapeMonth range type
+		scrapeRange := "current"
+		now := timeutil.NowWIB()
+		targetFirst := time.Date(targetYear, targetMonth, 1, 0, 0, 0, 0, time.UTC)
+		nowFirst := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+		if targetFirst.Before(nowFirst) {
+			scrapeRange = "prev"
+		} else if targetFirst.After(nowFirst) {
+			scrapeRange = "next"
+		}
+		fetched, err := h.newsFetcher.ScrapeMonth(ctx, scrapeRange)
 		if err != nil {
-			return h.bot.EditMessage(ctx, chatID, msgID, fmt.Sprintf("Failed to fetch month: %v", err))
+			log.Error().Err(err).Str("range", scrapeRange).Msg("month scrape failed")
+			return h.bot.EditMessage(ctx, chatID, msgID, "Failed to fetch monthly calendar. Please try again later.")
 		}
 		_ = h.newsRepo.SaveEvents(ctx, fetched)
 		events, _ = h.newsRepo.GetByMonth(ctx, yearMonth)
@@ -991,6 +1085,10 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, args string) error {
 	forceRefresh := strings.EqualFold(strings.TrimSpace(args), "refresh")
 	if forceRefresh {
+		// Only admin+ can force-refresh (prevents FRED API quota abuse)
+		if !h.requireAdmin(ctx, chatID, userID) {
+			return nil
+		}
 		fred.InvalidateCache()
 	}
 
@@ -1002,12 +1100,268 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 
 	data, err := fred.GetCachedOrFetch(ctx)
 	if err != nil {
+		log.Error().Err(err).Msg("FRED data fetch failed")
 		return h.bot.EditMessage(ctx, chatID, placeholderID,
-			fmt.Sprintf("Failed to fetch FRED data: %v\n\nMake sure FRED_API_KEY is set in .env", err))
+			"Failed to fetch macro data. Please try again later.")
 	}
 
 	regime := fred.ClassifyMacroRegime(data)
 	html := h.fmt.FormatMacroRegime(regime, data)
 
 	return h.bot.EditMessage(ctx, chatID, placeholderID, html)
+}
+
+// ---------------------------------------------------------------------------
+// /membership — Tier comparison & upgrade info
+// ---------------------------------------------------------------------------
+
+// cmdMembership shows the tier comparison and how to upgrade.
+func (h *Handler) cmdMembership(ctx context.Context, chatID string, userID int64, args string) error {
+	// Determine caller's current tier
+	currentRole := domain.RoleFree
+	if h.middleware != nil {
+		currentRole = h.middleware.GetUserRole(ctx, userID)
+	} else if h.bot.isOwner(userID) {
+		currentRole = domain.RoleOwner
+	}
+
+	currentLabel := strings.ToUpper(string(currentRole))
+
+	html := fmt.Sprintf(""+
+		"\xf0\x9f\xa6\x85 <b>ARK Intelligence Membership</b>\n"+
+		"Your tier: <b>%s</b>\n\n", currentLabel)
+
+	html += "" +
+		"<b>\xf0\x9f\x86\x93 FREE</b>\n" +
+		"<code>Commands   : 10/day</code>\n" +
+		"<code>AI Analysis: 3/day (30s cooldown)</code>\n" +
+		"<code>News Alert : USD only, High impact</code>\n" +
+		"<code>FRED Macro : </code>\xe2\x9d\x8c\n" +
+		"<code>COT Data   : </code>\xe2\x9c\x85 Full access\n" +
+		"<code>Calendar   : </code>\xe2\x9c\x85 Full access\n\n"
+
+	html += "" +
+		"<b>\xe2\xad\x90 MEMBER</b>\n" +
+		"<code>Commands   : 15/min (no daily cap)</code>\n" +
+		"<code>AI Analysis: 10/day (30s cooldown)</code>\n" +
+		"<code>News Alert : All currencies &amp; impacts</code>\n" +
+		"<code>FRED Macro : </code>\xe2\x9c\x85 Regime alerts\n" +
+		"<code>COT Data   : </code>\xe2\x9c\x85 Full access\n" +
+		"<code>Calendar   : </code>\xe2\x9c\x85 Full access\n\n"
+
+	html += "" +
+		"<b>\xf0\x9f\x9b\xa1 ADMIN</b>\n" +
+		"<code>Commands   : 30/min (no daily cap)</code>\n" +
+		"<code>AI Analysis: 50/day (10s cooldown)</code>\n" +
+		"<code>News Alert : All currencies &amp; impacts</code>\n" +
+		"<code>FRED Macro : </code>\xe2\x9c\x85 Regime alerts\n" +
+		"<code>User Mgmt  : </code>\xe2\x9c\x85 /users, /ban, /setrole\n\n"
+
+	// Show upgrade CTA for non-owner users
+	if currentRole == domain.RoleFree || currentRole == domain.RoleMember {
+		ownerID := h.bot.OwnerID()
+		if ownerID > 0 {
+			html += fmt.Sprintf(
+				"\xf0\x9f\x94\x91 <b>Upgrade to Member</b>\n"+
+					"Contact the owner to upgrade your access:\n"+
+					"\xe2\x9e\xa1 <a href=\"tg://user?id=%d\">Contact Owner</a>\n\n"+
+					"<i>Include your User ID: <code>%d</code></i>",
+				ownerID, userID)
+		} else {
+			html += fmt.Sprintf(
+				"\xf0\x9f\x94\x91 <b>Upgrade to Member</b>\n"+
+					"Contact the group admin to upgrade your access.\n\n"+
+					"<i>Your User ID: <code>%d</code></i>",
+				userID)
+		}
+	} else if currentRole == domain.RoleOwner {
+		html += "<i>You have unlimited access as Owner.</i>"
+	}
+
+	_, err := h.bot.SendHTML(ctx, chatID, html)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Admin Commands — /users, /setrole, /ban, /unban
+// ---------------------------------------------------------------------------
+
+// requireAdmin checks that the caller is Owner or Admin. Returns false and sends an error if not.
+func (h *Handler) requireAdmin(ctx context.Context, chatID string, userID int64) bool {
+	if h.middleware == nil {
+		return h.bot.isOwner(userID) // fallback
+	}
+	role := h.middleware.GetUserRole(ctx, userID)
+	if domain.RoleHierarchy(role) >= domain.RoleHierarchy(domain.RoleAdmin) {
+		return true
+	}
+	_, _ = h.bot.SendHTML(ctx, chatID, "This command requires Admin privileges.")
+	return false
+}
+
+// cmdUsers lists all registered users with their roles and usage stats.
+func (h *Handler) cmdUsers(ctx context.Context, chatID string, userID int64, args string) error {
+	if !h.requireAdmin(ctx, chatID, userID) {
+		return nil
+	}
+	if h.middleware == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "User management not available.")
+		return err
+	}
+
+	users, err := h.middleware.GetAllUsers(ctx)
+	if err != nil {
+		log.Error().Err(err).Int64("caller", userID).Msg("cmdUsers: failed to list users")
+		_, err = h.bot.SendHTML(ctx, chatID, "Failed to list users. Check server logs.")
+		return err
+	}
+
+	html := FormatUserList(users)
+	_, err = h.bot.SendHTML(ctx, chatID, html)
+	return err
+}
+
+// cmdSetRole changes a user's role.
+// Usage: /setrole <userID> <role>
+func (h *Handler) cmdSetRole(ctx context.Context, chatID string, userID int64, args string) error {
+	if !h.requireAdmin(ctx, chatID, userID) {
+		return nil
+	}
+	if h.middleware == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "User management not available.")
+		return err
+	}
+
+	parts := strings.Fields(args)
+	if len(parts) < 2 {
+		_, err := h.bot.SendHTML(ctx, chatID,
+			"Usage: <code>/setrole &lt;userID&gt; &lt;role&gt;</code>\nRoles: owner, admin, member, free, banned")
+		return err
+	}
+
+	var targetID int64
+	if _, err := fmt.Sscanf(parts[0], "%d", &targetID); err != nil {
+		_, err = h.bot.SendHTML(ctx, chatID, "Invalid user ID. Must be a number.")
+		return err
+	}
+
+	newRole := domain.UserRole(strings.ToLower(parts[1]))
+	switch newRole {
+	case domain.RoleOwner, domain.RoleAdmin, domain.RoleMember, domain.RoleFree, domain.RoleBanned:
+		// valid
+	default:
+		_, err := h.bot.SendHTML(ctx, chatID,
+			fmt.Sprintf("Unknown role <code>%s</code>. Valid: owner, admin, member, free, banned", html.EscapeString(parts[1])))
+		return err
+	}
+
+	// Prevent non-owner from setting privileged roles (owner or admin)
+	callerRole := h.middleware.GetUserRole(ctx, userID)
+	if (newRole == domain.RoleOwner || newRole == domain.RoleAdmin) && callerRole != domain.RoleOwner {
+		_, err := h.bot.SendHTML(ctx, chatID, "Only the Owner can assign Owner or Admin roles.")
+		return err
+	}
+
+	// Prevent banning/demoting the Owner
+	if h.bot.isOwner(targetID) && newRole != domain.RoleOwner {
+		_, err := h.bot.SendHTML(ctx, chatID, "Cannot change the Owner's role.")
+		return err
+	}
+
+	// Prevent Admin from modifying users with equal or higher privilege
+	targetRole := h.middleware.GetUserRole(ctx, targetID)
+	if callerRole != domain.RoleOwner && domain.RoleHierarchy(targetRole) >= domain.RoleHierarchy(callerRole) {
+		_, err := h.bot.SendHTML(ctx, chatID, "You cannot modify a user with equal or higher privileges.")
+		return err
+	}
+
+	if err := h.middleware.SetUserRole(ctx, targetID, newRole); err != nil {
+		log.Error().Err(err).Int64("target", targetID).Str("role", string(newRole)).Msg("cmdSetRole: failed")
+		_, err = h.bot.SendHTML(ctx, chatID, "Failed to set role. Check server logs.")
+		return err
+	}
+
+	_, err := h.bot.SendHTML(ctx, chatID,
+		fmt.Sprintf("User <code>%d</code> role set to <b>%s</b>.", targetID, newRole))
+	return err
+}
+
+// cmdBan bans a user.
+// Usage: /ban <userID>
+func (h *Handler) cmdBan(ctx context.Context, chatID string, userID int64, args string) error {
+	if !h.requireAdmin(ctx, chatID, userID) {
+		return nil
+	}
+	if h.middleware == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "User management not available.")
+		return err
+	}
+
+	targetStr := strings.TrimSpace(args)
+	if targetStr == "" {
+		_, err := h.bot.SendHTML(ctx, chatID, "Usage: <code>/ban &lt;userID&gt;</code>")
+		return err
+	}
+
+	var targetID int64
+	if _, err := fmt.Sscanf(targetStr, "%d", &targetID); err != nil {
+		_, err = h.bot.SendHTML(ctx, chatID, "Invalid user ID.")
+		return err
+	}
+
+	// Prevent banning the Owner
+	if h.bot.isOwner(targetID) {
+		_, err := h.bot.SendHTML(ctx, chatID, "Cannot ban the Owner.")
+		return err
+	}
+
+	// Prevent Admin from banning users with equal or higher privilege
+	callerRole := h.middleware.GetUserRole(ctx, userID)
+	targetRole := h.middleware.GetUserRole(ctx, targetID)
+	if callerRole != domain.RoleOwner && domain.RoleHierarchy(targetRole) >= domain.RoleHierarchy(callerRole) {
+		_, err := h.bot.SendHTML(ctx, chatID, "You cannot ban a user with equal or higher privileges.")
+		return err
+	}
+
+	if err := h.middleware.SetUserRole(ctx, targetID, domain.RoleBanned); err != nil {
+		log.Error().Err(err).Int64("target", targetID).Msg("cmdBan: failed")
+		_, err = h.bot.SendHTML(ctx, chatID, "Failed to ban user. Check server logs.")
+		return err
+	}
+
+	_, err := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("User <code>%d</code> has been banned.", targetID))
+	return err
+}
+
+// cmdUnban unbans a user (sets them back to Free).
+// Usage: /unban <userID>
+func (h *Handler) cmdUnban(ctx context.Context, chatID string, userID int64, args string) error {
+	if !h.requireAdmin(ctx, chatID, userID) {
+		return nil
+	}
+	if h.middleware == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "User management not available.")
+		return err
+	}
+
+	targetStr := strings.TrimSpace(args)
+	if targetStr == "" {
+		_, err := h.bot.SendHTML(ctx, chatID, "Usage: <code>/unban &lt;userID&gt;</code>")
+		return err
+	}
+
+	var targetID int64
+	if _, err := fmt.Sscanf(targetStr, "%d", &targetID); err != nil {
+		_, err = h.bot.SendHTML(ctx, chatID, "Invalid user ID.")
+		return err
+	}
+
+	if err := h.middleware.SetUserRole(ctx, targetID, domain.RoleFree); err != nil {
+		log.Error().Err(err).Int64("target", targetID).Msg("cmdUnban: failed")
+		_, err = h.bot.SendHTML(ctx, chatID, "Failed to unban user. Check server logs.")
+		return err
+	}
+
+	_, err := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("User <code>%d</code> has been unbanned (set to Free).", targetID))
+	return err
 }

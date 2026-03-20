@@ -18,6 +18,14 @@ import (
 
 var schedLog = logger.Component("news-scheduler")
 
+// AlertFilterFunc is a callback that returns the effective currency filter and impact filter
+// for a user, applying tier-based overrides (e.g., Free → USD+High only).
+// Parameters: (ctx, userID, prefsCurrencies, prefsImpacts) → (currencies, impacts)
+type AlertFilterFunc func(ctx context.Context, userID int64, prefsCurrencies, prefsImpacts []string) ([]string, []string)
+
+// FREDAlertCheckFunc checks if a user should receive FRED alerts (Free tier excluded).
+type FREDAlertCheckFunc func(ctx context.Context, userID int64) bool
+
 // Scheduler manages background pulling of economic data and dispatching alerts.
 type Scheduler struct {
 	repo       ports.NewsRepository
@@ -44,6 +52,13 @@ type Scheduler struct {
 	// onNewsInvalidate is called when significant news data changes (new releases with high surprise).
 	// Used by AI cache layer to invalidate news-dependent caches.
 	onNewsInvalidate func(ctx context.Context)
+
+	// alertFilter applies tier-based overrides to alert filtering. May be nil (no tier filtering).
+	alertFilter AlertFilterFunc
+
+	// isBanned checks if a user is banned. May be nil (no ban check).
+	// When set, all broadcast loops explicitly skip banned users.
+	isBanned func(ctx context.Context, userID int64) bool
 }
 
 // NewScheduler creates a new background scheduler.
@@ -70,6 +85,16 @@ func NewScheduler(
 // SetNewsInvalidateFunc sets the callback for news cache invalidation.
 func (s *Scheduler) SetNewsInvalidateFunc(fn func(ctx context.Context)) {
 	s.onNewsInvalidate = fn
+}
+
+// SetAlertFilterFunc sets the tier-based alert filter callback.
+func (s *Scheduler) SetAlertFilterFunc(fn AlertFilterFunc) {
+	s.alertFilter = fn
+}
+
+// SetIsBannedFunc sets the ban-check callback for broadcast filtering.
+func (s *Scheduler) SetIsBannedFunc(fn func(ctx context.Context, userID int64) bool) {
+	s.isBanned = fn
 }
 
 // Start begins the background monitoring loop.
@@ -166,15 +191,23 @@ func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 		return
 	}
 
-	// P1.2 — Build Storm Day info once (same for all users)
-	stormWarning := s.buildStormDayWarning(events, now)
-
 	for userID, prefs := range activeUsers {
 		if !prefs.AlertsEnabled || prefs.ChatID == "" {
 			continue
 		}
+		// Explicit ban check
+		if s.isBanned != nil && s.isBanned(ctx, userID) {
+			continue
+		}
 
-		alertImpactsLower := toLowerSlice(prefs.AlertImpacts)
+		// Apply tier-based filter overrides (Free → USD + High only)
+		effectiveCurrencies := prefs.CurrencyFilter
+		effectiveImpacts := prefs.AlertImpacts
+		if s.alertFilter != nil {
+			effectiveCurrencies, effectiveImpacts = s.alertFilter(ctx, userID, prefs.CurrencyFilter, prefs.AlertImpacts)
+		}
+
+		alertImpactsLower := toLowerSlice(effectiveImpacts)
 		impactSet := toSet(alertImpactsLower)
 
 		highCount, medCount, lowCount := 0, 0, 0
@@ -182,7 +215,7 @@ func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 
 		for i := range events {
 			e := &events[i]
-			if len(prefs.CurrencyFilter) > 0 && !containsStr(prefs.CurrencyFilter, e.Currency) {
+			if len(effectiveCurrencies) > 0 && !containsStr(effectiveCurrencies, e.Currency) {
 				continue
 			}
 			if !impactSet[strings.ToLower(e.Impact)] {
@@ -221,7 +254,8 @@ func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 				firstMatch.TimeWIB.Format("15:04"), firstMatch.Currency, firstMatch.Event)
 		}
 
-		// P1.2 — Append Storm Day warning if applicable
+		// P1.2 — Append Storm Day warning if applicable (filtered by user's effective currencies)
+		stormWarning := s.buildStormDayWarning(events, now, effectiveCurrencies)
 		if stormWarning != "" {
 			html += "\n\n" + stormWarning
 		}
@@ -235,14 +269,19 @@ func (s *Scheduler) broadcastDailyReminder(ctx context.Context, now time.Time) {
 
 // buildStormDayWarning detects if today is a Storm Day (3+ high-impact events).
 // Returns the formatted HTML warning string, or "" if not a storm day.
+// If currencyFilter is non-empty, only events matching those currencies are considered.
 //
 // P1.2 — Storm Day Detection
-func (s *Scheduler) buildStormDayWarning(events []domain.NewsEvent, now time.Time) string {
+func (s *Scheduler) buildStormDayWarning(events []domain.NewsEvent, now time.Time, currencyFilter []string) string {
 	var highEvents []domain.NewsEvent
 	currencySet := make(map[string]bool)
 
 	for _, e := range events {
 		if strings.ToLower(e.Impact) == "high" {
+			// Apply currency filter if present
+			if len(currencyFilter) > 0 && !containsStr(currencyFilter, e.Currency) {
+				continue
+			}
 			highEvents = append(highEvents, e)
 			if e.Currency != "" {
 				currencySet[strings.ToUpper(e.Currency)] = true
@@ -261,7 +300,9 @@ func (s *Scheduler) buildStormDayWarning(events []domain.NewsEvent, now time.Tim
 	}
 	shownEvents := eventNames
 	if len(shownEvents) > 4 {
-		shownEvents = append(shownEvents[:4], fmt.Sprintf("+%d more", len(eventNames)-4))
+		shownEvents = make([]string, 5)
+		copy(shownEvents, eventNames[:4])
+		shownEvents[4] = fmt.Sprintf("+%d more", len(eventNames)-4)
 	}
 
 	// Build volatile pairs from involved currencies
@@ -370,17 +411,28 @@ func (s *Scheduler) evaluatePreEventReminders(ctx context.Context) {
 			if !prefs.AlertsEnabled || prefs.ChatID == "" {
 				continue
 			}
+			// Explicit ban check
+			if s.isBanned != nil && s.isBanned(ctx, userID) {
+				continue
+			}
 
 			if !containsInt(prefs.AlertMinutes, minsUntil) {
 				continue
 			}
 
-			alertImpactsLower := toLowerSlice(prefs.AlertImpacts)
+			// Apply tier-based filter overrides
+			effectiveCurrencies := prefs.CurrencyFilter
+			effectiveImpacts := prefs.AlertImpacts
+			if s.alertFilter != nil {
+				effectiveCurrencies, effectiveImpacts = s.alertFilter(ctx, userID, prefs.CurrencyFilter, prefs.AlertImpacts)
+			}
+
+			alertImpactsLower := toLowerSlice(effectiveImpacts)
 			if !toSet(alertImpactsLower)[strings.ToLower(e.Impact)] {
 				continue
 			}
 
-			if len(prefs.CurrencyFilter) > 0 && !containsStr(prefs.CurrencyFilter, e.Currency) {
+			if len(effectiveCurrencies) > 0 && !containsStr(effectiveCurrencies, e.Currency) {
 				continue
 			}
 
@@ -577,13 +629,24 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 		if !prefs.AlertsEnabled || prefs.ChatID == "" {
 			continue
 		}
+		// Explicit ban check
+		if s.isBanned != nil && s.isBanned(ctx, userID) {
+			continue
+		}
 
-		alertImpactsLower := toLowerSlice(prefs.AlertImpacts)
+		// Apply tier-based filter overrides
+		effectiveCurrencies := prefs.CurrencyFilter
+		effectiveImpacts := prefs.AlertImpacts
+		if s.alertFilter != nil {
+			effectiveCurrencies, effectiveImpacts = s.alertFilter(ctx, userID, prefs.CurrencyFilter, prefs.AlertImpacts)
+		}
+
+		alertImpactsLower := toLowerSlice(effectiveImpacts)
 		if !toSet(alertImpactsLower)[strings.ToLower(ev.Impact)] {
 			continue
 		}
 
-		if len(prefs.CurrencyFilter) > 0 && !containsStr(prefs.CurrencyFilter, ev.Currency) {
+		if len(effectiveCurrencies) > 0 && !containsStr(effectiveCurrencies, ev.Currency) {
 			continue
 		}
 
@@ -628,9 +691,18 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 				convHTML += fmt.Sprintf("<code>COT Bias: %s | FRED: %s</code>\n", cs.COTBias, cs.FREDRegime)
 				convHTML += "<i>Real-time update — /rank for full ranking</i>"
 
-				for _, prefs := range activeUsers {
+				for userID, prefs := range activeUsers {
 					if prefs.AlertsEnabled && prefs.ChatID != "" {
-						if len(prefs.CurrencyFilter) == 0 || containsStr(prefs.CurrencyFilter, ev.Currency) {
+						// Explicit ban check
+						if s.isBanned != nil && s.isBanned(ctx, userID) {
+							continue
+						}
+						// Apply tier filter for conviction updates too
+						effCur := prefs.CurrencyFilter
+						if s.alertFilter != nil {
+							effCur, _ = s.alertFilter(ctx, userID, prefs.CurrencyFilter, prefs.AlertImpacts)
+						}
+						if len(effCur) == 0 || containsStr(effCur, ev.Currency) {
 							_, _ = s.messenger.SendHTML(ctx, prefs.ChatID, convHTML)
 							time.Sleep(50 * time.Millisecond)
 						}

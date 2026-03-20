@@ -84,6 +84,7 @@ func main() {
 	prefsRepo := storage.NewPrefsRepo(db)
 	newsRepo := storage.NewNewsRepo(db)
 	cacheRepo := storage.NewCacheRepo(db)
+	userRepo := storage.NewUserRepo(db)
 
 	log.Info().Msg("Storage layer initialized")
 	logStorageSize(db)
@@ -104,7 +105,11 @@ func main() {
 	// -----------------------------------------------------------------------
 	bot := tgbot.NewBot(cfg.BotToken, cfg.ChatID)
 
-	log.Info().Msg("Telegram bot created")
+	// User management middleware (tiered access control + quotas)
+	authMiddleware := tgbot.NewMiddleware(userRepo, bot.OwnerID())
+	bot.SetMiddleware(authMiddleware)
+
+	log.Info().Msg("Telegram bot created (with user management middleware)")
 
 	// -----------------------------------------------------------------------
 	// 5. AI layer (optional — graceful degradation)
@@ -142,14 +147,16 @@ func main() {
 	// 7. Background schedulers
 	// -----------------------------------------------------------------------
 	sched := scheduler.New(&scheduler.Deps{
-		COTAnalyzer: cotAnalyzer,
-		AIAnalyzer:  aiAnalyzer,
-		Bot:         bot,
-		COTRepo:     cotRepo,
-		PrefsRepo:   prefsRepo,
-		ChatID:      cfg.ChatID,
-		CachedAI:    cachedAI,
-		DB:          db,
+		COTAnalyzer:    cotAnalyzer,
+		AIAnalyzer:     aiAnalyzer,
+		Bot:            bot,
+		COTRepo:        cotRepo,
+		PrefsRepo:      prefsRepo,
+		ChatID:         cfg.ChatID,
+		CachedAI:       cachedAI,
+		DB:             db,
+		FREDAlertCheck: authMiddleware.ShouldReceiveFREDAlerts,
+		IsBanned:       authMiddleware.IsUserBanned,
 	})
 
 	sched.Start(ctx, &scheduler.Intervals{
@@ -165,6 +172,12 @@ func main() {
 	if cachedAI != nil {
 		newsSched.SetNewsInvalidateFunc(cachedAI.InvalidateOnNewsUpdate)
 	}
+
+	// Wire tier-based alert filtering (Free → USD + High only)
+	newsSched.SetAlertFilterFunc(authMiddleware.EffectiveAlertFilters)
+
+	// Wire ban check for all news broadcast loops
+	newsSched.SetIsBannedFunc(authMiddleware.IsUserBanned)
 
 	newsSched.Start(ctx)
 	log.Info().Msg("News Background scheduler started")
@@ -185,6 +198,7 @@ func main() {
 		aiAnalyzer,     // nil-safe: handler checks IsAvailable()
 		changelogContent,
 		newsSched,      // SurpriseProvider: weekly per-currency surprise accumulator
+		authMiddleware, // User management middleware
 	)
 
 	log.Info().Msg("Telegram handler registered")
@@ -275,6 +289,12 @@ func main() {
 	// Phase 3: Stop scheduler
 	sched.Stop()
 	log.Info().Msg("Scheduler stopped")
+
+	// Phase 3b: Stop middleware cleanup goroutine
+	authMiddleware.Stop()
+
+	// Phase 3c: Stop legacy rate limiter cleanup goroutine
+	bot.StopRateLimiter()
 
 	// Phase 4: Close storage (handled by defer)
 	log.Info().Msg("Shutdown complete. Goodbye.")
