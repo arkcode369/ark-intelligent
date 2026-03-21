@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
@@ -38,6 +39,12 @@ type Config struct {
 	AICacheTTL time.Duration // How long to cache AI responses
 	AIMaxRPM   int           // Max requests per minute to Gemini
 	AIMaxDaily int           // Max AI calls per day
+
+	// Price APIs (optional — graceful degradation to Yahoo fallback)
+	TwelveDataAPIKey    string        // Twelve Data API key (for forex + gold)
+	AlphaVantageAPIKeys []string      // Alpha Vantage API keys (comma-separated, for oil + treasury)
+	PriceFetchInterval  time.Duration // How often to fetch price data
+	PriceHistoryWeeks   int           // How many weeks of price history to bootstrap
 
 	// Logging
 	LogLevel string // "debug", "info", "warn", "error"
@@ -73,6 +80,12 @@ func MustLoad() *Config {
 
 		// Logging
 		LogLevel: getEnv("LOG_LEVEL", "info"),
+
+		// Price APIs
+		TwelveDataAPIKey:    getEnv("TWELVE_DATA_API_KEY", ""),
+		AlphaVantageAPIKeys: getStringSlice("ALPHA_VANTAGE_API_KEYS"),
+		PriceFetchInterval:  getDuration("PRICE_FETCH_INTERVAL", 6*time.Hour),
+		PriceHistoryWeeks:   getInt("PRICE_HISTORY_WEEKS", 52),
 	}
 
 	cfg.validate()
@@ -82,6 +95,16 @@ func MustLoad() *Config {
 // HasGemini returns true if Gemini API key is configured.
 func (c *Config) HasGemini() bool {
 	return c.GeminiAPIKey != ""
+}
+
+// HasTwelveData returns true if Twelve Data API key is configured.
+func (c *Config) HasTwelveData() bool {
+	return c.TwelveDataAPIKey != ""
+}
+
+// HasAlphaVantage returns true if at least one Alpha Vantage API key is configured.
+func (c *Config) HasAlphaVantage() bool {
+	return len(c.AlphaVantageAPIKeys) > 0
 }
 
 // validate performs additional validation beyond required env vars.
@@ -145,14 +168,38 @@ func getInt(key string, defaultVal int) int {
 	return defaultVal
 }
 
+func getStringSlice(key string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
 // String returns a redacted configuration summary for logging.
 func (c *Config) String() string {
 	geminiStatus := "NOT CONFIGURED"
 	if c.HasGemini() {
 		geminiStatus = "CONFIGURED"
 	}
+	priceStatus := "YAHOO_ONLY"
+	if c.HasTwelveData() && c.HasAlphaVantage() {
+		priceStatus = "FULL"
+	} else if c.HasTwelveData() {
+		priceStatus = "TWELVEDATA+YAHOO"
+	} else if c.HasAlphaVantage() {
+		priceStatus = "ALPHAVANTAGE+YAHOO"
+	}
 	return fmt.Sprintf(
-		"Config{DataDir=%s, COTInterval=%v, Gemini=%s, LogLevel=%s}",
-		c.DataDir, c.COTFetchInterval, geminiStatus, c.LogLevel,
+		"Config{DataDir=%s, COTInterval=%v, Gemini=%s, Price=%s, LogLevel=%s}",
+		c.DataDir, c.COTFetchInterval, geminiStatus, priceStatus, c.LogLevel,
 	)
 }

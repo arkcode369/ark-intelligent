@@ -1,0 +1,211 @@
+package storage
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	badger "github.com/dgraph-io/badger/v4"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+)
+
+// SignalRepo implements ports.SignalRepository using BadgerDB.
+type SignalRepo struct {
+	db *badger.DB
+}
+
+// NewSignalRepo creates a new SignalRepo backed by the given DB.
+func NewSignalRepo(db *DB) *SignalRepo {
+	return &SignalRepo{db: db.Badger()}
+}
+
+// --- Key builders ---
+// Key format: sig:{contractCode}:{YYYYMMDD}:{signalType}
+// This ensures at most one signal per type per contract per week (deduplication).
+
+func signalKey(s domain.PersistedSignal) []byte {
+	return []byte(fmt.Sprintf("sig:%s:%s:%s",
+		s.ContractCode,
+		s.ReportDate.Format("20060102"),
+		s.SignalType,
+	))
+}
+
+func signalContractPrefix(contractCode string) []byte {
+	return []byte(fmt.Sprintf("sig:%s:", contractCode))
+}
+
+func signalAllPrefix() []byte {
+	return []byte("sig:")
+}
+
+// --- SignalRepository interface implementation ---
+
+// SaveSignals persists a batch of signal snapshots.
+func (r *SignalRepo) SaveSignals(_ context.Context, signals []domain.PersistedSignal) error {
+	if len(signals) == 0 {
+		return nil
+	}
+
+	wb := r.db.NewWriteBatch()
+	defer wb.Cancel()
+
+	for i := range signals {
+		data, err := json.Marshal(&signals[i])
+		if err != nil {
+			return fmt.Errorf("marshal signal %s/%s: %w", signals[i].ContractCode, signals[i].SignalType, err)
+		}
+		key := signalKey(signals[i])
+		if err := wb.Set(key, data); err != nil {
+			return fmt.Errorf("batch set signal: %w", err)
+		}
+	}
+
+	if err := wb.Flush(); err != nil {
+		return fmt.Errorf("flush signals batch: %w", err)
+	}
+	return nil
+}
+
+// GetSignalsByContract retrieves all persisted signals for a contract.
+// Ordered newest-first by report date.
+func (r *SignalRepo) GetSignalsByContract(_ context.Context, contractCode string) ([]domain.PersistedSignal, error) {
+	prefix := signalContractPrefix(contractCode)
+	signals, err := r.scanSignals(prefix)
+	if err != nil {
+		return nil, fmt.Errorf("get signals for %s: %w", contractCode, err)
+	}
+	reverseSignals(signals)
+	return signals, nil
+}
+
+// GetSignalsByType retrieves all persisted signals of a given type across all contracts.
+func (r *SignalRepo) GetSignalsByType(_ context.Context, signalType string) ([]domain.PersistedSignal, error) {
+	all, err := r.scanSignals(signalAllPrefix())
+	if err != nil {
+		return nil, fmt.Errorf("get signals by type %s: %w", signalType, err)
+	}
+
+	var filtered []domain.PersistedSignal
+	for i := range all {
+		if all[i].SignalType == signalType {
+			filtered = append(filtered, all[i])
+		}
+	}
+	reverseSignals(filtered)
+	return filtered, nil
+}
+
+// GetAllSignals retrieves all persisted signals.
+func (r *SignalRepo) GetAllSignals(_ context.Context) ([]domain.PersistedSignal, error) {
+	signals, err := r.scanSignals(signalAllPrefix())
+	if err != nil {
+		return nil, fmt.Errorf("get all signals: %w", err)
+	}
+	reverseSignals(signals)
+	return signals, nil
+}
+
+// GetPendingSignals retrieves signals that need outcome evaluation.
+// A signal is pending if Outcome1W is empty and the report date is at least 7 days old.
+func (r *SignalRepo) GetPendingSignals(_ context.Context) ([]domain.PersistedSignal, error) {
+	all, err := r.scanSignals(signalAllPrefix())
+	if err != nil {
+		return nil, fmt.Errorf("get pending signals: %w", err)
+	}
+
+	now := time.Now()
+	var pending []domain.PersistedSignal
+	for i := range all {
+		if all[i].NeedsEvaluation(now) {
+			pending = append(pending, all[i])
+		}
+	}
+	return pending, nil
+}
+
+// UpdateSignal overwrites a single persisted signal.
+func (r *SignalRepo) UpdateSignal(_ context.Context, signal domain.PersistedSignal) error {
+	data, err := json.Marshal(&signal)
+	if err != nil {
+		return fmt.Errorf("marshal signal update: %w", err)
+	}
+
+	key := signalKey(signal)
+	return r.db.Update(func(txn *badger.Txn) error {
+		return txn.Set(key, data)
+	})
+}
+
+// --- Internal helpers ---
+
+// scanSignals iterates all keys with the given prefix and deserializes signals.
+func (r *SignalRepo) scanSignals(prefix []byte) ([]domain.PersistedSignal, error) {
+	var signals []domain.PersistedSignal
+
+	err := r.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		opts.PrefetchValues = true
+		opts.PrefetchSize = 50
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			err := item.Value(func(val []byte) error {
+				var sig domain.PersistedSignal
+				if err := json.Unmarshal(val, &sig); err != nil {
+					return err
+				}
+				signals = append(signals, sig)
+				return nil
+			})
+			if err != nil {
+				// Log and skip corrupted entries rather than failing the whole scan
+				_ = err
+				continue
+			}
+		}
+		return nil
+	})
+	return signals, err
+}
+
+// reverseSignals reverses the slice in-place (newest-first).
+func reverseSignals(s []domain.PersistedSignal) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+}
+
+// SignalExists checks if a signal with the given key already exists.
+// Used by the bootstrapper to avoid duplicate inserts.
+func (r *SignalRepo) SignalExists(_ context.Context, contractCode string, reportDate time.Time, signalType string) (bool, error) {
+	key := signalKey(domain.PersistedSignal{
+		ContractCode: contractCode,
+		ReportDate:   reportDate,
+		SignalType:    signalType,
+	})
+
+	var exists bool
+	err := r.db.View(func(txn *badger.Txn) error {
+		_, err := txn.Get(key)
+		if err == badger.ErrKeyNotFound {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		exists = true
+		return nil
+	})
+	return exists, err
+}
+
+// Ensure SignalRepo uses strings package (for potential future filtering).
+var _ = strings.Split

@@ -24,6 +24,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
+	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
@@ -47,6 +48,12 @@ type Deps struct {
 	CachedAI    *aisvc.CachedInterpreter
 	DB          *storage.DB
 
+	// Price & Backtest (optional — nil-safe)
+	PriceRepo    ports.PriceRepository
+	SignalRepo   ports.SignalRepository
+	PriceFetcher ports.PriceFetcher
+	Evaluator    *backtestsvc.Evaluator
+
 	// FREDAlertCheck is a callback that returns whether a user should receive FRED alerts.
 	// Free-tier users are excluded. May be nil (all users receive FRED alerts).
 	FREDAlertCheck func(ctx context.Context, userID int64) bool
@@ -57,7 +64,8 @@ type Deps struct {
 
 // Intervals configures how often each job runs.
 type Intervals struct {
-	COTFetch time.Duration // Default: 6h
+	COTFetch   time.Duration // Default: 6h
+	PriceFetch time.Duration // Default: 6h
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +115,25 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 	// Data retention cleanup (runs daily at 03:00 WIB)
 	s.startJob(ctx, "retention-cleanup", 1*time.Hour, s.jobRetentionCleanup)
 
-	log.Info().Msg("started 4 background jobs")
+	jobCount := 4
+
+	// Price fetch (if price fetcher is configured)
+	if s.deps.PriceFetcher != nil && s.deps.PriceRepo != nil {
+		priceFetchInterval := intervals.PriceFetch
+		if priceFetchInterval == 0 {
+			priceFetchInterval = 6 * time.Hour
+		}
+		s.startJobWithDelay(ctx, "price-fetch", priceFetchInterval, 30*time.Second, s.jobPriceFetch)
+		jobCount++
+	}
+
+	// Signal evaluation (if evaluator is configured, runs every 2 hours)
+	if s.deps.Evaluator != nil {
+		s.startJobWithDelay(ctx, "signal-eval", 2*time.Hour, 1*time.Minute, s.jobSignalEval)
+		jobCount++
+	}
+
+	log.Info().Int("jobs", jobCount).Msg("started background jobs")
 }
 
 // Stop signals all jobs to stop and waits for them to finish. Safe to call multiple times.
@@ -289,6 +315,11 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 		log.Info().Int("signals", len(strongSignals)).Msg("sent strong signal alert to active users")
 	}
 
+	// Persist signals for backtesting (if repos are configured)
+	if s.deps.SignalRepo != nil && s.deps.PriceRepo != nil && len(signals) > 0 {
+		s.persistSignals(ctx, signals, analyses)
+	}
+
 	// Thin market and concentration alerts
 	for _, a := range analyses {
 		var alerts []string
@@ -456,6 +487,44 @@ func (s *Scheduler) jobRetentionCleanup(ctx context.Context) error {
 	return nil
 }
 
+// jobPriceFetch fetches weekly price data for all contracts and stores it.
+func (s *Scheduler) jobPriceFetch(ctx context.Context) error {
+	if s.deps.PriceFetcher == nil || s.deps.PriceRepo == nil {
+		return nil
+	}
+
+	records, err := s.deps.PriceFetcher.FetchAll(ctx, 52)
+	if err != nil {
+		return fmt.Errorf("price fetch: %w", err)
+	}
+
+	if len(records) > 0 {
+		if err := s.deps.PriceRepo.SavePrices(ctx, records); err != nil {
+			return fmt.Errorf("save prices: %w", err)
+		}
+		log.Info().Int("records", len(records)).Msg("price data saved")
+	}
+
+	return nil
+}
+
+// jobSignalEval evaluates pending signals by checking future price outcomes.
+func (s *Scheduler) jobSignalEval(ctx context.Context) error {
+	if s.deps.Evaluator == nil {
+		return nil
+	}
+
+	evaluated, err := s.deps.Evaluator.EvaluatePending(ctx)
+	if err != nil {
+		return fmt.Errorf("signal eval: %w", err)
+	}
+
+	if evaluated > 0 {
+		log.Info().Int("evaluated", evaluated).Msg("signal outcomes evaluated")
+	}
+	return nil
+}
+
 // gatherWeeklyData collects all data needed for the weekly outlook.
 func (s *Scheduler) gatherWeeklyData(ctx context.Context) (ports.WeeklyData, error) {
 	var data ports.WeeklyData
@@ -469,4 +538,61 @@ func (s *Scheduler) gatherWeeklyData(ctx context.Context) (ports.WeeklyData, err
 	}
 
 	return data, nil
+}
+
+// persistSignals saves detected signals with their entry prices for backtesting.
+func (s *Scheduler) persistSignals(ctx context.Context, signals []cotsvc.Signal, analyses []domain.COTAnalysis) {
+	// Build a lookup for analyses by contract code
+	analysisMap := make(map[string]*domain.COTAnalysis, len(analyses))
+	for i := range analyses {
+		analysisMap[analyses[i].Contract.Code] = &analyses[i]
+	}
+
+	now := time.Now()
+	var toSave []domain.PersistedSignal
+
+	for _, sig := range signals {
+		analysis := analysisMap[sig.ContractCode]
+		if analysis == nil {
+			continue
+		}
+
+		// Look up entry price
+		var entryClose float64
+		priceRec, err := s.deps.PriceRepo.GetLatest(ctx, sig.ContractCode)
+		if err == nil && priceRec != nil {
+			entryClose = priceRec.Close
+		}
+
+		// Look up inverse flag
+		var inverse bool
+		mapping := domain.FindPriceMapping(sig.ContractCode)
+		if mapping != nil {
+			inverse = mapping.Inverse
+		}
+
+		ps := domain.PersistedSignal{
+			ContractCode: sig.ContractCode,
+			Currency:     sig.Currency,
+			SignalType:   string(sig.Type),
+			Direction:    sig.Direction,
+			Strength:     sig.Strength,
+			Confidence:   sig.Confidence,
+			Description:  sig.Description,
+			ReportDate:   analysis.ReportDate,
+			DetectedAt:   now,
+			EntryPrice:   entryClose,
+			Inverse:      inverse,
+			COTIndex:     analysis.COTIndex,
+		}
+		toSave = append(toSave, ps)
+	}
+
+	if len(toSave) > 0 {
+		if err := s.deps.SignalRepo.SaveSignals(ctx, toSave); err != nil {
+			log.Warn().Err(err).Int("count", len(toSave)).Msg("failed to persist signals")
+		} else {
+			log.Info().Int("persisted", len(toSave)).Msg("signals persisted for backtesting")
+		}
+	}
 }

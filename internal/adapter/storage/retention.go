@@ -19,15 +19,19 @@ type RetentionPolicy struct {
 	COTMaxAge      time.Duration // Default: 52 weeks
 	RevisionMaxAge time.Duration // Default: 6 months
 	HistoryMaxAge  time.Duration // Default: 24 months
+	PriceMaxAge    time.Duration // Default: 104 weeks (2 years)
+	SignalMaxAge   time.Duration // Default: 52 weeks
 }
 
 // DefaultRetentionPolicy returns the standard retention windows.
 func DefaultRetentionPolicy() RetentionPolicy {
 	return RetentionPolicy{
-		EventMaxAge:    6 * 30 * 24 * time.Hour, // ~6 months
-		COTMaxAge:      52 * 7 * 24 * time.Hour,  // 52 weeks
-		RevisionMaxAge: 6 * 30 * 24 * time.Hour,  // ~6 months
-		HistoryMaxAge:  24 * 30 * 24 * time.Hour,  // ~24 months
+		EventMaxAge:    6 * 30 * 24 * time.Hour,  // ~6 months
+		COTMaxAge:      52 * 7 * 24 * time.Hour,   // 52 weeks
+		RevisionMaxAge: 6 * 30 * 24 * time.Hour,   // ~6 months
+		HistoryMaxAge:  24 * 30 * 24 * time.Hour,   // ~24 months
+		PriceMaxAge:    104 * 7 * 24 * time.Hour,   // ~2 years
+		SignalMaxAge:   52 * 7 * 24 * time.Hour,    // 52 weeks
 	}
 }
 
@@ -76,6 +80,20 @@ func (d *DB) RunRetentionCleanup(ctx context.Context, policy RetentionPolicy) (i
 	n, err = d.deleteByDatePrefix("evthist:", 2, now.Add(-policy.HistoryMaxAge))
 	if err != nil {
 		return totalDeleted, fmt.Errorf("cleanup evthist: %w", err)
+	}
+	totalDeleted += n
+
+	// 7. Price records (price:{contractCode}:{YYYYMMDD}) — date is 2nd segment
+	n, err = d.deleteByDatePrefix("price:", 1, now.Add(-policy.PriceMaxAge))
+	if err != nil {
+		return totalDeleted, fmt.Errorf("cleanup price: %w", err)
+	}
+	totalDeleted += n
+
+	// 8. Signal records (sig:{contractCode}:{YYYYMMDD}:{signalType}) — date is 2nd segment
+	n, err = d.deleteByDatePrefix("sig:", 1, now.Add(-policy.SignalMaxAge))
+	if err != nil {
+		return totalDeleted, fmt.Errorf("cleanup sig: %w", err)
 	}
 	totalDeleted += n
 

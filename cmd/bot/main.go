@@ -24,8 +24,10 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	"github.com/arkcode369/ark-intelligent/internal/scheduler"
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
+	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
 	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
+	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
 
@@ -85,6 +87,8 @@ func main() {
 	newsRepo := storage.NewNewsRepo(db)
 	cacheRepo := storage.NewCacheRepo(db)
 	userRepo := storage.NewUserRepo(db)
+	priceRepo := storage.NewPriceRepo(db)
+	signalRepo := storage.NewSignalRepo(db)
 
 	log.Info().Msg("Storage layer initialized")
 	logStorageSize(db)
@@ -141,6 +145,13 @@ func main() {
 
 	// News services (uses MQL5 Economic Calendar API — no API key required)
 	newsFetcher := newssvc.NewMQL5Fetcher()
+
+	// Price fetcher (3-layer resilience: TwelveData → AlphaVantage → Yahoo)
+	priceFetcher := pricesvc.NewFetcher(cfg.TwelveDataAPIKey, cfg.AlphaVantageAPIKeys)
+
+	// Backtest evaluator
+	signalEvaluator := backtestsvc.NewEvaluator(signalRepo, priceRepo)
+
 	log.Info().Msg("Service layer initialized")
 
 	// -----------------------------------------------------------------------
@@ -155,12 +166,17 @@ func main() {
 		ChatID:         cfg.ChatID,
 		CachedAI:       cachedAI,
 		DB:             db,
+		PriceRepo:      priceRepo,
+		SignalRepo:     signalRepo,
+		PriceFetcher:   priceFetcher,
+		Evaluator:      signalEvaluator,
 		FREDAlertCheck: authMiddleware.ShouldReceiveFREDAlerts,
 		IsBanned:       authMiddleware.IsUserBanned,
 	})
 
 	sched.Start(ctx, &scheduler.Intervals{
-		COTFetch: cfg.COTFetchInterval,
+		COTFetch:   cfg.COTFetchInterval,
+		PriceFetch: cfg.PriceFetchInterval,
 	})
 
 	// News Background Scheduler (always starts — uses MQL5 Economic Calendar)
@@ -199,6 +215,8 @@ func main() {
 		changelogContent,
 		newsSched,      // SurpriseProvider: weekly per-currency surprise accumulator
 		authMiddleware, // User management middleware
+		priceRepo,      // Price data for backtest/context (nil-safe)
+		signalRepo,     // Signal persistence for backtest (nil-safe)
 	)
 
 	log.Info().Msg("Telegram handler registered")
@@ -232,6 +250,34 @@ func main() {
 		// Non-fatal: logs warning and continues if FRED data is unavailable.
 		if err := cotAnalyzer.BackfillRegimeScores(initCtx); err != nil {
 			log.Warn().Err(err).Msg("backfill regime scores (non-fatal)")
+		}
+
+		// Price history bootstrap (non-fatal — Yahoo fallback always available)
+		log.Info().Msg("Bootstrapping price history...")
+		priceRecords, err := priceFetcher.FetchAll(initCtx, cfg.PriceHistoryWeeks)
+		if err != nil {
+			log.Warn().Err(err).Msg("price history bootstrap failed (non-fatal)")
+		} else if len(priceRecords) > 0 {
+			if err := priceRepo.SavePrices(initCtx, priceRecords); err != nil {
+				log.Warn().Err(err).Msg("save price history failed (non-fatal)")
+			} else {
+				log.Info().Int("records", len(priceRecords)).Msg("price history bootstrapped")
+			}
+		}
+
+		// Backtest bootstrap (replay historical COT signals against prices)
+		log.Info().Msg("Running backtest bootstrap...")
+		bootstrapper := backtestsvc.NewBootstrapper(cotRepo, priceRepo, signalRepo, signalRepo)
+		if created, err := bootstrapper.Run(initCtx); err != nil {
+			log.Warn().Err(err).Msg("backtest bootstrap failed (non-fatal)")
+		} else if created > 0 {
+			log.Info().Int("signals", created).Msg("backtest signals bootstrapped")
+			// Evaluate any signals that already have enough price history
+			if evaluated, err := signalEvaluator.EvaluatePending(initCtx); err != nil {
+				log.Warn().Err(err).Msg("initial signal evaluation failed (non-fatal)")
+			} else if evaluated > 0 {
+				log.Info().Int("evaluated", evaluated).Msg("initial signal outcomes evaluated")
+			}
 		}
 
 		initCancel()

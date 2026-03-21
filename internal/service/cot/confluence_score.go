@@ -161,6 +161,7 @@ type ConvictionScore struct {
 	FREDRegime   string  // e.g. "DISINFLATIONARY"
 	CalendarBias string  // e.g. "ECB hawkish"
 	Label        string  // e.g. "HIGH CONVICTION LONG"
+	Version      int     // 2 or 3 (which formula was used)
 }
 
 // ComputeConvictionScore generates a unified 0-100 conviction score from all 3 data sources:
@@ -189,7 +190,153 @@ func ComputeConvictionScore(
 	// 3. Normalize to 0-100
 	conviction := (adjusted + 100) / 2
 
-	// 4. Direction
+	return buildConvictionResult(analysis, conviction, regime.Name, calendarNote, 2)
+}
+
+// ---------------------------------------------------------------------------
+// V3 — 5-component Confluence Score with Price Data
+// ---------------------------------------------------------------------------
+
+// ConfluenceScoreV3 computes a 5-component institutional-grade confluence score.
+//
+// Components:
+//   - COT positioning   (25%) — based on SentimentScore (-100..+100)
+//   - Calendar surprise  (15%) — based on recent sigma surprise
+//   - Financial stress   (10%) — based on FRED NFCI
+//   - FRED regime        (20%) — composite macro conditions
+//   - Price momentum     (30%) — MA alignment, trend, price-COT concordance
+//
+// Returns a score in [-100, +100]. Positive = bullish bias, negative = bearish bias.
+func ConfluenceScoreV3(
+	analysis domain.COTAnalysis,
+	macroData *fred.MacroData,
+	surpriseSigma float64,
+	priceContext *domain.PriceContext,
+) float64 {
+	// 1. COT component (25%)
+	cotScore := mathutil.Clamp(analysis.SentimentScore, -100, 100)
+
+	// 2. Calendar surprise component (15%)
+	surpriseScore := mathutil.Clamp(surpriseSigma*20, -100, 100)
+
+	// 3. Financial stress component (10%)
+	stressScore := 0.0
+	if macroData != nil {
+		stressScore = mathutil.Clamp(-macroData.NFCI*50, -100, 100)
+	}
+
+	// 4. FRED regime component (20%) — same logic as V2
+	fredScore := 0.0
+	if macroData != nil {
+		fredRaw := 0.0
+		if macroData.YieldSpread > 0 {
+			fredRaw += 30
+		}
+		if macroData.CorePCE > 0 && macroData.CorePCE < 2.5 {
+			fredRaw += 30
+		}
+		if macroData.NFCI < 0 {
+			fredRaw += 20
+		}
+		if macroData.InitialClaims > 0 && macroData.InitialClaims < 250_000 {
+			fredRaw += 20
+		}
+		fredScore = mathutil.Clamp(fredRaw-50, -100, 100)
+
+		if macroData.GDPGrowth != 0 {
+			gdpFactor := 0.0
+			switch {
+			case macroData.GDPGrowth > 3.0:
+				gdpFactor = 10
+			case macroData.GDPGrowth > 1.5:
+				gdpFactor = 5
+			case macroData.GDPGrowth > 0:
+				gdpFactor = 0
+			case macroData.GDPGrowth < 0:
+				gdpFactor = -15
+			}
+			fredScore += gdpFactor * 0.3
+		}
+	}
+
+	// 5. Price momentum component (30%)
+	priceScore := 0.0
+	if priceContext != nil {
+		// MA alignment: above both MAs = bullish, below both = bearish
+		maScore := 0.0
+		if priceContext.AboveMA4W {
+			maScore += 25
+		} else {
+			maScore -= 25
+		}
+		if priceContext.AboveMA13W {
+			maScore += 25
+		} else {
+			maScore -= 25
+		}
+
+		// Momentum from weekly/monthly changes
+		momentumScore := mathutil.Clamp(priceContext.WeeklyChgPct*10, -25, 25) +
+			mathutil.Clamp(priceContext.MonthlyChgPct*5, -25, 25)
+
+		priceScore = mathutil.Clamp(maScore+momentumScore, -100, 100)
+
+		// Price-COT concordance bonus: if price and COT agree, boost; if they disagree, dampen
+		cotBullish := analysis.SentimentScore > 20
+		cotBearish := analysis.SentimentScore < -20
+		priceBullish := priceContext.Trend4W == "UP"
+		priceBearish := priceContext.Trend4W == "DOWN"
+
+		if (cotBullish && priceBullish) || (cotBearish && priceBearish) {
+			// Agreement bonus — boost price component by 20%
+			priceScore *= 1.2
+		} else if (cotBullish && priceBearish) || (cotBearish && priceBullish) {
+			// Disagreement — dampen price component by 30%
+			priceScore *= 0.7
+		}
+		priceScore = mathutil.Clamp(priceScore, -100, 100)
+	}
+
+	// Weighted combination
+	if priceContext != nil && macroData != nil {
+		// Full 5-component
+		total := cotScore*0.25 + surpriseScore*0.15 + stressScore*0.10 + fredScore*0.20 + priceScore*0.30
+		return mathutil.Clamp(total, -100, 100)
+	} else if priceContext != nil {
+		// No FRED: COT 35% + Surprise 20% + Price 45%
+		total := cotScore*0.35 + surpriseScore*0.20 + priceScore*0.45
+		return mathutil.Clamp(total, -100, 100)
+	} else if macroData != nil {
+		// No price: fall back to V2 weights
+		return ConfluenceScoreV2(analysis, macroData, surpriseSigma)
+	}
+
+	// Neither: COT 60% + Surprise 40%
+	total := cotScore*0.60 + surpriseScore*0.40
+	return mathutil.Clamp(total, -100, 100)
+}
+
+// ComputeConvictionScoreV3 generates a unified 0-100 conviction score using
+// the 5-component V3 formula that includes price momentum data.
+func ComputeConvictionScoreV3(
+	analysis domain.COTAnalysis,
+	regime fred.MacroRegime,
+	surpriseSigma float64,
+	calendarNote string,
+	macroData *fred.MacroData,
+	priceContext *domain.PriceContext,
+) ConvictionScore {
+	baseScore := ConfluenceScoreV3(analysis, macroData, surpriseSigma, priceContext)
+
+	multiplier := FREDRegimeMultiplier(analysis.Contract.Currency, regime)
+	adjusted := mathutil.Clamp(baseScore+multiplier, -100, 100)
+	conviction := (adjusted + 100) / 2
+
+	return buildConvictionResult(analysis, conviction, regime.Name, calendarNote, 3)
+}
+
+// buildConvictionResult creates a ConvictionScore from a normalized 0-100 conviction value.
+func buildConvictionResult(analysis domain.COTAnalysis, conviction float64, regimeName, calendarNote string, version int) ConvictionScore {
 	direction := "NEUTRAL"
 	switch {
 	case conviction > 55:
@@ -198,7 +345,6 @@ func ComputeConvictionScore(
 		direction = "SHORT"
 	}
 
-	// 5. COT bias label from sentiment score
 	cotBias := "NEUTRAL"
 	switch {
 	case analysis.SentimentScore > 30:
@@ -207,7 +353,6 @@ func ComputeConvictionScore(
 		cotBias = "BEARISH"
 	}
 
-	// 6. Conviction label
 	var label string
 	switch {
 	case conviction > 75:
@@ -223,8 +368,9 @@ func ComputeConvictionScore(
 		Score:        conviction,
 		Direction:    direction,
 		COTBias:      cotBias,
-		FREDRegime:   regime.Name,
+		FREDRegime:   regimeName,
 		CalendarBias: calendarNote,
 		Label:        label,
+		Version:      version,
 	}
 }

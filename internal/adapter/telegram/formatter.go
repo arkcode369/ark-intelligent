@@ -1239,3 +1239,119 @@ func (f *Formatter) FormatSignalsSummary(signals []cot.Signal) string {
 
 	return b.String()
 }
+
+// ---------------------------------------------------------------------------
+// Backtest Formatting
+// ---------------------------------------------------------------------------
+
+// FormatBacktestStats formats a single BacktestStats into Telegram HTML.
+func (f *Formatter) FormatBacktestStats(stats *domain.BacktestStats) string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf("\xF0\x9F\x93\x8A <b>Backtest: %s</b>\n\n", stats.GroupLabel))
+
+	b.WriteString(fmt.Sprintf("<code>Signals  :</code> %d total, %d evaluated\n", stats.TotalSignals, stats.Evaluated))
+	b.WriteString(fmt.Sprintf("<code>Win 1W   :</code> %.1f%%\n", stats.WinRate1W))
+	b.WriteString(fmt.Sprintf("<code>Win 2W   :</code> %.1f%%\n", stats.WinRate2W))
+	b.WriteString(fmt.Sprintf("<code>Win 4W   :</code> %.1f%%\n", stats.WinRate4W))
+	b.WriteString(fmt.Sprintf("<code>Best     :</code> %s at %.1f%%\n\n", stats.BestPeriod, stats.BestWinRate))
+
+	b.WriteString(fmt.Sprintf("<code>Avg Ret 1W:</code> %.2f%%\n", stats.AvgReturn1W))
+	b.WriteString(fmt.Sprintf("<code>Avg Ret 2W:</code> %.2f%%\n", stats.AvgReturn2W))
+	b.WriteString(fmt.Sprintf("<code>Avg Ret 4W:</code> %.2f%%\n\n", stats.AvgReturn4W))
+
+	if stats.AvgWinReturn1W != 0 || stats.AvgLossReturn1W != 0 {
+		b.WriteString(fmt.Sprintf("<code>Avg Win  :</code> +%.2f%%\n", stats.AvgWinReturn1W))
+		b.WriteString(fmt.Sprintf("<code>Avg Loss :</code> %.2f%%\n\n", stats.AvgLossReturn1W))
+	}
+
+	b.WriteString("<b>Strength Breakdown</b>\n")
+	b.WriteString(fmt.Sprintf("<code>High (4-5):</code> %d signals, %.1f%% win\n", stats.HighStrengthCount, stats.HighStrengthWinRate))
+	b.WriteString(fmt.Sprintf("<code>Low (1-3) :</code> %d signals, %.1f%% win\n\n", stats.LowStrengthCount, stats.LowStrengthWinRate))
+
+	b.WriteString("<b>Confidence Calibration</b>\n")
+	b.WriteString(fmt.Sprintf("<code>Stated   :</code> %.0f%%\n", stats.AvgConfidence))
+	b.WriteString(fmt.Sprintf("<code>Actual   :</code> %.1f%%\n", stats.ActualAccuracy))
+
+	calIcon := "\xE2\x9C\x85"
+	if stats.CalibrationError > 15 {
+		calIcon = "\xE2\x9A\xA0\xEF\xB8\x8F"
+	}
+	b.WriteString(fmt.Sprintf("<code>Error    :</code> %.1f%% %s\n", stats.CalibrationError, calIcon))
+
+	return b.String()
+}
+
+// FormatBacktestSummary formats a map of BacktestStats into a comparison table.
+func (f *Formatter) FormatBacktestSummary(statsMap map[string]*domain.BacktestStats, groupBy string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("\xF0\x9F\x93\x8A <b>Backtest by %s</b>\n\n", groupBy))
+
+	// Sort keys for consistent output
+	keys := make([]string, 0, len(statsMap))
+	for k := range statsMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	b.WriteString("<pre>")
+	b.WriteString(fmt.Sprintf("%-12s %4s %5s %5s %5s\n", "Group", "Eval", "1W", "2W", "4W"))
+	b.WriteString(strings.Repeat("\xE2\x94\x80", 40) + "\n")
+
+	for _, k := range keys {
+		s := statsMap[k]
+		label := s.GroupLabel
+		if len(label) > 12 {
+			label = label[:12]
+		}
+		b.WriteString(fmt.Sprintf("%-12s %4d %4.0f%% %4.0f%% %4.0f%%\n",
+			label, s.Evaluated, s.WinRate1W, s.WinRate2W, s.WinRate4W))
+	}
+	b.WriteString("</pre>")
+
+	return b.String()
+}
+
+// FormatPriceContext formats price context for a single contract.
+func (f *Formatter) FormatPriceContext(pc *domain.PriceContext) string {
+	if pc == nil {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n\xF0\x9F\x92\xB0 <b>Price Context</b>\n")
+	b.WriteString(fmt.Sprintf("<code>Price    :</code> %.5f\n", pc.CurrentPrice))
+
+	wIcon := "\xF0\x9F\x9F\xA2"
+	if pc.WeeklyChgPct < 0 {
+		wIcon = "\xF0\x9F\x94\xB4"
+	}
+	b.WriteString(fmt.Sprintf("<code>Weekly   :</code> %s %.2f%%\n", wIcon, pc.WeeklyChgPct))
+
+	mIcon := "\xF0\x9F\x9F\xA2"
+	if pc.MonthlyChgPct < 0 {
+		mIcon = "\xF0\x9F\x94\xB4"
+	}
+	b.WriteString(fmt.Sprintf("<code>Monthly  :</code> %s %.2f%%\n", mIcon, pc.MonthlyChgPct))
+
+	trendIcon := "\xE2\x9E\xA1\xEF\xB8\x8F"
+	if pc.Trend4W == "UP" {
+		trendIcon = "\xE2\xAC\x86\xEF\xB8\x8F"
+	} else if pc.Trend4W == "DOWN" {
+		trendIcon = "\xE2\xAC\x87\xEF\xB8\x8F"
+	}
+	b.WriteString(fmt.Sprintf("<code>Trend 4W :</code> %s %s\n", trendIcon, pc.Trend4W))
+
+	ma4wStatus := "below"
+	if pc.AboveMA4W {
+		ma4wStatus = "above"
+	}
+	ma13wStatus := "below"
+	if pc.AboveMA13W {
+		ma13wStatus = "above"
+	}
+	b.WriteString(fmt.Sprintf("<code>MA4W     :</code> %.5f (%s)\n", pc.PriceMA4W, ma4wStatus))
+	b.WriteString(fmt.Sprintf("<code>MA13W    :</code> %.5f (%s)\n", pc.PriceMA13W, ma13wStatus))
+
+	return b.String()
+}

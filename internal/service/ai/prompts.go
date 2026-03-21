@@ -38,10 +38,17 @@ func SystemPrompt() string {
 // --- Prompt Builders ---
 
 // BuildCOTAnalysisPrompt creates a prompt for COT data interpretation.
-func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
+// priceContexts is optional — if provided, price data is included for each contract.
+func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis, priceContexts ...map[string]*domain.PriceContext) string {
 	var b strings.Builder
 	b.WriteString("Analyze the following COT positioning data for G8 currency futures.\n")
 	b.WriteString("Identify the strongest directional setups and any divergences.\n\n")
+
+	// Extract price context map if provided
+	var priceMap map[string]*domain.PriceContext
+	if len(priceContexts) > 0 {
+		priceMap = priceContexts[0]
+	}
 
 	for _, a := range analyses {
 		b.WriteString(fmt.Sprintf("--- %s (%s) | Report: %s ---\n",
@@ -82,6 +89,14 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 			}
 			b.WriteString("\n")
 		}
+		// Price context (if available)
+		if priceMap != nil {
+			if pc, ok := priceMap[a.Contract.Code]; ok {
+				b.WriteString(fmt.Sprintf("Price: %.5f | Wk: %+.2f%% | Mo: %+.2f%% | Trend4W: %s | MA4W: %s MA13W: %s\n",
+					pc.CurrentPrice, pc.WeeklyChgPct, pc.MonthlyChgPct, pc.Trend4W,
+					maLabel(pc.AboveMA4W), maLabel(pc.AboveMA13W)))
+			}
+		}
 		b.WriteString("\n")
 	}
 
@@ -90,15 +105,27 @@ func BuildCOTAnalysisPrompt(analyses []domain.COTAnalysis) string {
 	b.WriteString("2. Smart money (commercial) vs speculator alignment for each\n")
 	b.WriteString("3. Top 3 actionable setups with direction and conviction level\n")
 	b.WriteString("4. Key risks or conflicting signals to watch\n")
+	if priceMap != nil {
+		b.WriteString("5. Price-positioning alignment: Flag any cases where price trend contradicts COT positioning (potential divergence/reversal signals)\n")
+	}
 
 	return b.String()
+}
+
+// maLabel returns "above" or "below" for MA status.
+func maLabel(above bool) string {
+	if above {
+		return "above"
+	}
+	return "below"
 }
 
 // BuildWeeklyOutlookPrompt creates a prompt for weekly market outlook.
 //
 // Gap E: accepts optional macroRegime — if provided, injects FRED macro regime context
 // so the COT-focused outlook is always regime-aware, without requiring /outlook combine.
-func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string, macroRegime *fred.MacroRegime) string {
+// backtestStats is optional — if provided, includes signal accuracy context.
+func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string, macroRegime *fred.MacroRegime, backtestStats ...*domain.BacktestStats) string {
 	var b strings.Builder
 	now := time.Now().UTC().Add(7 * time.Hour) // WIB
 	b.WriteString("Generate a comprehensive weekly forex fundamental outlook.\n")
@@ -137,6 +164,21 @@ func BuildWeeklyOutlookPrompt(data WeeklyOutlookData, lang string, macroRegime *
 		b.WriteString(fmt.Sprintf("Financial Stress: %s\n", macroRegime.FinStress))
 		b.WriteString(fmt.Sprintf("Implied Bias: %s\n", macroRegime.Bias))
 		b.WriteString("NOTE: Adjust currency biases above considering this macro regime context.\n\n")
+	}
+
+	// Backtest accuracy context (if available)
+	if len(backtestStats) > 0 && backtestStats[0] != nil {
+		bs := backtestStats[0]
+		if bs.Evaluated > 0 {
+			b.WriteString("=== SIGNAL ACCURACY CONTEXT ===\n")
+			b.WriteString(fmt.Sprintf("Historical signals: %d evaluated\n", bs.Evaluated))
+			b.WriteString(fmt.Sprintf("Win rates: 1W=%.0f%% 2W=%.0f%% 4W=%.0f%%\n", bs.WinRate1W, bs.WinRate2W, bs.WinRate4W))
+			b.WriteString(fmt.Sprintf("Best holding period: %s (%.0f%% win rate)\n", bs.BestPeriod, bs.BestWinRate))
+			if bs.HighStrengthCount > 0 {
+				b.WriteString(fmt.Sprintf("High-strength signals (4-5): %.0f%% win rate\n", bs.HighStrengthWinRate))
+			}
+			b.WriteString("NOTE: Weight your conviction based on historical accuracy. High-strength signals have proven more reliable.\n\n")
+		}
 	}
 
 	if lang == "en" {

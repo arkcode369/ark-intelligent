@@ -37,6 +37,8 @@ type Handler struct {
 	prefsRepo   ports.PrefsRepository
 	newsRepo    ports.NewsRepository
 	newsFetcher ports.NewsFetcher
+	priceRepo   ports.PriceRepository
+	signalRepo  ports.SignalRepository
 
 	aiAnalyzer ports.AIAnalyzer
 
@@ -68,6 +70,8 @@ func NewHandler(
 	changelog string,
 	newsScheduler SurpriseProvider,
 	middleware *Middleware,
+	priceRepo ports.PriceRepository,
+	signalRepo ports.SignalRepository,
 ) *Handler {
 	h := &Handler{
 		bot:           bot,
@@ -83,6 +87,8 @@ func NewHandler(
 		newsScheduler: newsScheduler,
 		aiCooldown:    make(map[int64]time.Time),
 		middleware:    middleware,
+		priceRepo:     priceRepo,
+		signalRepo:    signalRepo,
 	}
 
 	// Register all commands
@@ -96,6 +102,8 @@ func NewHandler(
 	bot.RegisterCommand("/rank", h.cmdRank)   // P1.3 — Currency Strength Ranking
 	bot.RegisterCommand("/macro", h.cmdMacro)     // P3.2 — FRED Macro Regime Dashboard
 	bot.RegisterCommand("/signals", h.cmdSignals) // COT Signal Detection
+	bot.RegisterCommand("/backtest", h.cmdBacktest)  // Backtest stats
+	bot.RegisterCommand("/accuracy", h.cmdAccuracy)  // Quick accuracy summary
 
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
@@ -114,7 +122,7 @@ func NewHandler(
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
 
-	log.Info().Int("commands", 15).Int("callbacks", 6).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 17).Int("callbacks", 6).Msg("registered commands and callback prefixes")
 	return h
 }
 
