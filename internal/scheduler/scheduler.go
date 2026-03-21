@@ -537,6 +537,19 @@ func (s *Scheduler) gatherWeeklyData(ctx context.Context) (ports.WeeklyData, err
 		data.COTAnalyses = analyses
 	}
 
+	// FRED macro data (best-effort)
+	if md, fredErr := fred.GetCachedOrFetch(ctx); fredErr == nil && md != nil {
+		data.MacroData = md
+	}
+
+	// Backtest stats (best-effort)
+	if s.deps.SignalRepo != nil {
+		calc := backtestsvc.NewStatsCalculator(s.deps.SignalRepo)
+		if stats, statsErr := calc.ComputeAll(ctx); statsErr == nil && stats.Evaluated > 0 {
+			data.BacktestStats = stats
+		}
+	}
+
 	return data, nil
 }
 

@@ -278,6 +278,12 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 		if pc, err := ctxBuilder.Build(ctx, contractCode, displayCode); err == nil && pc != nil {
 			priceCtxMap = map[string]*domain.PriceContext{contractCode: pc}
 			html += h.fmt.FormatPriceContext(pc)
+
+			// Price-COT divergence detection
+			divs := pricesvc.DetectPriceCOTDivergences(priceCtxMap, []domain.COTAnalysis{*analysis})
+			if len(divs) > 0 {
+				html += h.fmt.FormatPriceCOTDivergence(divs[0])
+			}
 		}
 	}
 
@@ -1091,6 +1097,18 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 
 	now := timeutil.NowWIB()
 	html := h.fmt.FormatRankingWithConviction(analyses, convictions, regime, now)
+
+	// Dual price + COT strength ranking (best-effort, non-fatal)
+	if h.priceRepo != nil {
+		ctxBuilder := pricesvc.NewContextBuilder(h.priceRepo)
+		if priceCtxs, err := ctxBuilder.BuildAll(ctx); err == nil && len(priceCtxs) > 0 {
+			strengths := pricesvc.ComputeCurrencyStrengthIndex(priceCtxs, analyses)
+			if len(strengths) > 0 {
+				html += h.fmt.FormatStrengthRanking(strengths)
+			}
+		}
+	}
+
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }

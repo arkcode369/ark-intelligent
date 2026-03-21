@@ -11,6 +11,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/service/cot"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/pkg/fmtutil"
 )
 
@@ -1352,6 +1353,47 @@ func (f *Formatter) FormatPriceContext(pc *domain.PriceContext) string {
 	}
 	b.WriteString(fmt.Sprintf("<code>MA4W     :</code> %.5f (%s)\n", pc.PriceMA4W, ma4wStatus))
 	b.WriteString(fmt.Sprintf("<code>MA13W    :</code> %.5f (%s)\n", pc.PriceMA13W, ma13wStatus))
+
+	return b.String()
+}
+
+// FormatPriceCOTDivergence formats a price-COT divergence alert.
+func (f *Formatter) FormatPriceCOTDivergence(div pricesvc.PriceCOTDivergence) string {
+	icon := "\xE2\x9A\xA0\xEF\xB8\x8F" // ⚠️
+	if div.Severity == "HIGH" {
+		icon = "\xF0\x9F\x94\xB4" // 🔴
+	}
+	return fmt.Sprintf("\n%s <b>DIVERGENCE: %s</b>\n<i>%s</i>\n", icon, div.Severity, div.Description)
+}
+
+// FormatStrengthRanking formats the dual price+COT currency strength ranking.
+func (f *Formatter) FormatStrengthRanking(strengths []pricesvc.CurrencyStrength) string {
+	if len(strengths) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n\xF0\x9F\x92\xAA <b>Price + COT Strength</b>\n")
+	b.WriteString("<pre>")
+	b.WriteString(fmt.Sprintf("%-4s %6s %5s %6s\n", "CCY", "Price", "COT", "Score"))
+	b.WriteString(strings.Repeat("\xE2\x94\x80", 24) + "\n")
+
+	for _, s := range strengths {
+		divFlag := " "
+		if s.Divergence {
+			divFlag = "!"
+		}
+		b.WriteString(fmt.Sprintf("%-4s %+5.1f %+4.0f %+5.1f %s\n",
+			s.Currency, s.PriceScore, s.COTScore, s.CombinedScore, divFlag))
+	}
+	b.WriteString("</pre>")
+
+	// Show divergence warnings
+	for _, s := range strengths {
+		if s.Divergence {
+			b.WriteString(fmt.Sprintf("\xE2\x9A\xA0\xEF\xB8\x8F %s: %s\n", s.Currency, s.DivergenceMsg))
+		}
+	}
 
 	return b.String()
 }

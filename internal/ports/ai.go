@@ -13,10 +13,11 @@ import (
 
 // WeeklyData bundles all available data for AI weekly outlook generation.
 type WeeklyData struct {
-	COTAnalyses []domain.COTAnalysis `json:"cot_analyses"`
-	NewsEvents  []domain.NewsEvent   `json:"news_events"`
-	MacroData   *fred.MacroData      `json:"macro_data,omitempty"` // FRED macro data, optional
-	Language    string               `json:"language"`             // "id" or "en"
+	COTAnalyses    []domain.COTAnalysis      `json:"cot_analyses"`
+	NewsEvents     []domain.NewsEvent        `json:"news_events"`
+	MacroData      *fred.MacroData           `json:"macro_data,omitempty"`
+	BacktestStats  *domain.BacktestStats     `json:"backtest_stats,omitempty"`
+	Language       string                    `json:"language"`
 }
 
 // ---------------------------------------------------------------------------

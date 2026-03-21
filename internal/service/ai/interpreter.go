@@ -126,7 +126,7 @@ func (ip *Interpreter) GenerateWeeklyOutlook(ctx context.Context, data ports.Wee
 		macroRegime = &r
 	}
 
-	prompt := BuildWeeklyOutlookPrompt(outlookData, data.Language, macroRegime)
+	prompt := BuildWeeklyOutlookPrompt(outlookData, data.Language, macroRegime, data.BacktestStats)
 
 	result, err := ip.gemini.GenerateWithSystem(ctx, SystemPrompt(), prompt)
 	if err != nil {
