@@ -124,6 +124,10 @@ func (r *SignalRepo) GetPendingSignals(_ context.Context) ([]domain.PersistedSig
 			pending = append(pending, all[i])
 		}
 	}
+	log.Info().
+		Int("total_signals", len(all)).
+		Int("pending", len(pending)).
+		Msg("GetPendingSignals filter result")
 	return pending, nil
 }
 

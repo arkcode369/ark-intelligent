@@ -276,10 +276,12 @@ func main() {
 
 		// Always evaluate pending signals — covers both fresh bootstrap and restarts
 		// where signals exist but haven't been evaluated yet.
-		if evaluated, err := signalEvaluator.EvaluatePending(initCtx); err != nil {
-			log.Warn().Err(err).Msg("initial signal evaluation failed (non-fatal)")
-		} else if evaluated > 0 {
-			log.Info().Int("evaluated", evaluated).Msg("initial signal outcomes evaluated")
+		log.Info().Msg("Running signal evaluation...")
+		evaluated, evalErr := signalEvaluator.EvaluatePending(initCtx)
+		if evalErr != nil {
+			log.Warn().Err(evalErr).Msg("initial signal evaluation failed (non-fatal)")
+		} else {
+			log.Info().Int("evaluated", evaluated).Msg("signal evaluation complete")
 		}
 
 		initCancel()
