@@ -297,8 +297,22 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 			historyMap[a.Contract.Code] = records
 		}
 	}
-	detector := cotsvc.NewSignalDetector()
-	signals := detector.DetectAll(analyses, historyMap)
+	// Build recalibrated detector with historical win rates + VIX filter
+	recalDetector := cotsvc.NewRecalibratedDetector(s.deps.SignalRepo)
+	if s.deps.SignalRepo != nil {
+		if loadErr := recalDetector.LoadTypeStats(ctx); loadErr != nil {
+			log.Warn().Err(loadErr).Msg("Failed to load signal type stats for recalibration — using raw confidence")
+		}
+	}
+
+	// Build VIX/SPX risk context (nil-safe — no adjustment if unavailable)
+	var riskCtx *domain.RiskContext
+	if s.deps.PriceRepo != nil {
+		rcBuilder := pricesvc.NewRiskContextBuilder(s.deps.PriceRepo)
+		riskCtx, _ = rcBuilder.Build(ctx) // ignore error — nil means no adjustment
+	}
+
+	signals := recalDetector.DetectAll(analyses, historyMap, riskCtx)
 
 	var strongSignals []cotsvc.Signal
 	for _, sig := range signals {

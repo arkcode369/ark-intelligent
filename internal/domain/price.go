@@ -85,6 +85,7 @@ type PriceSymbolMapping struct {
 	AlphaVantage AlphaVantageSpec // Empty Function if not available
 	Yahoo        string           // Fallback — always available
 	Inverse      bool             // true for USD/JPY, USD/CHF, USD/CAD, DXY
+	RiskOnly     bool             // true for VIX, SPX — not COT contracts, used for risk filter only
 }
 
 // DefaultPriceSymbolMappings maps all 11 tracked COT contracts to price API symbols.
@@ -100,6 +101,32 @@ var DefaultPriceSymbolMappings = []PriceSymbolMapping{
 	{ContractCode: "088691", Currency: "XAU", TwelveData: "XAU/USD", AlphaVantage: AlphaVantageSpec{"GOLD_SILVER_SPOT", "", ""}, Yahoo: "GC=F"},
 	{ContractCode: "067651", Currency: "OIL", TwelveData: "", AlphaVantage: AlphaVantageSpec{"WTI", "", ""}, Yahoo: "CL=F"},
 	{ContractCode: "043602", Currency: "BOND", TwelveData: "", AlphaVantage: AlphaVantageSpec{"TREASURY_YIELD", "", ""}, Yahoo: "ZN=F"},
+	// Risk sentiment instruments — not COT contracts, fetched for VIX/SPX risk filter only.
+	// ContractCode uses synthetic prefix "risk_" to avoid collision with CFTC codes.
+	{ContractCode: "risk_VIX", Currency: "VIX", TwelveData: "", AlphaVantage: AlphaVantageSpec{}, Yahoo: "^VIX", RiskOnly: true},
+	{ContractCode: "risk_SPX", Currency: "SPX", TwelveData: "", AlphaVantage: AlphaVantageSpec{}, Yahoo: "^GSPC", RiskOnly: true},
+}
+
+// COTPriceSymbolMappings returns only the COT-contract mappings (excludes risk-only instruments).
+func COTPriceSymbolMappings() []PriceSymbolMapping {
+	var out []PriceSymbolMapping
+	for _, m := range DefaultPriceSymbolMappings {
+		if !m.RiskOnly {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// RiskPriceSymbolMappings returns only the risk-sentiment mappings (VIX, SPX).
+func RiskPriceSymbolMappings() []PriceSymbolMapping {
+	var out []PriceSymbolMapping
+	for _, m := range DefaultPriceSymbolMappings {
+		if m.RiskOnly {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // FindPriceMapping returns the PriceSymbolMapping for a COT contract code.

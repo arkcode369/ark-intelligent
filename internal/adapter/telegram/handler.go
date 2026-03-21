@@ -339,8 +339,16 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 		records, histErr := h.cotRepo.GetHistory(ctx, contractCode, 8)
 		if histErr == nil && len(records) > 0 {
 			histMap := map[string][]domain.COTRecord{contractCode: records}
-			detector := cot.NewSignalDetector()
-			signals := detector.DetectAll([]domain.COTAnalysis{*analysis}, histMap)
+			recalDet := cot.NewRecalibratedDetector(h.signalRepo)
+			if h.signalRepo != nil {
+				_ = recalDet.LoadTypeStats(ctx)
+			}
+			var rCtx *domain.RiskContext
+			if h.priceRepo != nil {
+				rb := pricesvc.NewRiskContextBuilder(h.priceRepo)
+				rCtx, _ = rb.Build(ctx)
+			}
+			signals := recalDet.DetectAll([]domain.COTAnalysis{*analysis}, histMap, rCtx)
 			if len(signals) > 0 {
 				html += h.fmt.FormatSignalsSummary(signals)
 			}
@@ -719,8 +727,17 @@ func (h *Handler) cmdSignals(ctx context.Context, chatID string, userID int64, a
 		}
 	}
 
-	detector := cot.NewSignalDetector()
-	signals := detector.DetectAll(analyses, historyMap)
+	// Use recalibrated detector with historical win rates + VIX filter
+	recalDetector := cot.NewRecalibratedDetector(h.signalRepo)
+	if h.signalRepo != nil {
+		_ = recalDetector.LoadTypeStats(ctx)
+	}
+	var riskCtx *domain.RiskContext
+	if h.priceRepo != nil {
+		rb := pricesvc.NewRiskContextBuilder(h.priceRepo)
+		riskCtx, _ = rb.Build(ctx)
+	}
+	signals := recalDetector.DetectAll(analyses, historyMap, riskCtx)
 
 	// Filter by currency if specified
 	filterCurrency := strings.ToUpper(strings.TrimSpace(args))
