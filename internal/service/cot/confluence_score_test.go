@@ -13,17 +13,17 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestConfluenceScoreV2_NilMacroData(t *testing.T) {
-	// Without macro data: weights are 50/30/20 (COT/surprise/stress).
-	// stress = 0 when macro is nil.
+	// Without macro data: weights are 60/40 (COT/surprise).
+	// stress = 0 when macro is nil, and is not included in the total.
 	a := domain.COTAnalysis{
 		Contract:       baseContract("TFF"),
 		SentimentScore: 80, // strong bullish
 	}
 	score := ConfluenceScoreV2(a, nil, 2.0) // surprise = 2 sigma → 40
 
-	// total = 80*0.50 + 40*0.30 + 0*0.20 = 40 + 12 = 52
-	if math.Abs(score-52) > 1.0 {
-		t.Errorf("expected ~52, got %.2f", score)
+	// total = 80*0.60 + 40*0.40 = 48 + 16 = 64
+	if math.Abs(score-64) > 1.0 {
+		t.Errorf("expected ~64, got %.2f", score)
 	}
 }
 

@@ -170,6 +170,9 @@ func (f *Fetcher) fetchTwelveData(ctx context.Context, mapping domain.PriceSymbo
 		}
 
 		sortRecordsByDate(records)
+		if len(records) > weeks {
+			records = records[:weeks]
+		}
 		return nil
 	})
 
@@ -248,7 +251,7 @@ func (f *Fetcher) parseAVFXWeekly(body []byte, mapping domain.PriceSymbolMapping
 		}
 		rec := domain.PriceRecord{
 			ContractCode: mapping.ContractCode,
-			Symbol:       mapping.TwelveData,
+			Symbol:       fmt.Sprintf("%s/%s", mapping.AlphaVantage.FromSymbol, mapping.AlphaVantage.ToSymbol),
 			Date:         t,
 			Open:         parseFloat(ohlc.Open),
 			High:         parseFloat(ohlc.High),

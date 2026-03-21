@@ -37,7 +37,9 @@ type PriceRepository interface {
 	// Ordered newest-first.
 	GetHistory(ctx context.Context, contractCode string, weeks int) ([]domain.PriceRecord, error)
 
-	// GetPriceAt retrieves the price record closest to (but not after) a specific date.
+	// GetPriceAt retrieves the price record closest to the given date,
+	// searching within 7 days in either direction. Returns nil if no
+	// record exists within that window.
 	GetPriceAt(ctx context.Context, contractCode string, date time.Time) (*domain.PriceRecord, error)
 }
 
@@ -61,7 +63,7 @@ type SignalRepository interface {
 	GetAllSignals(ctx context.Context) ([]domain.PersistedSignal, error)
 
 	// GetPendingSignals retrieves signals that need outcome evaluation
-	// (Outcome1W is empty and report date is at least 7 days old).
+	// (any horizon still pending and enough time has passed).
 	GetPendingSignals(ctx context.Context) ([]domain.PersistedSignal, error)
 
 	// UpdateSignal overwrites a single persisted signal (for outcome evaluation).

@@ -37,12 +37,14 @@ func (e *Evaluator) EvaluatePending(ctx context.Context) (int, error) {
 	}
 
 	if len(pending) == 0 {
+		log.Info().Msg("No pending signals to evaluate")
 		return 0, nil
 	}
 
 	log.Info().Int("pending", len(pending)).Msg("Evaluating pending signals")
 
 	evaluated := 0
+	skippedNoPrice := 0
 	for i := range pending {
 		updated, err := e.evaluateSignal(ctx, &pending[i])
 		if err != nil {
@@ -53,6 +55,7 @@ func (e *Evaluator) EvaluatePending(ctx context.Context) (int, error) {
 			continue
 		}
 		if !updated {
+			skippedNoPrice++
 			continue
 		}
 
@@ -63,14 +66,24 @@ func (e *Evaluator) EvaluatePending(ctx context.Context) (int, error) {
 		evaluated++
 	}
 
-	log.Info().Int("evaluated", evaluated).Int("pending", len(pending)).Msg("Signal evaluation complete")
+	log.Info().
+		Int("evaluated", evaluated).
+		Int("pending", len(pending)).
+		Int("skipped_no_price", skippedNoPrice).
+		Msg("Signal evaluation complete")
 	return evaluated, nil
 }
 
 // evaluateSignal looks up future prices and fills outcome fields.
-// Returns true if any field was updated.
+// Returns true if any field was updated. Evaluates each horizon independently
+// so that a transient price lookup failure on one horizon doesn't discard
+// successful evaluations on other horizons.
 func (e *Evaluator) evaluateSignal(ctx context.Context, sig *domain.PersistedSignal) (bool, error) {
 	if sig.EntryPrice == 0 {
+		log.Debug().
+			Str("contract", sig.ContractCode).
+			Time("report_date", sig.ReportDate).
+			Msg("Skipping signal with zero entry price")
 		return false, nil // Cannot evaluate without entry price
 	}
 
@@ -83,9 +96,8 @@ func (e *Evaluator) evaluateSignal(ctx context.Context, sig *domain.PersistedSig
 		targetDate := sig.ReportDate.AddDate(0, 0, 7)
 		price, err := e.priceRepo.GetPriceAt(ctx, sig.ContractCode, targetDate)
 		if err != nil {
-			return false, fmt.Errorf("get price at +1W: %w", err)
-		}
-		if price != nil && price.Close > 0 {
+			log.Warn().Err(err).Str("contract", sig.ContractCode).Msg("price lookup failed at +1W")
+		} else if price != nil && price.Close > 0 {
 			sig.Price1W = price.Close
 			sig.Return1W = computeReturn(sig.EntryPrice, price.Close, sig.Inverse)
 			sig.Outcome1W = classifyOutcome(sig.Direction, sig.Return1W)
@@ -99,9 +111,8 @@ func (e *Evaluator) evaluateSignal(ctx context.Context, sig *domain.PersistedSig
 		targetDate := sig.ReportDate.AddDate(0, 0, 14)
 		price, err := e.priceRepo.GetPriceAt(ctx, sig.ContractCode, targetDate)
 		if err != nil {
-			return false, fmt.Errorf("get price at +2W: %w", err)
-		}
-		if price != nil && price.Close > 0 {
+			log.Warn().Err(err).Str("contract", sig.ContractCode).Msg("price lookup failed at +2W")
+		} else if price != nil && price.Close > 0 {
 			sig.Price2W = price.Close
 			sig.Return2W = computeReturn(sig.EntryPrice, price.Close, sig.Inverse)
 			sig.Outcome2W = classifyOutcome(sig.Direction, sig.Return2W)
@@ -115,9 +126,8 @@ func (e *Evaluator) evaluateSignal(ctx context.Context, sig *domain.PersistedSig
 		targetDate := sig.ReportDate.AddDate(0, 0, 28)
 		price, err := e.priceRepo.GetPriceAt(ctx, sig.ContractCode, targetDate)
 		if err != nil {
-			return false, fmt.Errorf("get price at +4W: %w", err)
-		}
-		if price != nil && price.Close > 0 {
+			log.Warn().Err(err).Str("contract", sig.ContractCode).Msg("price lookup failed at +4W")
+		} else if price != nil && price.Close > 0 {
 			sig.Price4W = price.Close
 			sig.Return4W = computeReturn(sig.EntryPrice, price.Close, sig.Inverse)
 			sig.Outcome4W = classifyOutcome(sig.Direction, sig.Return4W)

@@ -75,7 +75,10 @@ func (r *PriceRepo) GetLatest(_ context.Context, contractCode string) (*domain.P
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		seekKey := append(prefix, 0xFF)
+		// Build seek key beyond all valid dates (0xFF suffix) without mutating prefix.
+		seekKey := make([]byte, len(prefix)+1)
+		copy(seekKey, prefix)
+		seekKey[len(prefix)] = 0xFF
 		it.Seek(seekKey)
 
 		if it.ValidForPrefix(prefix) {
@@ -142,13 +145,15 @@ func (r *PriceRepo) GetHistory(_ context.Context, contractCode string, weeks int
 	return records, nil
 }
 
-// GetPriceAt retrieves the price record closest to (but not after) a specific date.
+// GetPriceAt retrieves the price record closest to the given date,
+// searching both forward (up to 7 days) and backward (up to 7 days).
+// Returns nil if no record is found within 7 days in either direction.
 func (r *PriceRepo) GetPriceAt(_ context.Context, contractCode string, date time.Time) (*domain.PriceRecord, error) {
 	var record *domain.PriceRecord
 
 	prefix := pricePrefix(contractCode)
-	// Seek to the target date, then step backward if needed
 	targetKey := []byte(fmt.Sprintf("price:%s:%s", contractCode, date.Format("20060102")))
+	maxDistance := 7 * 24 * time.Hour
 
 	err := r.db.View(func(txn *badger.Txn) error {
 		// First try: exact match or forward scan to find nearest entry
@@ -170,10 +175,12 @@ func (r *PriceRepo) GetPriceAt(_ context.Context, contractCode string, date time
 			if err != nil {
 				return fmt.Errorf("read price at date: %w", err)
 			}
-			// If exact match or within 7 days forward, accept it
-			if record.Date.Sub(date) <= 7*24*time.Hour {
+			// If exact match or within maxDistance forward, accept it
+			if record.Date.Sub(date) <= maxDistance {
 				return nil
 			}
+			// Too far forward — discard and try backward
+			record = nil
 		}
 
 		// Second try: reverse scan from the target date to find the closest prior record
@@ -196,9 +203,11 @@ func (r *PriceRepo) GetPriceAt(_ context.Context, contractCode string, date time
 			if err != nil {
 				return fmt.Errorf("read price before date: %w", err)
 			}
-			// Use the closer of forward or backward match
-			if record == nil || date.Sub(prior.Date) < record.Date.Sub(date) {
-				record = &prior
+			// Only accept if within maxDistance backward
+			if date.Sub(prior.Date) <= maxDistance {
+				if record == nil || date.Sub(prior.Date) < record.Date.Sub(date) {
+					record = &prior
+				}
 			}
 		}
 		return nil

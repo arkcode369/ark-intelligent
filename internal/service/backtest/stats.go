@@ -116,16 +116,18 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 	for _, s := range signals {
 		sumConfidence += s.Confidence
 
-		// Strength breakdown
-		if s.Strength >= 4 {
-			highTotal++
-			if s.Outcome1W == domain.OutcomeWin {
-				highStrengthWins++
-			}
-		} else {
-			lowTotal++
-			if s.Outcome1W == domain.OutcomeWin {
-				lowStrengthWins++
+		// Strength breakdown (only count evaluated signals)
+		if s.Outcome1W != "" && s.Outcome1W != domain.OutcomePending {
+			if s.Strength >= 4 {
+				highTotal++
+				if s.Outcome1W == domain.OutcomeWin {
+					highStrengthWins++
+				}
+			} else {
+				lowTotal++
+				if s.Outcome1W == domain.OutcomeWin {
+					lowStrengthWins++
+				}
 			}
 		}
 
@@ -162,14 +164,11 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 		}
 	}
 
-	// Use highest eval count as "evaluated"
-	stats.Evaluated = eval1W
-	if eval2W > stats.Evaluated {
-		stats.Evaluated = eval2W
-	}
-	if eval4W > stats.Evaluated {
-		stats.Evaluated = eval4W
-	}
+	// Per-horizon evaluation counts
+	stats.Evaluated1W = eval1W
+	stats.Evaluated2W = eval2W
+	stats.Evaluated4W = eval4W
+	stats.Evaluated = eval1W // Primary evaluation count (shortest horizon)
 
 	// Win rates
 	if eval1W > 0 {

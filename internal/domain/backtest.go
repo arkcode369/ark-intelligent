@@ -62,14 +62,27 @@ func (s *PersistedSignal) IsFullyEvaluated() bool {
 		s.Outcome4W != "" && s.Outcome4W != OutcomePending
 }
 
-// NeedsEvaluation returns true if any outcome is still pending or empty.
+// NeedsEvaluation returns true if any outcome is still pending or empty
+// and enough time has passed for at least one horizon to be evaluable.
 func (s *PersistedSignal) NeedsEvaluation(now time.Time) bool {
 	if s.EntryPrice == 0 {
 		return false // No price data at detection — cannot evaluate
 	}
-	// Need at least 1 week to have passed for 1W evaluation
-	return now.Sub(s.ReportDate) >= 7*24*time.Hour &&
-		(s.Outcome1W == "" || s.Outcome1W == OutcomePending)
+	age := now.Sub(s.ReportDate)
+	if age < 7*24*time.Hour {
+		return false // Too early for any evaluation
+	}
+	// Check if any horizon still needs evaluation
+	if s.Outcome1W == "" || s.Outcome1W == OutcomePending {
+		return true
+	}
+	if age >= 14*24*time.Hour && (s.Outcome2W == "" || s.Outcome2W == OutcomePending) {
+		return true
+	}
+	if age >= 28*24*time.Hour && (s.Outcome4W == "" || s.Outcome4W == OutcomePending) {
+		return true
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +93,12 @@ func (s *PersistedSignal) NeedsEvaluation(now time.Time) bool {
 type BacktestStats struct {
 	GroupLabel   string `json:"group_label"`   // e.g. "EUR", "SMART_MONEY", "ALL"
 	TotalSignals int    `json:"total_signals"` // Total persisted signals
-	Evaluated    int    `json:"evaluated"`     // Signals with outcomes
+	Evaluated    int    `json:"evaluated"`     // Signals with at least 1W outcome
+
+	// Per-horizon evaluation counts (may differ if signals are too recent for longer horizons)
+	Evaluated1W int `json:"evaluated_1w"`
+	Evaluated2W int `json:"evaluated_2w"`
+	Evaluated4W int `json:"evaluated_4w"`
 
 	// Win rates by holding period (0-100%)
 	WinRate1W float64 `json:"win_rate_1w"`

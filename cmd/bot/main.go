@@ -272,12 +272,14 @@ func main() {
 			log.Warn().Err(err).Msg("backtest bootstrap failed (non-fatal)")
 		} else if created > 0 {
 			log.Info().Int("signals", created).Msg("backtest signals bootstrapped")
-			// Evaluate any signals that already have enough price history
-			if evaluated, err := signalEvaluator.EvaluatePending(initCtx); err != nil {
-				log.Warn().Err(err).Msg("initial signal evaluation failed (non-fatal)")
-			} else if evaluated > 0 {
-				log.Info().Int("evaluated", evaluated).Msg("initial signal outcomes evaluated")
-			}
+		}
+
+		// Always evaluate pending signals — covers both fresh bootstrap and restarts
+		// where signals exist but haven't been evaluated yet.
+		if evaluated, err := signalEvaluator.EvaluatePending(initCtx); err != nil {
+			log.Warn().Err(err).Msg("initial signal evaluation failed (non-fatal)")
+		} else if evaluated > 0 {
+			log.Info().Int("evaluated", evaluated).Msg("initial signal outcomes evaluated")
 		}
 
 		initCancel()

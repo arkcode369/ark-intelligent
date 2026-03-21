@@ -1251,9 +1251,9 @@ func (f *Formatter) FormatBacktestStats(stats *domain.BacktestStats) string {
 	b.WriteString(fmt.Sprintf("\xF0\x9F\x93\x8A <b>Backtest: %s</b>\n\n", stats.GroupLabel))
 
 	b.WriteString(fmt.Sprintf("<code>Signals  :</code> %d total, %d evaluated\n", stats.TotalSignals, stats.Evaluated))
-	b.WriteString(fmt.Sprintf("<code>Win 1W   :</code> %.1f%%\n", stats.WinRate1W))
-	b.WriteString(fmt.Sprintf("<code>Win 2W   :</code> %.1f%%\n", stats.WinRate2W))
-	b.WriteString(fmt.Sprintf("<code>Win 4W   :</code> %.1f%%\n", stats.WinRate4W))
+	b.WriteString(fmt.Sprintf("<code>Win 1W   :</code> %.1f%% (n=%d)\n", stats.WinRate1W, stats.Evaluated1W))
+	b.WriteString(fmt.Sprintf("<code>Win 2W   :</code> %.1f%% (n=%d)\n", stats.WinRate2W, stats.Evaluated2W))
+	b.WriteString(fmt.Sprintf("<code>Win 4W   :</code> %.1f%% (n=%d)\n", stats.WinRate4W, stats.Evaluated4W))
 	b.WriteString(fmt.Sprintf("<code>Best     :</code> %s at %.1f%%\n\n", stats.BestPeriod, stats.BestWinRate))
 
 	b.WriteString(fmt.Sprintf("<code>Avg Ret 1W:</code> %.2f%%\n", stats.AvgReturn1W))

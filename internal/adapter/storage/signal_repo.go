@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
@@ -110,7 +109,8 @@ func (r *SignalRepo) GetAllSignals(_ context.Context) ([]domain.PersistedSignal,
 }
 
 // GetPendingSignals retrieves signals that need outcome evaluation.
-// A signal is pending if Outcome1W is empty and the report date is at least 7 days old.
+// A signal is pending if any horizon (1W/2W/4W) still needs evaluation
+// and enough time has passed since the report date for that horizon.
 func (r *SignalRepo) GetPendingSignals(_ context.Context) ([]domain.PersistedSignal, error) {
 	all, err := r.scanSignals(signalAllPrefix())
 	if err != nil {
@@ -167,7 +167,7 @@ func (r *SignalRepo) scanSignals(prefix []byte) ([]domain.PersistedSignal, error
 			})
 			if err != nil {
 				// Log and skip corrupted entries rather than failing the whole scan
-				_ = err
+				log.Warn().Err(err).Bytes("key", item.KeyCopy(nil)).Msg("skipping corrupted signal entry")
 				continue
 			}
 		}
@@ -206,6 +206,3 @@ func (r *SignalRepo) SignalExists(_ context.Context, contractCode string, report
 	})
 	return exists, err
 }
-
-// Ensure SignalRepo uses strings package (for potential future filtering).
-var _ = strings.Split

@@ -557,12 +557,15 @@ func (s *Scheduler) persistSignals(ctx context.Context, signals []cotsvc.Signal,
 			continue
 		}
 
-		// Look up entry price
-		var entryClose float64
+		// Look up entry price — skip signal if no price available
 		priceRec, err := s.deps.PriceRepo.GetLatest(ctx, sig.ContractCode)
-		if err == nil && priceRec != nil {
-			entryClose = priceRec.Close
+		if err != nil || priceRec == nil || priceRec.Close <= 0 {
+			log.Debug().
+				Str("contract", sig.ContractCode).
+				Msg("No entry price available — skipping signal persistence")
+			continue
 		}
+		entryClose := priceRec.Close
 
 		// Look up inverse flag
 		var inverse bool

@@ -79,8 +79,8 @@ func ConfluenceScoreV2(
 		return mathutil.Clamp(total, -100, 100)
 	}
 
-	// Without FRED data: weight COT (50%) + surprise (30%) + no stress/FRED
-	total := cotScore*0.50 + surpriseScore*0.30 + stressScore*0.20
+	// Without FRED data: weight COT (60%) + surprise (40%), stress is unavailable
+	total := cotScore*0.60 + surpriseScore*0.40
 	return mathutil.Clamp(total, -100, 100)
 }
 

@@ -71,7 +71,7 @@ func (b *Bootstrapper) Run(ctx context.Context) (int, error) {
 
 // bootstrapContract generates signals for a single contract across its history.
 func (b *Bootstrapper) bootstrapContract(ctx context.Context, mapping domain.PriceSymbolMapping) (int, error) {
-	// Load full COT history (52 weeks)
+	// Load full COT history (52 weeks) — returned newest-first from storage.
 	cotHistory, err := b.cotRepo.GetHistory(ctx, mapping.ContractCode, 52)
 	if err != nil {
 		return 0, fmt.Errorf("get COT history: %w", err)
@@ -80,13 +80,23 @@ func (b *Bootstrapper) bootstrapContract(ctx context.Context, mapping domain.Pri
 		return 0, nil // Not enough history for meaningful signals
 	}
 
-	// Load analysis history
+	// Reverse to oldest-first for buildHistoryWindow chronological scanning.
+	for i, j := 0, len(cotHistory)-1; i < j; i, j = i+1, j-1 {
+		cotHistory[i], cotHistory[j] = cotHistory[j], cotHistory[i]
+	}
+
+	// Load analysis history — also newest-first from storage.
 	analyses, err := b.cotRepo.GetAnalysisHistory(ctx, mapping.ContractCode, 52)
 	if err != nil {
 		return 0, fmt.Errorf("get analysis history: %w", err)
 	}
 	if len(analyses) == 0 {
 		return 0, nil
+	}
+
+	// Reverse to oldest-first so we replay chronologically.
+	for i, j := 0, len(analyses)-1; i < j; i, j = i+1, j-1 {
+		analyses[i], analyses[j] = analyses[j], analyses[i]
 	}
 
 	created := 0
@@ -116,17 +126,20 @@ func (b *Bootstrapper) bootstrapContract(ctx context.Context, mapping domain.Pri
 			continue
 		}
 
-		// Get the entry price for this report date
+		// Get the entry price for this report date — skip if unavailable
 		entryPrice, err := b.priceRepo.GetPriceAt(ctx, mapping.ContractCode, analysis.ReportDate)
 		if err != nil {
 			log.Debug().Err(err).Str("contract", mapping.ContractCode).Msg("No price data for bootstrap")
 			continue
 		}
-
-		var entryClose float64
-		if entryPrice != nil {
-			entryClose = entryPrice.Close
+		if entryPrice == nil || entryPrice.Close <= 0 {
+			log.Debug().
+				Str("contract", mapping.ContractCode).
+				Time("report_date", analysis.ReportDate).
+				Msg("No valid entry price — skipping signal creation")
+			continue
 		}
+		entryClose := entryPrice.Close
 
 		// Convert detected signals to persisted signals
 		var toSave []domain.PersistedSignal
@@ -171,8 +184,8 @@ func (b *Bootstrapper) bootstrapContract(ctx context.Context, mapping domain.Pri
 
 // buildHistoryWindow extracts COT records up to and including the target date,
 // returning at most `maxWeeks` records in oldest-first order.
+// IMPORTANT: allRecords MUST be in oldest-first (chronological) order.
 func buildHistoryWindow(allRecords []domain.COTRecord, targetDate time.Time, maxWeeks int) []domain.COTRecord {
-	// allRecords is oldest-first from GetHistory
 	var window []domain.COTRecord
 	for i := range allRecords {
 		if allRecords[i].ReportDate.After(targetDate) {
