@@ -59,6 +59,8 @@ func (h *Handler) cmdBacktest(ctx context.Context, chatID string, userID int64, 
 		return h.backtestTiming(ctx, chatID)
 	case args == "WALKFORWARD" || args == "WF":
 		return h.backtestWalkForward(ctx, chatID)
+	case args == "WEIGHTS" || args == "WEIGHT":
+		return h.backtestWeights(ctx, chatID)
 	case knownSignalTypes[args]:
 		// e.g. /backtest SMART_MONEY
 		return h.backtestOneSignalType(ctx, chatID, calc, args)
@@ -75,6 +77,7 @@ func (h *Handler) cmdBacktest(ctx context.Context, chatID string, userID int64, 
 			"<code>/backtest signals</code> — breakdown by signal type\n" +
 			"<code>/backtest timing</code> — optimal horizon per signal type\n" +
 			"<code>/backtest walkforward</code> — walk-forward overfit detection\n" +
+			"<code>/backtest weights</code> — factor weight optimization\n" +
 			"<code>/backtest SMART_MONEY</code> — specific signal type\n" +
 			"<code>/backtest EUR</code> — specific currency\n\n" +
 			"<b>Signal types:</b> SMART_MONEY · EXTREME_POSITIONING · DIVERGENCE · MOMENTUM_SHIFT · CONCENTRATION · CROWD_CONTRARIAN · THIN_MARKET"
@@ -258,6 +261,20 @@ func (h *Handler) backtestWalkForward(ctx context.Context, chatID string) error 
 	}
 
 	htmlOut := h.fmt.FormatWalkForward(result)
+	_, err = h.bot.SendHTML(ctx, chatID, htmlOut)
+	return err
+}
+
+// backtestWeights shows factor weight optimization analysis.
+func (h *Handler) backtestWeights(ctx context.Context, chatID string) error {
+	optimizer := backtestsvc.NewWeightOptimizer(h.signalRepo)
+	result, err := optimizer.OptimizeWeights(ctx)
+	if err != nil {
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Error: %s", html.EscapeString(err.Error())))
+		return sendErr
+	}
+
+	htmlOut := h.fmt.FormatWeightOptimization(result)
 	_, err = h.bot.SendHTML(ctx, chatID, htmlOut)
 	return err
 }

@@ -168,7 +168,7 @@ func NewHandler(
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
 
-	log.Info().Int("commands", 20).Int("callbacks", 6).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 21).Int("callbacks", 6).Msg("registered commands and callback prefixes")
 	return h
 }
 

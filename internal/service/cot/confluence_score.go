@@ -335,6 +335,144 @@ func ComputeConvictionScoreV3(
 	return buildConvictionResult(analysis, conviction, regime.Name, calendarNote, 3)
 }
 
+// ConfluenceWeights defines custom factor weights for the confluence score.
+// All values are expressed as fractions (e.g., 0.25 for 25%).
+type ConfluenceWeights struct {
+	COT      float64 // COT positioning weight
+	Calendar float64 // Calendar surprise weight
+	Stress   float64 // Financial stress weight
+	FRED     float64 // FRED regime weight
+	Price    float64 // Price momentum weight
+}
+
+// DefaultWeightsV3 returns the hardcoded V3 weights.
+func DefaultWeightsV3() ConfluenceWeights {
+	return ConfluenceWeights{
+		COT:      0.25,
+		Calendar: 0.15,
+		Stress:   0.10,
+		FRED:     0.20,
+		Price:    0.30,
+	}
+}
+
+// ConfluenceScoreWithWeights computes a 5-component confluence score using
+// custom weights instead of hardcoded values. This allows the system to use
+// data-driven weights when available and fall back to hardcoded weights when not.
+//
+// The component scoring logic is identical to V3; only the weighting changes.
+func ConfluenceScoreWithWeights(
+	analysis domain.COTAnalysis,
+	macroData *fred.MacroData,
+	surpriseSigma float64,
+	priceContext *domain.PriceContext,
+	weights ConfluenceWeights,
+) float64 {
+	// 1. COT component
+	cotScore := mathutil.Clamp(analysis.SentimentScore, -100, 100)
+
+	// 2. Calendar surprise component
+	surpriseScore := mathutil.Clamp(surpriseSigma*20, -100, 100)
+
+	// 3. Financial stress component
+	stressScore := 0.0
+	if macroData != nil {
+		stressScore = mathutil.Clamp(-macroData.NFCI*50, -100, 100)
+	}
+
+	// 4. FRED regime component
+	fredScore := 0.0
+	if macroData != nil {
+		fredRaw := 0.0
+		if macroData.YieldSpread > 0 {
+			fredRaw += 30
+		}
+		if macroData.CorePCE > 0 && macroData.CorePCE < 2.5 {
+			fredRaw += 30
+		}
+		if macroData.NFCI < 0 {
+			fredRaw += 20
+		}
+		if macroData.InitialClaims > 0 && macroData.InitialClaims < 250_000 {
+			fredRaw += 20
+		}
+		fredScore = mathutil.Clamp(fredRaw-50, -100, 100)
+
+		if macroData.GDPGrowth != 0 {
+			gdpFactor := 0.0
+			switch {
+			case macroData.GDPGrowth > 3.0:
+				gdpFactor = 10
+			case macroData.GDPGrowth > 1.5:
+				gdpFactor = 5
+			case macroData.GDPGrowth > 0:
+				gdpFactor = 0
+			case macroData.GDPGrowth < 0:
+				gdpFactor = -15
+			}
+			fredScore += gdpFactor * 0.3
+		}
+	}
+
+	// 5. Price momentum component
+	priceScore := 0.0
+	if priceContext != nil {
+		maScore := 0.0
+		if priceContext.AboveMA4W {
+			maScore += 25
+		} else {
+			maScore -= 25
+		}
+		if priceContext.AboveMA13W {
+			maScore += 25
+		} else {
+			maScore -= 25
+		}
+		momentumScore := mathutil.Clamp(priceContext.WeeklyChgPct*10, -25, 25) +
+			mathutil.Clamp(priceContext.MonthlyChgPct*5, -25, 25)
+		priceScore = mathutil.Clamp(maScore+momentumScore, -100, 100)
+
+		cotBullish := analysis.SentimentScore > 20
+		cotBearish := analysis.SentimentScore < -20
+		priceBullish := priceContext.Trend4W == "UP"
+		priceBearish := priceContext.Trend4W == "DOWN"
+		if (cotBullish && priceBullish) || (cotBearish && priceBearish) {
+			priceScore *= 1.2
+		} else if (cotBullish && priceBearish) || (cotBearish && priceBullish) {
+			priceScore *= 0.7
+		}
+		priceScore = mathutil.Clamp(priceScore, -100, 100)
+	}
+
+	// Weighted combination using custom weights
+	if priceContext != nil && macroData != nil {
+		total := cotScore*weights.COT + surpriseScore*weights.Calendar + stressScore*weights.Stress + fredScore*weights.FRED + priceScore*weights.Price
+		return mathutil.Clamp(total, -100, 100)
+	} else if priceContext != nil {
+		// No FRED: redistribute FRED+Stress weights proportionally to COT, Calendar, Price.
+		sum := weights.COT + weights.Calendar + weights.Price
+		if sum > 0 {
+			total := cotScore*(weights.COT/sum) + surpriseScore*(weights.Calendar/sum) + priceScore*(weights.Price/sum)
+			return mathutil.Clamp(total, -100, 100)
+		}
+	} else if macroData != nil {
+		// No price: redistribute Price weight proportionally to COT, Calendar, Stress, FRED.
+		sum := weights.COT + weights.Calendar + weights.Stress + weights.FRED
+		if sum > 0 {
+			total := cotScore*(weights.COT/sum) + surpriseScore*(weights.Calendar/sum) + stressScore*(weights.Stress/sum) + fredScore*(weights.FRED/sum)
+			return mathutil.Clamp(total, -100, 100)
+		}
+	}
+
+	// Neither: COT + Calendar only.
+	sum := weights.COT + weights.Calendar
+	if sum > 0 {
+		total := cotScore*(weights.COT/sum) + surpriseScore*(weights.Calendar/sum)
+		return mathutil.Clamp(total, -100, 100)
+	}
+	return 0
+}
+
 // buildConvictionResult creates a ConvictionScore from a normalized 0-100 conviction value.
 func buildConvictionResult(analysis domain.COTAnalysis, conviction float64, regimeName, calendarNote string, version int) ConvictionScore {
 	direction := "NEUTRAL"

@@ -1551,6 +1551,82 @@ func (f *Formatter) FormatWalkForward(result *backtestsvc.WalkForwardResult) str
 	return b.String()
 }
 
+// FormatWeightOptimization formats factor weight optimization results into Telegram HTML.
+func (f *Formatter) FormatWeightOptimization(result *backtestsvc.WeightResult) string {
+	var b strings.Builder
+
+	b.WriteString("\xE2\x9A\x96\xEF\xB8\x8F <b>Factor Weight Optimization</b>\n")
+	b.WriteString("<i>OLS regression: Return1W ~ COT + Stress + FRED + Price</i>\n\n")
+
+	b.WriteString(fmt.Sprintf("<code>Sample Size   :</code> %d signals\n", result.SampleSize))
+	b.WriteString(fmt.Sprintf("<code>R\xC2\xB2            :</code> %.4f\n", result.RSquared))
+	b.WriteString(fmt.Sprintf("<code>Adj R\xC2\xB2        :</code> %.4f\n", result.AdjRSquared))
+
+	// Weight comparison table.
+	b.WriteString("\n<pre>")
+	b.WriteString(fmt.Sprintf("%-10s %7s %7s %5s %6s\n", "Factor", "Current", "Optim.", "Sig?", "p-val"))
+	b.WriteString(strings.Repeat("\xe2\x94\x80", 42) + "\n")
+
+	factorOrder := []string{"COT", "Stress", "FRED", "Price"}
+	for _, name := range factorOrder {
+		curr := 0.0
+		if result.CurrentWeights != nil {
+			curr = result.CurrentWeights[name]
+		}
+		opt := 0.0
+		if result.OptimizedWeights != nil {
+			opt = result.OptimizedWeights[name]
+		}
+		sig := " "
+		if result.FactorSignificance != nil && result.FactorSignificance[name] {
+			sig = "*"
+		}
+		pVal := 1.0
+		if result.FactorPValues != nil {
+			pVal = result.FactorPValues[name]
+		}
+		b.WriteString(fmt.Sprintf("%-10s %6.1f%% %6.1f%%   %s  %.3f\n",
+			name, curr, opt, sig, pVal))
+	}
+	b.WriteString("</pre>\n")
+	b.WriteString("<i>* = statistically significant (p &lt; 0.05)</i>\n")
+
+	// Raw coefficients.
+	if result.FactorCoefficients != nil {
+		b.WriteString("\n<b>Raw Coefficients</b>\n<pre>")
+		for _, name := range factorOrder {
+			coeff := result.FactorCoefficients[name]
+			b.WriteString(fmt.Sprintf("%-10s %+.4f\n", name, coeff))
+		}
+		b.WriteString("</pre>\n")
+	}
+
+	// Per-contract weights.
+	if len(result.PerContractWeights) > 0 {
+		b.WriteString("\n<b>Per-Currency Weights</b>\n<pre>")
+		b.WriteString(fmt.Sprintf("%-5s %5s %5s %5s %5s\n", "Ccy", "COT", "Str", "FRED", "Prc"))
+		b.WriteString(strings.Repeat("\xe2\x94\x80", 30) + "\n")
+
+		// Sort currencies for deterministic output.
+		var currencies []string
+		for c := range result.PerContractWeights {
+			currencies = append(currencies, c)
+		}
+		sort.Strings(currencies)
+
+		for _, ccy := range currencies {
+			w := result.PerContractWeights[ccy]
+			b.WriteString(fmt.Sprintf("%-5s %4.0f%% %4.0f%% %4.0f%% %4.0f%%\n",
+				ccy, w["COT"], w["Stress"], w["FRED"], w["Price"]))
+		}
+		b.WriteString("</pre>\n")
+	}
+
+	b.WriteString(fmt.Sprintf("\n\xF0\x9F\x93\x8C <i>%s</i>", result.Recommendation))
+
+	return b.String()
+}
+
 // FormatPriceContext formats price context for a single contract.
 func (f *Formatter) FormatPriceContext(pc *domain.PriceContext) string {
 	if pc == nil {

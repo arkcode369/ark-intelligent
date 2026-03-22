@@ -3,6 +3,7 @@
 package mathutil
 
 import (
+	"fmt"
 	"math"
 	"sort"
 )
@@ -765,4 +766,226 @@ func ConsecutiveDirection(data []float64) (int, float64) {
 		count++
 	}
 	return count, dir
+}
+
+// ---------------------------------------------------------------------------
+// OLS Linear Regression — Normal Equations
+// ---------------------------------------------------------------------------
+
+// RegressionResult holds the output of an OLS regression.
+type RegressionResult struct {
+	Coefficients []float64 // β coefficients (one per predictor column)
+	RSquared     float64   // R² — proportion of variance explained
+	AdjRSquared  float64   // Adjusted R² — penalizes for number of predictors
+	StdErrors    []float64 // Standard error of each coefficient
+	TStats       []float64 // t-statistic for each coefficient
+	PValues      []float64 // Two-tailed p-value for each coefficient
+	Residuals    []float64 // y - X*β
+}
+
+// OLSRegression fits a linear model y = Xβ + ε using the normal equations:
+//
+//	β = (X'X)^(-1) X'y
+//
+// X is an n×p design matrix (no intercept column is added — include one in X
+// if needed). y is the response vector of length n.
+// Returns an error if the matrix is singular or if n < p+1.
+func OLSRegression(X [][]float64, y []float64) (*RegressionResult, error) {
+	n := len(X)
+	if n == 0 {
+		return nil, fmt.Errorf("ols: no observations")
+	}
+	p := len(X[0])
+	if p == 0 {
+		return nil, fmt.Errorf("ols: no predictors")
+	}
+	if len(y) != n {
+		return nil, fmt.Errorf("ols: X has %d rows but y has %d elements", n, len(y))
+	}
+	if n < p+1 {
+		return nil, fmt.Errorf("ols: need at least %d observations for %d predictors, got %d", p+1, p, n)
+	}
+
+	// Compute X'X (p×p)
+	XtX := matMul(matTranspose(X), X)
+
+	// Compute X'y (p×1)
+	Xty := matVecMul(matTranspose(X), y)
+
+	// Invert X'X
+	XtXinv, err := matInvert(XtX)
+	if err != nil {
+		return nil, fmt.Errorf("ols: %w", err)
+	}
+
+	// β = (X'X)^(-1) X'y
+	beta := matVecMulFlat(XtXinv, Xty)
+
+	// Residuals: e = y - Xβ
+	residuals := make([]float64, n)
+	var ssRes, ssTot float64
+	yMean := Mean(y)
+	for i := 0; i < n; i++ {
+		yHat := 0.0
+		for j := 0; j < p; j++ {
+			yHat += X[i][j] * beta[j]
+		}
+		residuals[i] = y[i] - yHat
+		ssRes += residuals[i] * residuals[i]
+		d := y[i] - yMean
+		ssTot += d * d
+	}
+
+	// R² and adjusted R²
+	rSquared := 0.0
+	if ssTot > 0 {
+		rSquared = 1 - ssRes/ssTot
+	}
+	adjRSquared := 0.0
+	if n > p && ssTot > 0 {
+		adjRSquared = 1 - (ssRes/float64(n-p))/(ssTot/float64(n-1))
+	}
+
+	// Standard errors, t-stats, p-values
+	sigmaSquared := ssRes / float64(n-p)
+	stdErrors := make([]float64, p)
+	tStats := make([]float64, p)
+	pValues := make([]float64, p)
+	df := float64(n - p)
+	for j := 0; j < p; j++ {
+		variance := sigmaSquared * XtXinv[j][j]
+		if variance > 0 {
+			stdErrors[j] = math.Sqrt(variance)
+			tStats[j] = beta[j] / stdErrors[j]
+			pValues[j] = 2 * tDistCDF(-math.Abs(tStats[j]), df)
+		} else {
+			stdErrors[j] = 0
+			tStats[j] = 0
+			pValues[j] = 1
+		}
+	}
+
+	return &RegressionResult{
+		Coefficients: beta,
+		RSquared:     rSquared,
+		AdjRSquared:  adjRSquared,
+		StdErrors:    stdErrors,
+		TStats:       tStats,
+		PValues:      pValues,
+		Residuals:    residuals,
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Small-matrix operations for OLS (handles matrices up to ~10×10)
+// ---------------------------------------------------------------------------
+
+// matTranspose returns the transpose of an n×m matrix.
+func matTranspose(A [][]float64) [][]float64 {
+	if len(A) == 0 {
+		return nil
+	}
+	n, m := len(A), len(A[0])
+	T := make([][]float64, m)
+	for j := 0; j < m; j++ {
+		T[j] = make([]float64, n)
+		for i := 0; i < n; i++ {
+			T[j][i] = A[i][j]
+		}
+	}
+	return T
+}
+
+// matMul multiplies two matrices A (n×m) and B (m×p) returning n×p.
+func matMul(A, B [][]float64) [][]float64 {
+	n := len(A)
+	m := len(A[0])
+	p := len(B[0])
+	C := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		C[i] = make([]float64, p)
+		for j := 0; j < p; j++ {
+			var s float64
+			for k := 0; k < m; k++ {
+				s += A[i][k] * B[k][j]
+			}
+			C[i][j] = s
+		}
+	}
+	return C
+}
+
+// matVecMul multiplies A (n×m) by vector v (length m) returning length-n result.
+func matVecMul(A [][]float64, v []float64) []float64 {
+	n := len(A)
+	m := len(A[0])
+	r := make([]float64, n)
+	for i := 0; i < n; i++ {
+		var s float64
+		for j := 0; j < m; j++ {
+			s += A[i][j] * v[j]
+		}
+		r[i] = s
+	}
+	return r
+}
+
+// matVecMulFlat is an alias for matVecMul (same behaviour).
+func matVecMulFlat(A [][]float64, v []float64) []float64 {
+	return matVecMul(A, v)
+}
+
+// matInvert inverts a square matrix using Gauss-Jordan elimination.
+// Returns an error if the matrix is singular.
+func matInvert(A [][]float64) ([][]float64, error) {
+	n := len(A)
+	// Build augmented matrix [A | I]
+	aug := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		aug[i] = make([]float64, 2*n)
+		copy(aug[i], A[i])
+		aug[i][n+i] = 1.0
+	}
+
+	for col := 0; col < n; col++ {
+		// Partial pivoting: find row with largest absolute value in column.
+		maxVal := math.Abs(aug[col][col])
+		maxRow := col
+		for row := col + 1; row < n; row++ {
+			if math.Abs(aug[row][col]) > maxVal {
+				maxVal = math.Abs(aug[row][col])
+				maxRow = row
+			}
+		}
+		if maxVal < 1e-14 {
+			return nil, fmt.Errorf("singular matrix (pivot %.2e at col %d)", maxVal, col)
+		}
+		// Swap rows.
+		aug[col], aug[maxRow] = aug[maxRow], aug[col]
+
+		// Scale pivot row.
+		pivot := aug[col][col]
+		for j := 0; j < 2*n; j++ {
+			aug[col][j] /= pivot
+		}
+
+		// Eliminate column in all other rows.
+		for row := 0; row < n; row++ {
+			if row == col {
+				continue
+			}
+			factor := aug[row][col]
+			for j := 0; j < 2*n; j++ {
+				aug[row][j] -= factor * aug[col][j]
+			}
+		}
+	}
+
+	// Extract inverse from right half.
+	inv := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		inv[i] = make([]float64, n)
+		copy(inv[i], aug[i][n:])
+	}
+	return inv, nil
 }
