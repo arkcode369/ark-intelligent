@@ -140,13 +140,9 @@ func (rd *RecalibratedDetector) DetectAll(
 		stats := rd.TypeStats(sigTypeKey)
 
 		// --- Signal Suppression ---
+		// SMELL-1 fix: removed dead write to sig.Factors before continue.
+		// The signal is dropped entirely, so any factor annotation is never read.
 		if stats != nil && stats.Suppressed {
-			// Log suppression at debug level (no logger in this package — use signal factor annotation)
-			// Append suppression note to factors so it's visible in debug output
-			sig.Factors = append(sig.Factors,
-				"⛔ SUPPRESSED: win rate "+fmtWinRate(stats.WinRate)+" (n="+intToStr(stats.SampleSize)+")",
-			)
-			// Skip — do not include in output
 			continue
 		}
 

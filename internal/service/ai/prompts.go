@@ -308,6 +308,7 @@ func BuildNewsOutlookPrompt(events []domain.NewsEvent, lang string, macroRegime 
 }
 
 // BuildCombinedOutlookPrompt creates a prompt for fusing COT positioning and calendar news.
+// SMELL-3 fix: now injects PriceContexts when available (mirrors BuildCombinedWithFREDPrompt).
 func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
 	var b strings.Builder
 	now := time.Now().UTC().Add(7 * time.Hour) // WIB
@@ -320,7 +321,10 @@ func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
 		b.WriteString("PLEASE RESPOND IN INDONESIAN (Bahasa Indonesia).\n\n")
 	}
 
-	b.WriteString("=== 1. COT POSITIONING ===\n")
+	// Use dynamic section counter so numbers are always consecutive.
+	section := 1
+	b.WriteString(fmt.Sprintf("=== %d. COT POSITIONING ===\n", section))
+	section++
 	for _, a := range data.COTAnalyses {
 		b.WriteString(fmt.Sprintf("%s: SpecNet=%s COTIdx=%.0f CommSignal=%s Crowding=%.1f\n",
 			a.Contract.Currency,
@@ -328,7 +332,8 @@ func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
 			a.COTIndex, a.CommercialSignal, a.CrowdingIndex))
 	}
 
-	b.WriteString("\n=== 2. UPCOMING CATALYSTS (HIGH IMPACT) ===\n")
+	b.WriteString(fmt.Sprintf("\n=== %d. UPCOMING CATALYSTS (HIGH IMPACT) ===\n", section))
+	section++
 	for _, e := range data.NewsEvents {
 		if e.Impact == "high" {
 			line := fmt.Sprintf("%s | %s - %s | Fcast: %s | Act: %s",
@@ -340,16 +345,38 @@ func BuildCombinedOutlookPrompt(data ports.WeeklyData) string {
 		}
 	}
 
+	// SMELL-3 fix: inject price context into the no-FRED combined prompt.
+	// Previously only BuildCombinedWithFREDPrompt received price data; this path was blind.
+	hasPriceCtx := len(data.PriceContexts) > 0
+	if hasPriceCtx {
+		b.WriteString(fmt.Sprintf("\n=== %d. PRICE CONTEXT (Weekly Closes) ===\n", section))
+		section++ //nolint:ineffassign // section may be used in future extensions
+		for _, a := range data.COTAnalyses {
+			if pc, ok := data.PriceContexts[a.Contract.Code]; ok {
+				b.WriteString(fmt.Sprintf("%s: %.5f | Wk %+.2f%% | Mo %+.2f%% | Trend4W: %s | MA4W: %s MA13W: %s\n",
+					a.Contract.Currency,
+					pc.CurrentPrice, pc.WeeklyChgPct, pc.MonthlyChgPct,
+					pc.Trend4W, maLabel(pc.AboveMA4W), maLabel(pc.AboveMA13W)))
+			}
+		}
+	}
+
 	if data.Language == "en" {
 		b.WriteString("\nProvide a structured fused outlook:\n")
 		b.WriteString("1. Positioning Extreme + Catalyst Alignment: Identify 'Crowded exit risks'. e.g., if EUR is heavily net long and ECB is upcoming, what is the fragility risk?\n")
 		b.WriteString("2. The Volatility Window: Highlight which pairs will experience liquidity compression before their respective events.\n")
 		b.WriteString("3. Surprise Factor Scenarios: For the top 2 events, model what happens if Actual significantly beats or misses Forecast against the current COT positioning.\n")
+		if hasPriceCtx {
+			b.WriteString("4. PRICE-COT DIVERGENCE: Flag any currency where price trend contradicts COT positioning — potential reversal or trap setups.\n")
+		}
 	} else {
 		b.WriteString("\nBerikan analisis fusi terstruktur:\n")
 		b.WriteString("1. Positioning Extreme + Catalyst Alignment: Identifikasi 'Crowded exit risks'. Contoh: jika EUR net long besar dan ECB akan datang, apa risiko kerapuhannya?\n")
 		b.WriteString("2. The Volatility Window: Sorot pasangan mana yang akan mengalami kompresi likuiditas sebelum event masing-masing.\n")
 		b.WriteString("3. Surprise Factor Scenarios: Untuk 2 event teratas, modelkan apa yang terjadi jika Actual jauh melampaui atau meleset dari Forecast terhadap positioning COT saat ini.\n")
+		if hasPriceCtx {
+			b.WriteString("4. PRICE-COT DIVERGENCE: Tandai mata uang di mana tren harga bertentangan dengan positioning COT — setup reversal atau jebakan potensial.\n")
+		}
 	}
 
 	return b.String()

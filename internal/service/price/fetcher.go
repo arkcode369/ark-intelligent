@@ -181,10 +181,14 @@ func (f *Fetcher) FetchWeekly(ctx context.Context, mapping domain.PriceSymbolMap
 }
 
 // HealthCheck verifies that at least one price API is reachable.
+// RISK-M3 fix: look up EUR by currency name instead of using a fragile index.
 func (f *Fetcher) HealthCheck(ctx context.Context) error {
-	// Try to fetch 1 week of EUR/USD from any source
-	mapping := domain.DefaultPriceSymbolMappings[0] // EUR
-	_, err := f.FetchWeekly(ctx, mapping, 1)
+	// Use EUR/USD as the canary symbol (always present, liquid, all sources support it).
+	mapping := domain.FindPriceMappingByCurrency("EUR")
+	if mapping == nil {
+		return fmt.Errorf("health check: EUR mapping not found in price symbol table")
+	}
+	_, err := f.FetchWeekly(ctx, *mapping, 1)
 	return err
 }
 

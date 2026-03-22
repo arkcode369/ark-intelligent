@@ -55,16 +55,21 @@ func (rc *RiskContext) IsRiskOff() bool {
 	return rc.VIXLevel > 25 || rc.SPXMonthlyChg < -5
 }
 
-// ConfidenceAdjustment returns a multiplier (0.5–1.15) applied to signal confidence
-// based on VIX level and SPX trend.
+// ConfidenceAdjustment returns a multiplier applied to signal confidence
+// based on VIX level and SPX trend. Final multiplier is clamped to [0.50, 1.25].
 //
-// Logic:
-//   - PANIC  (VIX > 30): -30% — correlations break, models unreliable
-//   - ELEVATED (VIX 20-30): -15% — noise elevated, reduce conviction
-//   - NORMAL (VIX 15-20): neutral
-//   - LOW (VIX < 15): +15% — clean trending environment, signals cleaner
-//   - SPX rising (risk-on bonus): +5% for risk-correlated assets
-//   - SPX falling sharply: -10% additional dampening
+// Base multiplier by regime:
+//   - PANIC    (VIX > 30): 0.70 — correlations break, models unreliable
+//   - ELEVATED (VIX 20-30): 0.85 — noise elevated, reduce conviction
+//   - NORMAL   (VIX 15-20): 1.00 — neutral
+//   - LOW      (VIX < 15):  1.15 — clean trending environment, signals cleaner
+//
+// SPX modifiers applied on top of base:
+//   - SPX monthly change < -5%: −0.10 (sharp equity selloff → additional dampening)
+//   - SPX above MA4W and monthly change > 2%: +0.05 (risk-on momentum → slight boost)
+//
+// Effective range after clamp: [0.50, 1.25].
+// (Worst case: PANIC 0.70 − 0.10 = 0.60, but can be 0.50 via clamp if future logic extends.)
 func (rc *RiskContext) ConfidenceAdjustment() float64 {
 	if rc == nil {
 		return 1.0 // no adjustment when context unavailable
