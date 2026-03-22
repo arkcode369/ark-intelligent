@@ -61,9 +61,10 @@ type claudeMessage struct {
 
 // claudeContentInput represents a single content block in a multimodal user message.
 type claudeContentInput struct {
-	Type   string              `json:"type"`             // "text", "image"
+	Type   string              `json:"type"`             // "text", "image", "document"
 	Text   string              `json:"text,omitempty"`   // for type="text"
-	Source *claudeImageSource  `json:"source,omitempty"` // for type="image"
+	Title  string              `json:"title,omitempty"`  // for type="document" (optional, filename)
+	Source *claudeImageSource  `json:"source,omitempty"` // for type="image" or "document"
 }
 
 // claudeImageSource represents the source of an image in a Claude message.
@@ -87,7 +88,7 @@ type claudeResponse struct {
 	Content      []claudeContentBlock `json:"content"`
 	StopReason   string              `json:"stop_reason"`
 	Usage        *claudeUsage        `json:"usage,omitempty"`
-	Error        *claudeError        `json:"anthropic_error,omitempty"`
+	Error        *claudeError        `json:"error,omitempty"`
 }
 
 type claudeContentBlock struct {
@@ -235,6 +236,13 @@ func (c *ClaudeClient) doRequest(ctx context.Context, apiReq *claudeRequest) (*c
 	if resp.StatusCode >= 500 {
 		return nil, fmt.Errorf("claude server error %d: %s", resp.StatusCode, string(respBody[:min(200, len(respBody))]))
 	}
+	if resp.StatusCode == 429 {
+		return nil, fmt.Errorf("claude rate limited (429): %s", string(respBody[:min(200, len(respBody))]))
+	}
+	if resp.StatusCode >= 400 {
+		// Non-retryable client errors (400, 401, 403, etc.)
+		return nil, fmt.Errorf("claude client error %d: %s", resp.StatusCode, string(respBody[:min(500, len(respBody))]))
+	}
 
 	var apiResp claudeResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
@@ -338,17 +346,20 @@ func buildClaudeMessage(m ports.ChatMessage) claudeMessage {
 				})
 			}
 		case "document":
-			// For supported document types (PDF), use the document type if Claude supports it.
-			// For now, treat documents as context: add filename info as text.
+			// For supported document types (PDF), use the document type.
 			if b.MediaType == "application/pdf" && b.Data != "" {
-				blocks = append(blocks, claudeContentInput{
+				block := claudeContentInput{
 					Type: "document",
 					Source: &claudeImageSource{
 						Type:      "base64",
 						MediaType: b.MediaType,
 						Data:      b.Data,
 					},
-				})
+				}
+				if b.FileName != "" {
+					block.Title = b.FileName
+				}
+				blocks = append(blocks, block)
 			} else if b.FileName != "" {
 				blocks = append(blocks, claudeContentInput{
 					Type: "text",

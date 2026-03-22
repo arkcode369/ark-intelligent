@@ -54,8 +54,26 @@ func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text str
 		history = nil // non-fatal — proceed without history
 	}
 
+	// Resolve the effective text for context building and history.
+	// For multimodal messages without caption, extract text from content blocks
+	// or generate a descriptive placeholder.
+	effectiveText := text
+	if effectiveText == "" && len(contentBlocks) > 0 {
+		// Try to extract text from content blocks
+		for _, b := range contentBlocks {
+			if b.Type == "text" && b.Text != "" {
+				effectiveText = b.Text
+				break
+			}
+		}
+		// If still empty, generate a descriptive label for context
+		if effectiveText == "" {
+			effectiveText = describeContentBlocks(contentBlocks)
+		}
+	}
+
 	// 2. Build system prompt with market data injection
-	systemPrompt := cs.contextBuilder.BuildSystemPrompt(ctx, text)
+	systemPrompt := cs.contextBuilder.BuildSystemPrompt(ctx, effectiveText)
 
 	// 3. Build messages array (history + current message)
 	messages := make([]ports.ChatMessage, 0, len(history)+1)
@@ -83,8 +101,8 @@ func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text str
 
 	resp, err := cs.claude.Chat(ctx, req)
 	if err == nil && resp.Content != "" {
-		// Success — persist conversation
-		cs.saveConversation(ctx, userID, text, resp.Content)
+		// Success — persist conversation (use effectiveText for multimodal description)
+		cs.saveConversation(ctx, userID, effectiveText, resp.Content)
 
 		if len(resp.ToolsUsed) > 0 {
 			chatLog.Info().
@@ -105,9 +123,9 @@ func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text str
 		chatLog.Warn().Int64("user_id", userID).Msg("Claude returned empty response, attempting Gemini fallback")
 	}
 
-	// 6. Try Gemini (fallback) — single-turn only (no history support)
-	if cs.gemini != nil {
-		geminiResp, geminiErr := cs.gemini.GenerateWithSystem(ctx, systemPrompt, text)
+	// 6. Try Gemini (fallback) — single-turn only (no history or multimodal support)
+	if cs.gemini != nil && effectiveText != "" {
+		geminiResp, geminiErr := cs.gemini.GenerateWithSystem(ctx, systemPrompt, effectiveText)
 		if geminiErr == nil && geminiResp != "" {
 			// Prefix with fallback notice
 			fallbackResponse := fmt.Sprintf(
@@ -116,7 +134,7 @@ func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text str
 			)
 
 			// Save to history (but note it's a fallback response)
-			cs.saveConversation(ctx, userID, text, geminiResp)
+			cs.saveConversation(ctx, userID, effectiveText, geminiResp)
 
 			chatLog.Info().Int64("user_id", userID).Msg("Gemini fallback succeeded")
 			return fallbackResponse, nil
@@ -173,4 +191,26 @@ func templateFallback() string {
 	b.WriteString("/rank — Currency strength ranking\n\n")
 	b.WriteString("<i>Please try again later for AI chat features.</i>")
 	return b.String()
+}
+
+// describeContentBlocks generates a descriptive label for multimodal content
+// when no text was provided. Used for conversation history and context building.
+func describeContentBlocks(blocks []ports.ContentBlock) string {
+	var parts []string
+	for _, b := range blocks {
+		switch b.Type {
+		case "image":
+			parts = append(parts, "[Image]")
+		case "document":
+			if b.FileName != "" {
+				parts = append(parts, fmt.Sprintf("[Document: %s]", b.FileName))
+			} else {
+				parts = append(parts, "[Document]")
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return "[Media message]"
+	}
+	return strings.Join(parts, " ")
 }

@@ -875,6 +875,12 @@ func (b *Bot) handleChatMessage(ctx context.Context, msg *Message) {
 		data, mimeType, err := b.downloadFileBase64(ctx, largest.FileID)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to download photo")
+			if strings.Contains(err.Error(), "too large") {
+				// Notify user about size limit
+				chatID := strconv.FormatInt(msg.Chat.ID, 10)
+				_, _ = b.SendHTML(ctx, chatID, "Image is too large (max 5MB). Please send a smaller image.")
+				return
+			}
 		} else {
 			if mimeType == "" {
 				mimeType = "image/jpeg"
@@ -993,8 +999,13 @@ func (b *Bot) getFilePath(ctx context.Context, fileID string) (string, error) {
 	return f.FilePath, nil
 }
 
+// maxFileDownloadBytes limits file downloads to 5MB.
+// Claude supports up to ~5MB per image in base64. Telegram Bot API allows up to 20MB,
+// but larger files would waste bandwidth and get rejected by the AI API.
+const maxFileDownloadBytes = 5 * 1024 * 1024
+
 // downloadFileBase64 downloads a Telegram file by file_id and returns its base64-encoded data and MIME type.
-// Max file size supported by Telegram Bot API: 20MB.
+// Files exceeding 5MB are rejected to stay within Claude's input limits.
 func (b *Bot) downloadFileBase64(ctx context.Context, fileID string) (string, string, error) {
 	filePath, err := b.getFilePath(ctx, fileID)
 	if err != nil {
@@ -1018,10 +1029,13 @@ func (b *Bot) downloadFileBase64(ctx context.Context, fileID string) (string, st
 		return "", "", fmt.Errorf("download file: status %d", resp.StatusCode)
 	}
 
-	// Limit to 20MB
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+	// Read up to maxFileDownloadBytes + 1 byte to detect oversized files
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFileDownloadBytes+1))
 	if err != nil {
 		return "", "", fmt.Errorf("read file: %w", err)
+	}
+	if len(data) > maxFileDownloadBytes {
+		return "", "", fmt.Errorf("file too large: exceeds %dMB limit", maxFileDownloadBytes/(1024*1024))
 	}
 
 	// Detect MIME type from Content-Type header or file extension
