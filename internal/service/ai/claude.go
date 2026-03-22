@@ -268,6 +268,18 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 
 		// Extract text content and tool usage
 		text, toolsUsed := extractClaudeContent(resp)
+
+		// If stop_reason is "tool_use", Claude wants client-side tool execution
+		// which we don't support. This is non-retryable — don't waste attempts.
+		if resp.StopReason == "tool_use" {
+			claudeLog.Warn().
+				Str("stop_reason", resp.StopReason).
+				Str("model", resp.Model).
+				Int("content_blocks", len(resp.Content)).
+				Msg("Claude requested client-side tool execution (unsupported)")
+			return nil, fmt.Errorf("claude requested unsupported client-side tool execution")
+		}
+
 		if text == "" {
 			claudeLog.Warn().
 				Str("stop_reason", resp.StopReason).
@@ -380,7 +392,15 @@ func extractClaudeContent(resp *claudeResponse) (string, []string) {
 		case "thinking":
 			hasThinking = true
 			// Thinking blocks are internal reasoning — not shown to user.
-		case "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result":
+		case "tool_use":
+			// Client-side tool request — Claude wants us to execute a tool
+			// and return the result. We don't support this (only server-managed
+			// tools). Log and skip; the response will be retried or fall back.
+			if block.Name != "" {
+				claudeLog.Warn().Str("tool", block.Name).Msg("unsupported client-side tool_use request")
+			}
+		case "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result",
+			"bash_code_execution_tool_result":
 			// Server tool results — the model processes these internally.
 			// No user-visible text to extract; the model will reference results
 			// in its text blocks.
