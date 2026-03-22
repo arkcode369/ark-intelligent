@@ -3,6 +3,7 @@ package telegram
 import (
 	"bytes"
 	"context"
+	encbase64 "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -34,12 +35,43 @@ type Update struct {
 
 // Message represents a Telegram message.
 type Message struct {
-	MessageID       int    `json:"message_id"`
-	Chat            Chat   `json:"chat"`
-	From            *User  `json:"from,omitempty"`
-	Text            string `json:"text"`
-	Date            int64  `json:"date"`
-	MessageThreadID int    `json:"message_thread_id,omitempty"` // For groups with topics
+	MessageID       int        `json:"message_id"`
+	Chat            Chat       `json:"chat"`
+	From            *User      `json:"from,omitempty"`
+	Text            string     `json:"text"`
+	Caption         string     `json:"caption,omitempty"`          // Caption for media messages
+	Date            int64      `json:"date"`
+	MessageThreadID int        `json:"message_thread_id,omitempty"` // For groups with topics
+	Photo           []PhotoSize `json:"photo,omitempty"`            // Photo messages (multiple sizes)
+	Document        *Document  `json:"document,omitempty"`          // Document/file messages
+	Voice           *Voice     `json:"voice,omitempty"`             // Voice messages
+}
+
+// PhotoSize represents one size variant of a photo.
+type PhotoSize struct {
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	FileSize     int    `json:"file_size,omitempty"`
+}
+
+// Document represents a document/file sent via Telegram.
+type Document struct {
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	FileName     string `json:"file_name,omitempty"`
+	MimeType     string `json:"mime_type,omitempty"`
+	FileSize     int    `json:"file_size,omitempty"`
+}
+
+// Voice represents a voice message.
+type Voice struct {
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	Duration     int    `json:"duration"`
+	MimeType     string `json:"mime_type,omitempty"`
+	FileSize     int    `json:"file_size,omitempty"`
 }
 
 // Chat represents a Telegram chat.
@@ -93,6 +125,10 @@ type CommandHandler func(ctx context.Context, chatID string, userID int64, args 
 // CallbackHandler handles an inline keyboard callback.
 type CallbackHandler func(ctx context.Context, chatID string, msgID int, userID int64, data string) error
 
+// FreeTextHandler handles non-command (chatbot) messages.
+// contentBlocks is non-nil when the message contains media (images, documents).
+type FreeTextHandler func(ctx context.Context, chatID string, userID int64, username string, text string, contentBlocks []ports.ContentBlock) error
+
 // Bot is the Telegram bot engine that handles polling, message routing,
 // and implements ports.Messenger for outbound message delivery.
 type Bot struct {
@@ -105,6 +141,9 @@ type Bot struct {
 	// Command routing
 	commands  map[string]CommandHandler
 	callbacks map[string]CallbackHandler // prefix-based routing
+
+	// Free-text (chatbot) handler — nil means ignore non-command messages
+	freeTextHandler FreeTextHandler
 
 	// Polling state
 	offset int
@@ -239,17 +278,28 @@ func (b *Bot) handleUpdate(ctx context.Context, update Update) {
 		return
 	}
 
-	if update.Message != nil && update.Message.Text != "" {
-		b.handleMessage(ctx, update.Message)
-		return
+	if update.Message != nil {
+		msg := update.Message
+		// Route text messages (commands or free-text)
+		if msg.Text != "" {
+			b.handleMessage(ctx, msg)
+			return
+		}
+		// Route media messages (photo, document, voice) to chatbot handler
+		if len(msg.Photo) > 0 || msg.Document != nil || msg.Voice != nil {
+			b.handleChatMessage(ctx, msg)
+			return
+		}
 	}
 }
 
-// handleMessage routes text messages to command handlers.
+// handleMessage routes text messages to command handlers or chatbot.
 func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 	text := strings.TrimSpace(msg.Text)
 	if !strings.HasPrefix(text, "/") {
-		return // Ignore non-command messages
+		// Non-command message → route to chatbot handler (if registered)
+		b.handleChatMessage(ctx, msg)
+		return
 	}
 
 	// Parse command and arguments: "/today USD" -> cmd="/today", args="USD"
@@ -796,9 +846,218 @@ func (b *Bot) SetMiddleware(mw *Middleware) {
 	b.middleware = mw
 }
 
+// SetFreeTextHandler registers a handler for non-command (chatbot) messages.
+// If not set, non-command messages are silently ignored (backward compatible).
+func (b *Bot) SetFreeTextHandler(handler FreeTextHandler) {
+	b.freeTextHandler = handler
+}
+
+// handleChatMessage processes a non-command message via the chatbot handler.
+// Supports text, photo, document, and voice messages.
+// If no handler is registered, the message is silently ignored.
+func (b *Bot) handleChatMessage(ctx context.Context, msg *Message) {
+	if b.freeTextHandler == nil {
+		return // No chatbot configured — silently ignore
+	}
+
+	// Determine text content (Text for text messages, Caption for media)
+	text := strings.TrimSpace(msg.Text)
+	if text == "" {
+		text = strings.TrimSpace(msg.Caption)
+	}
+
+	// Build content blocks for media messages
+	var contentBlocks []ports.ContentBlock
+
+	// Handle photo messages (pick the largest size)
+	if len(msg.Photo) > 0 {
+		largest := msg.Photo[len(msg.Photo)-1] // Telegram sends sizes in ascending order
+		data, mimeType, err := b.downloadFileBase64(ctx, largest.FileID)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to download photo")
+		} else {
+			if mimeType == "" {
+				mimeType = "image/jpeg"
+			}
+			contentBlocks = append(contentBlocks, ports.ContentBlock{
+				Type:      "image",
+				MediaType: mimeType,
+				Data:      data,
+			})
+		}
+	}
+
+	// Handle document uploads
+	if msg.Document != nil {
+		data, mimeType, err := b.downloadFileBase64(ctx, msg.Document.FileID)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to download document")
+		} else {
+			if mimeType == "" {
+				mimeType = msg.Document.MimeType
+			}
+			// Determine block type based on MIME
+			blockType := "document"
+			if strings.HasPrefix(mimeType, "image/") {
+				blockType = "image"
+			}
+			contentBlocks = append(contentBlocks, ports.ContentBlock{
+				Type:      blockType,
+				MediaType: mimeType,
+				Data:      data,
+				FileName:  msg.Document.FileName,
+			})
+		}
+	}
+
+	// Handle voice messages
+	if msg.Voice != nil {
+		// Voice messages aren't directly supported by Claude vision API,
+		// but we note them in the text so the AI can acknowledge
+		if text == "" {
+			text = "[Voice message received — voice transcription not yet supported]"
+		} else {
+			text = text + "\n[Voice message also attached — voice transcription not yet supported]"
+		}
+	}
+
+	// If no text and no usable content blocks, ignore
+	if text == "" && len(contentBlocks) == 0 {
+		return
+	}
+
+	// If we have media, add the text as a content block too
+	if len(contentBlocks) > 0 && text != "" {
+		// Prepend text block before image/document blocks
+		textBlock := ports.ContentBlock{Type: "text", Text: text}
+		contentBlocks = append([]ports.ContentBlock{textBlock}, contentBlocks...)
+	}
+
+	chatID := strconv.FormatInt(msg.Chat.ID, 10)
+	if msg.MessageThreadID != 0 {
+		chatID = fmt.Sprintf("%s:%d", chatID, msg.MessageThreadID)
+	}
+	userID := int64(0)
+	username := ""
+	if msg.From != nil {
+		userID = msg.From.ID
+		username = msg.From.Username
+	}
+
+	// Authorization via middleware (uses synthetic "__chat" command)
+	if userID != 0 && b.middleware != nil {
+		result := b.middleware.Authorize(ctx, userID, username, "__chat")
+		if !result.Allowed {
+			log.Warn().Int64("user_id", userID).Str("reason", result.Reason).Msg("chat message denied by middleware")
+			_, _ = b.SendHTML(ctx, chatID, fmt.Sprintf("\u26d4 %s", result.Reason))
+			return
+		}
+	} else if userID != 0 && !b.isOwner(userID) && !b.userLimiter.Allow(userID) {
+		_, _ = b.SendHTML(ctx, chatID, "\u23f3 Rate limited \u2014 please wait a moment.")
+		return
+	}
+
+	log.Info().Int64("user_id", userID).Str("chat_id", chatID).
+		Int("content_blocks", len(contentBlocks)).Msg("chat message received")
+	if err := b.freeTextHandler(ctx, chatID, userID, username, text, contentBlocks); err != nil {
+		log.Error().Err(err).Int64("user_id", userID).Msg("chat handler error")
+		_, _ = b.SendHTML(ctx, chatID, "Error processing message. Please try again later or use /help.")
+	}
+}
+
 // OwnerID returns the bot owner's user ID.
 func (b *Bot) OwnerID() int64 {
 	return b.ownerID
+}
+
+// ---------------------------------------------------------------------------
+// File Download (for multimodal chatbot support)
+// ---------------------------------------------------------------------------
+
+// telegramFile represents the response from Telegram's getFile API.
+type telegramFile struct {
+	FileID   string `json:"file_id"`
+	FilePath string `json:"file_path"`
+	FileSize int    `json:"file_size,omitempty"`
+}
+
+// getFilePath resolves a Telegram file_id to a downloadable file_path.
+func (b *Bot) getFilePath(ctx context.Context, fileID string) (string, error) {
+	params := map[string]interface{}{
+		"file_id": fileID,
+	}
+	var f telegramFile
+	if err := b.apiCallWithRetry(ctx, "getFile", params, &f); err != nil {
+		return "", fmt.Errorf("getFile: %w", err)
+	}
+	return f.FilePath, nil
+}
+
+// downloadFileBase64 downloads a Telegram file by file_id and returns its base64-encoded data and MIME type.
+// Max file size supported by Telegram Bot API: 20MB.
+func (b *Bot) downloadFileBase64(ctx context.Context, fileID string) (string, string, error) {
+	filePath, err := b.getFilePath(ctx, fileID)
+	if err != nil {
+		return "", "", err
+	}
+
+	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", b.token, filePath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("create download request: %w", err)
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("download file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("download file: status %d", resp.StatusCode)
+	}
+
+	// Limit to 20MB
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+	if err != nil {
+		return "", "", fmt.Errorf("read file: %w", err)
+	}
+
+	// Detect MIME type from Content-Type header or file extension
+	mimeType := resp.Header.Get("Content-Type")
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType = detectMIMEType(filePath)
+	}
+
+	encoded := base64Encode(data)
+	return encoded, mimeType, nil
+}
+
+// detectMIMEType guesses MIME type from file extension.
+func detectMIMEType(path string) string {
+	lower := strings.ToLower(path)
+	switch {
+	case strings.HasSuffix(lower, ".jpg"), strings.HasSuffix(lower, ".jpeg"):
+		return "image/jpeg"
+	case strings.HasSuffix(lower, ".png"):
+		return "image/png"
+	case strings.HasSuffix(lower, ".gif"):
+		return "image/gif"
+	case strings.HasSuffix(lower, ".webp"):
+		return "image/webp"
+	case strings.HasSuffix(lower, ".pdf"):
+		return "application/pdf"
+	case strings.HasSuffix(lower, ".svg"):
+		return "image/svg+xml"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// base64Encode encodes raw bytes to a standard base64 string.
+func base64Encode(data []byte) string {
+	return encbase64.StdEncoding.EncodeToString(data)
 }
 
 // StopRateLimiter stops the legacy per-user rate limiter's background cleanup goroutine.

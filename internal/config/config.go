@@ -46,6 +46,16 @@ type Config struct {
 	PriceFetchInterval  time.Duration // How often to fetch price data
 	PriceHistoryWeeks   int           // How many weeks of price history to bootstrap
 
+	// Claude Chatbot (optional — graceful degradation without)
+	ClaudeEndpoint  string        // Claude API proxy URL
+	ClaudeModel     string        // Model name (default: claude-opus-4-6)
+	ClaudeMaxTokens int           // Max output tokens (default: 4096)
+	ClaudeTimeout   time.Duration // HTTP timeout (default: 120s)
+
+	// Chat history
+	ChatHistoryLimit int           // Max messages per user conversation (default: 50)
+	ChatHistoryTTL   time.Duration // Conversation expiry (default: 7 days)
+
 	// Logging
 	LogLevel string // "debug", "info", "warn", "error"
 }
@@ -78,6 +88,16 @@ func MustLoad() *Config {
 		AIMaxRPM:   getInt("AI_MAX_RPM", 15),
 		AIMaxDaily: getInt("AI_MAX_DAILY", 200),
 
+		// Claude Chatbot
+		ClaudeEndpoint:  getEnv("CLAUDE_ENDPOINT", ""),
+		ClaudeModel:     getEnv("CLAUDE_MODEL", "claude-opus-4-6"),
+		ClaudeMaxTokens: getInt("CLAUDE_MAX_TOKENS", 4096),
+		ClaudeTimeout:   getDuration("CLAUDE_TIMEOUT", 120*time.Second),
+
+		// Chat history
+		ChatHistoryLimit: getInt("CHAT_HISTORY_LIMIT", 50),
+		ChatHistoryTTL:   getDuration("CHAT_HISTORY_TTL", 7*24*time.Hour),
+
 		// Logging
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 
@@ -95,6 +115,11 @@ func MustLoad() *Config {
 // HasGemini returns true if Gemini API key is configured.
 func (c *Config) HasGemini() bool {
 	return c.GeminiAPIKey != ""
+}
+
+// HasClaude returns true if Claude endpoint is configured.
+func (c *Config) HasClaude() bool {
+	return c.ClaudeEndpoint != ""
 }
 
 // HasTwelveData returns true if Twelve Data API key is configured.
@@ -190,6 +215,10 @@ func (c *Config) String() string {
 	if c.HasGemini() {
 		geminiStatus = "CONFIGURED"
 	}
+	claudeStatus := "NOT CONFIGURED"
+	if c.HasClaude() {
+		claudeStatus = "CONFIGURED"
+	}
 	priceStatus := "YAHOO_ONLY"
 	if c.HasTwelveData() && c.HasAlphaVantage() {
 		priceStatus = "FULL"
@@ -199,7 +228,7 @@ func (c *Config) String() string {
 		priceStatus = "ALPHAVANTAGE+YAHOO"
 	}
 	return fmt.Sprintf(
-		"Config{DataDir=%s, COTInterval=%v, Gemini=%s, Price=%s, LogLevel=%s}",
-		c.DataDir, c.COTFetchInterval, geminiStatus, priceStatus, c.LogLevel,
+		"Config{DataDir=%s, COTInterval=%v, Gemini=%s, Claude=%s, Price=%s, LogLevel=%s}",
+		c.DataDir, c.COTFetchInterval, geminiStatus, claudeStatus, priceStatus, c.LogLevel,
 	)
 }

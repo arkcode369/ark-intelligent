@@ -464,3 +464,26 @@ func FormatUserList(users []*domain.UserProfile) string {
 func todayWIB() string {
 	return timeutil.NowWIB().Format("2006-01-02")
 }
+
+// GetUserProfile retrieves the user profile for the given user ID.
+// Returns nil if the user doesn't exist or on error.
+func (m *Middleware) GetUserProfile(ctx context.Context, userID int64) *domain.UserProfile {
+	if userID == 0 {
+		return nil
+	}
+
+	// Owner always gets RoleOwner
+	if m.ownerID != 0 && userID == m.ownerID {
+		profile, err := m.userRepo.GetUser(ctx, userID)
+		if err != nil || profile == nil {
+			return &domain.UserProfile{UserID: userID, Role: domain.RoleOwner}
+		}
+		return profile
+	}
+
+	profile, err := m.userRepo.GetUser(ctx, userID)
+	if err != nil || profile == nil {
+		return nil
+	}
+	return profile
+}

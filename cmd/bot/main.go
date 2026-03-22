@@ -136,6 +136,37 @@ func main() {
 	}
 
 	// -----------------------------------------------------------------------
+	// 5b. Claude chatbot layer (optional — graceful degradation)
+	// -----------------------------------------------------------------------
+	var chatService *aisvc.ChatService
+	var geminiForFallback *aisvc.GeminiClient
+
+	if cfg.HasClaude() {
+		claudeClient := aisvc.NewClaudeClient(cfg.ClaudeEndpoint, cfg.ClaudeTimeout, cfg.ClaudeMaxTokens)
+		if cfg.ClaudeModel != "" {
+			claudeClient.SetModel(cfg.ClaudeModel)
+		}
+		convRepo := storage.NewConversationRepo(db, cfg.ChatHistoryLimit, cfg.ChatHistoryTTL)
+		toolConfig := aisvc.NewToolConfig()
+		contextBuilder := aisvc.NewContextBuilder(cotRepo, newsRepo, priceRepo)
+
+		// Reuse existing Gemini client as fallback (if available)
+		if cfg.HasGemini() {
+			// Create a separate Gemini instance for chat fallback
+			geminiForFallback, err = aisvc.NewGeminiClient(ctx, cfg.GeminiAPIKey, cfg.AIMaxRPM, cfg.AIMaxDaily)
+			if err != nil {
+				log.Warn().Err(err).Msg("Gemini fallback init failed — Claude-only mode")
+				geminiForFallback = nil
+			}
+		}
+
+		chatService = aisvc.NewChatService(claudeClient, geminiForFallback, convRepo, contextBuilder, toolConfig)
+		log.Info().Str("endpoint", cfg.ClaudeEndpoint).Msg("Claude chatbot initialized")
+	} else {
+		log.Info().Msg("No CLAUDE_ENDPOINT — chatbot mode disabled")
+	}
+
+	// -----------------------------------------------------------------------
 	// 6. Service layer
 	// -----------------------------------------------------------------------
 
@@ -205,7 +236,7 @@ func main() {
 	// Handler is wired after newsSched so it can receive the surprise accumulator.
 	// newsSched implements SurpriseProvider via GetSurpriseSigma — enables full
 	// 3-source conviction scoring (COT + FRED + Calendar) in /rank and /cot detail.
-	_ = tgbot.NewHandler(
+	handler := tgbot.NewHandler(
 		bot,
 		eventRepo,
 		cotRepo,
@@ -218,7 +249,14 @@ func main() {
 		authMiddleware, // User management middleware
 		priceRepo,      // Price data for backtest/context (nil-safe)
 		signalRepo,     // Signal persistence for backtest (nil-safe)
+		chatService,    // Claude chatbot service (nil-safe)
 	)
+
+	// Register free-text handler for chatbot mode
+	if chatService != nil {
+		bot.SetFreeTextHandler(handler.HandleFreeText)
+		log.Info().Msg("Free-text chatbot handler registered")
+	}
 
 	log.Info().Msg("Telegram handler registered")
 
@@ -316,10 +354,12 @@ func main() {
 				"🦅 <b>ARK Intelligence Online</b>\n"+
 					"<i>Systems synchronized</i>\n\n"+
 					"<code>AI Engine :</code> %s\n"+
+					"<code>Claude    :</code> %s\n"+
 					"<code>Calendar  :</code> MQL5 Economic Calendar\n"+
 					"<code>COT Data  :</code> CFTC Socrata\n\n"+
-					"Type /help for commands",
+					"Type /help for commands • Send any message to chat",
 				aiStatus(aiAnalyzer),
+				claudeStatus(chatService),
 			)
 			if _, err := bot.SendHTML(ctx, cfg.ChatID, startupMsg); err != nil {
 				log.Error().Err(err).Msg("Failed to send startup notification")
@@ -381,6 +421,14 @@ func main() {
 func aiStatus(ai ports.AIAnalyzer) string {
 	if ai != nil && ai.IsAvailable() {
 		return "Active"
+	}
+	return "Offline"
+}
+
+// claudeStatus returns a human-readable Claude chatbot status string.
+func claudeStatus(cs *aisvc.ChatService) string {
+	if cs != nil {
+		return "Active (chatbot enabled)"
 	}
 	return "Offline"
 }

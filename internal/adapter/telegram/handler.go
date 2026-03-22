@@ -10,6 +10,7 @@ import (
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
+	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
 	"github.com/arkcode369/ark-intelligent/internal/service/cot"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
@@ -56,10 +57,14 @@ type Handler struct {
 
 	// Authorization middleware for tiered access control.
 	middleware *Middleware
+
+	// chatService handles free-text (chatbot) messages via Claude.
+	// May be nil — chatbot mode disabled if Claude endpoint not configured.
+	chatService *aisvc.ChatService
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
-// newsScheduler may be nil; all callers guard with nil checks before use.
+// newsScheduler and chatService may be nil; all callers guard with nil checks before use.
 func NewHandler(
 	bot *Bot,
 	eventRepo ports.EventRepository,
@@ -73,6 +78,7 @@ func NewHandler(
 	middleware *Middleware,
 	priceRepo ports.PriceRepository,
 	signalRepo ports.SignalRepository,
+	chatService *aisvc.ChatService,
 ) *Handler {
 	h := &Handler{
 		bot:           bot,
@@ -90,6 +96,7 @@ func NewHandler(
 		middleware:    middleware,
 		priceRepo:     priceRepo,
 		signalRepo:    signalRepo,
+		chatService:   chatService,
 	}
 
 	// Register all commands
@@ -109,6 +116,9 @@ func NewHandler(
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
 
+	// Chat history management
+	bot.RegisterCommand("/clear", h.cmdClearChat)
+
 	// Admin commands (access enforced inside handlers)
 	bot.RegisterCommand("/users", h.cmdUsers)
 	bot.RegisterCommand("/setrole", h.cmdSetRole)
@@ -123,7 +133,7 @@ func NewHandler(
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
 
-	log.Info().Int("commands", 17).Int("callbacks", 6).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 18).Int("callbacks", 6).Msg("registered commands and callback prefixes")
 	return h
 }
 
@@ -1446,4 +1456,101 @@ func (h *Handler) notifyOwnerDebug(ctx context.Context, html string) {
 	go func() {
 		_, _ = h.bot.SendHTML(ctx, fmt.Sprintf("%d", ownerID), html)
 	}()
+}
+
+// ---------------------------------------------------------------------------
+// Chatbot — Free-text message handling via Claude
+// ---------------------------------------------------------------------------
+
+// HandleFreeText processes non-command messages through the Claude chatbot pipeline.
+// This is registered as the Bot's FreeTextHandler during wiring.
+func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int64, username string, text string, contentBlocks []ports.ContentBlock) error {
+	if h.chatService == nil {
+		// No chatbot configured — send a helpful hint
+		_, err := h.bot.SendHTML(ctx, chatID,
+			"I only respond to commands for now. Type /help for available commands.")
+		return err
+	}
+
+	// Check AI quota via middleware
+	if h.middleware != nil {
+		allowed, reason := h.middleware.CheckAIQuota(ctx, userID)
+		if !allowed {
+			_, err := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("\u26d4 %s", reason))
+			return err
+		}
+	}
+
+	// Check per-user chat cooldown
+	if !h.checkChatCooldown(userID) {
+		_, err := h.bot.SendHTML(ctx, chatID,
+			"\u23f3 Please wait a moment before sending another message.")
+		return err
+	}
+
+	// Send "thinking" indicator
+	thinkMsgID, _ := h.bot.SendMessage(ctx, chatID, "\u2699\ufe0f Thinking...")
+
+	// Get user role for tool resolution
+	role := domain.RoleFree
+	if h.middleware != nil {
+		profile := h.middleware.GetUserProfile(ctx, userID)
+		if profile != nil {
+			role = profile.Role
+		}
+	}
+
+	// Call chat service
+	response, err := h.chatService.HandleMessage(ctx, userID, text, role, contentBlocks)
+
+	// Delete "thinking" indicator
+	if thinkMsgID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, thinkMsgID)
+	}
+
+	if err != nil {
+		log.Error().Err(err).Int64("user_id", userID).Msg("chat service error")
+		_, sendErr := h.bot.SendHTML(ctx, chatID,
+			"Error processing your message. Please try again later or use /help.")
+		return sendErr
+	}
+
+	// Send response (Claude follows HTML constraints via system prompt)
+	_, err = h.bot.SendHTML(ctx, chatID, response)
+	return err
+}
+
+// checkChatCooldown returns true if the user is allowed to send a chat message (cooldown elapsed).
+// Updates the cooldown timestamp if allowed.
+func (h *Handler) checkChatCooldown(userID int64) bool {
+	h.aiCooldownMu.Lock()
+	defer h.aiCooldownMu.Unlock()
+
+	now := time.Now()
+	if last, ok := h.aiCooldown[userID]; ok {
+		// Use a 5-second cooldown for chat messages
+		if now.Sub(last) < 5*time.Second {
+			return false
+		}
+	}
+	h.aiCooldown[userID] = now
+	return true
+}
+
+// cmdClearChat handles the /clear command to wipe conversation history.
+func (h *Handler) cmdClearChat(ctx context.Context, chatID string, userID int64, _ string) error {
+	if h.chatService == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "Chat mode is not enabled.")
+		return err
+	}
+
+	if err := h.chatService.ClearHistory(ctx, userID); err != nil {
+		log.Error().Err(err).Int64("user_id", userID).Msg("clear chat history failed")
+		_, sendErr := h.bot.SendHTML(ctx, chatID, "Failed to clear chat history. Please try again.")
+		return sendErr
+	}
+
+	_, err := h.bot.SendHTML(ctx, chatID,
+		"\u2705 Chat history cleared. Starting fresh conversation.")
+	return err
 }
