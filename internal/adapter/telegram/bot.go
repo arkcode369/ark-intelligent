@@ -855,9 +855,18 @@ func (b *Bot) SetFreeTextHandler(handler FreeTextHandler) {
 // handleChatMessage processes a non-command message via the chatbot handler.
 // Supports text, photo, document, and voice messages.
 // If no handler is registered, the message is silently ignored.
+// Only active in private chats — group messages are ignored to prevent
+// unintended Claude API costs and noise.
 func (b *Bot) handleChatMessage(ctx context.Context, msg *Message) {
 	if b.freeTextHandler == nil {
 		return // No chatbot configured — silently ignore
+	}
+
+	// Only respond to free-text in private chats.
+	// In groups/supergroups, non-command messages are silently ignored to
+	// avoid triggering Claude API calls on every group message.
+	if msg.Chat.Type != "private" {
+		return
 	}
 
 	// Determine text content (Text for text messages, Caption for media)

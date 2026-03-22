@@ -1520,8 +1520,12 @@ func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int6
 		return sendErr
 	}
 
-	// Send response (Claude follows HTML constraints via system prompt)
-	_, err = h.bot.SendHTML(ctx, chatID, response)
+	// Send response (Claude follows HTML constraints via system prompt).
+	// Fall back to plain text if Telegram rejects the HTML (malformed tags, etc.)
+	if _, err = h.bot.SendHTML(ctx, chatID, response); err != nil {
+		log.Warn().Err(err).Int64("user_id", userID).Msg("SendHTML failed for chat response, falling back to plain text")
+		_, err = h.bot.SendMessage(ctx, chatID, response)
+	}
 	return err
 }
 
