@@ -6,7 +6,7 @@ type ClaudeModelID string
 const (
 	ClaudeModelOpus4   ClaudeModelID = "claude-opus-4-6"
 	ClaudeModelSonnet4 ClaudeModelID = "claude-sonnet-4-6"
-	ClaudeModelHaiku4  ClaudeModelID = "claude-haiku-4-6"
+	ClaudeModelHaiku4  ClaudeModelID = "claude-haiku-4-5-20251001"
 )
 
 // ValidClaudeModels returns all supported Claude model IDs.
