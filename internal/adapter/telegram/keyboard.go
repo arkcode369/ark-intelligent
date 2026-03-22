@@ -318,8 +318,8 @@ func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyb
 		CallbackData: "set:cur_reset",
 	}})
 
-	// Row 8: Chat Model selector
-	modelLabel := func(key, label string) string {
+	// Row 8: AI Provider selector (Claude vs Gemini)
+	providerLabel := func(key, label string) string {
 		current := prefs.PreferredModel
 		if current == "" {
 			current = "claude" // default
@@ -330,11 +330,30 @@ func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyb
 		return label
 	}
 	rows = append(rows, []ports.InlineButton{
-		{Text: modelLabel("claude", "🤖 Claude"), CallbackData: "set:model_claude"},
-		{Text: modelLabel("gemini", "✨ Gemini"), CallbackData: "set:model_gemini"},
+		{Text: providerLabel("claude", "🤖 Claude"), CallbackData: "set:model_claude"},
+		{Text: providerLabel("gemini", "✨ Gemini"), CallbackData: "set:model_gemini"},
 	})
 
-	// Row 9: View Changelog
+	// Rows 9-10: Claude model variant selector (shown for all users; only relevant when Claude is active)
+	claudeModelBtn := func(m domain.ClaudeModelID) ports.InlineButton {
+		label := "   " + domain.ClaudeModelLabel(m)
+		if prefs.ClaudeModel == m {
+			label = "✅ " + domain.ClaudeModelLabel(m)
+		}
+		return ports.InlineButton{
+			Text:         label,
+			CallbackData: "set:claude_model:" + string(m),
+		}
+	}
+	rows = append(rows, []ports.InlineButton{
+		claudeModelBtn(domain.ClaudeModelOpus4),
+		claudeModelBtn(domain.ClaudeModelSonnet4),
+	})
+	rows = append(rows, []ports.InlineButton{
+		claudeModelBtn(domain.ClaudeModelHaiku4),
+	})
+
+	// Row 11: View Changelog
 	rows = append(rows, []ports.InlineButton{{
 		Text:         "📜 View Changelog",
 		CallbackData: "set:changelog_view",

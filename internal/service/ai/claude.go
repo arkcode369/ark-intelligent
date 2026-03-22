@@ -233,16 +233,25 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 		}
 	}
 
+	// Use per-request model override if provided (thread-safe — no shared state mutation).
+	// Falls back to c.model (server default from config/SetModel).
+	effectiveModel := c.model
+	if req.OverrideModel != "" {
+		effectiveModel = req.OverrideModel
+	}
+
 	apiReq := claudeRequest{
-		Model:     c.model,
+		Model:     effectiveModel,
 		MaxTokens: maxTokens,
 		System:    system,
 		Messages:  messages,
 		Tools:     tools,
 	}
 
-	// Enable extended thinking when budget is configured.
-	if c.thinkingBudget > 0 {
+	// Enable extended thinking only for Opus models — Haiku and Sonnet do not
+	// support extended thinking and will return an API error if it is requested.
+	supportsThinking := strings.Contains(effectiveModel, "opus")
+	if c.thinkingBudget > 0 && supportsThinking {
 		apiReq.Thinking = &claudeThinking{
 			Type:         "enabled",
 			BudgetTokens: c.thinkingBudget,

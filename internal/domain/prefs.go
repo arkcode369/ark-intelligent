@@ -1,5 +1,43 @@
 package domain
 
+// ClaudeModelID identifies a specific Claude model variant.
+type ClaudeModelID string
+
+const (
+	ClaudeModelOpus4   ClaudeModelID = "claude-opus-4-5"
+	ClaudeModelSonnet4 ClaudeModelID = "claude-sonnet-4-5"
+	ClaudeModelHaiku4  ClaudeModelID = "claude-haiku-4-5"
+)
+
+// ValidClaudeModels returns all supported Claude model IDs.
+func ValidClaudeModels() []ClaudeModelID {
+	return []ClaudeModelID{ClaudeModelOpus4, ClaudeModelSonnet4, ClaudeModelHaiku4}
+}
+
+// ClaudeModelLabel returns a short display label.
+func ClaudeModelLabel(m ClaudeModelID) string {
+	switch m {
+	case ClaudeModelOpus4:
+		return "Opus 4.5 (Terbaik)"
+	case ClaudeModelSonnet4:
+		return "Sonnet 4.5 (Seimbang)"
+	case ClaudeModelHaiku4:
+		return "Haiku 4.5 (Cepat)"
+	default:
+		return string(m)
+	}
+}
+
+// IsValidClaudeModel returns true if the model ID is supported.
+func IsValidClaudeModel(m ClaudeModelID) bool {
+	for _, v := range ValidClaudeModels() {
+		if v == m {
+			return true
+		}
+	}
+	return false
+}
+
 // UserPrefs stores per-user notification preferences.
 type UserPrefs struct {
 	AlertMinutes     []int    `json:"alert_minutes"`      // Minutes before event to alert (e.g., [60, 15, 5])
@@ -10,8 +48,12 @@ type UserPrefs struct {
 	CurrencyFilter   []string `json:"currency_filter"`    // If set, only alert for these currencies
 	Language         string   `json:"language"`           // AI output language ("id" or "en")
 
-	// Chat model preference: "claude" (default), "gemini", or "" (= claude)
+	// PreferredModel: "claude" (default), "gemini", or "" (= claude)
 	PreferredModel string `json:"preferred_model,omitempty"`
+
+	// ClaudeModel: specific Claude model variant (empty = server default from CLAUDE_MODEL env)
+	// Only applies when PreferredModel is "claude" or empty.
+	ClaudeModel ClaudeModelID `json:"claude_model,omitempty"`
 
 	// Broadcast & UI state
 	ChatID         string `json:"chat_id"`         // Telegram chat ID (set on /start, used for push alerts)

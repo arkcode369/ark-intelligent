@@ -64,8 +64,10 @@ func (cs *ChatService) SetOwnerNotify(fn OwnerNotifyFunc) {
 // contentBlocks is non-nil when the message contains media (images, documents).
 // onProgress is an optional callback for reporting status updates during tool round-trips.
 // preferredModel is the user's model preference: "gemini" uses Gemini as primary, anything else uses Claude.
+// claudeModelOverride (optional variadic) specifies the exact Claude model variant (e.g. "claude-sonnet-4-5").
+// Thread-safe — passed via ChatRequest.OverrideModel, not shared state mutation.
 // Returns the assistant's response text.
-func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text string, role domain.UserRole, contentBlocks []ports.ContentBlock, onProgress func(string), preferredModel string) (string, error) {
+func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text string, role domain.UserRole, contentBlocks []ports.ContentBlock, onProgress func(string), preferredModel string, claudeModelOverride ...string) (string, error) {
 	// 1. Load conversation history (last 20 messages for context window)
 	history, err := cs.convRepo.GetHistory(ctx, userID, 20)
 	if err != nil {
@@ -110,21 +112,29 @@ func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text str
 	// 4. Resolve tools for user's tier
 	tools := cs.toolConfig.ToolsForRole(role)
 
+	// Resolve optional Claude model variant override.
+	var modelOverride string
+	if len(claudeModelOverride) > 0 && claudeModelOverride[0] != "" {
+		modelOverride = claudeModelOverride[0]
+	}
+
 	// 5. Route to preferred model
 	if preferredModel == "gemini" {
 		return cs.handleGeminiPrimary(ctx, userID, systemPrompt, effectiveText, onProgress)
 	}
-	return cs.handleClaudePrimary(ctx, userID, messages, systemPrompt, tools, effectiveText, onProgress)
+	return cs.handleClaudePrimary(ctx, userID, messages, systemPrompt, tools, effectiveText, onProgress, modelOverride)
 }
 
 // handleClaudePrimary tries Claude first, then Gemini fallback, then template.
-func (cs *ChatService) handleClaudePrimary(ctx context.Context, userID int64, messages []ports.ChatMessage, systemPrompt string, tools []ports.ServerTool, effectiveText string, onProgress func(string)) (string, error) {
+// modelOverride, if non-empty, overrides the server-default Claude model for this request only.
+func (cs *ChatService) handleClaudePrimary(ctx context.Context, userID int64, messages []ports.ChatMessage, systemPrompt string, tools []ports.ServerTool, effectiveText string, onProgress func(string), modelOverride string) (string, error) {
 	req := ports.ChatRequest{
-		UserID:       userID,
-		Messages:     messages,
-		SystemPrompt: systemPrompt,
-		Tools:        tools,
-		OnProgress:   onProgress,
+		UserID:        userID,
+		Messages:      messages,
+		OverrideModel: modelOverride,
+		SystemPrompt:  systemPrompt,
+		Tools:         tools,
+		OnProgress:    onProgress,
 	}
 
 	resp, err := cs.claude.Chat(ctx, req)

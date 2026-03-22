@@ -59,6 +59,11 @@ type ChatRequest struct {
 	Tools        []ServerTool
 	MaxTokens    int
 
+	// OverrideModel, if non-empty, overrides the server-configured Claude model for this
+	// single request only. Thread-safe — does not mutate shared ClaudeClient state.
+	// Example: "claude-sonnet-4-5", "claude-haiku-4-5"
+	OverrideModel string
+
 	// OnProgress is an optional callback invoked during long-running operations
 	// (tool round-trips, web search, etc.) to report status to the user.
 	// The status string is a short human-readable description (e.g. "Reading memory...").

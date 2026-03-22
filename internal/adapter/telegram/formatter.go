@@ -505,6 +505,15 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 	}
 	b.WriteString(fmt.Sprintf("<code>[AI] Chat Model    : %s</code>\n", modelDisplay))
 
+	// Show active Claude model variant (only when using Claude)
+	if prefs.PreferredModel != "gemini" {
+		claudeVariant := "Server Default"
+		if prefs.ClaudeModel != "" {
+			claudeVariant = domain.ClaudeModelLabel(prefs.ClaudeModel)
+		}
+		b.WriteString(fmt.Sprintf("<code>[AI] Claude Variant : %s</code>\n", claudeVariant))
+	}
+
 	// Alert minutes display
 	if len(prefs.AlertMinutes) > 0 {
 		parts := make([]string, len(prefs.AlertMinutes))

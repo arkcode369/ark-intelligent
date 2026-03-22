@@ -651,6 +651,18 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 				}
 				prefs.CurrencyFilter = newFilter
 			}
+		} else if strings.HasPrefix(action, "claude_model:") {
+			// Handle set:claude_model:claude-opus-4-5 etc (specific Claude variant)
+			modelID := domain.ClaudeModelID(strings.TrimPrefix(action, "claude_model:"))
+			if domain.IsValidClaudeModel(modelID) {
+				prefs.ClaudeModel = modelID
+				// Automatically switch provider to Claude when a Claude model is selected
+				prefs.PreferredModel = "claude"
+				log.Info().Str("model", string(modelID)).Int64("user_id", userID).Msg("user selected Claude model variant")
+			} else {
+				log.Warn().Str("model", string(modelID)).Msg("unknown Claude model ID in settings callback")
+				return nil
+			}
 		} else {
 			log.Warn().Str("action", action).Msg("unknown settings action")
 			return nil
@@ -1520,14 +1532,19 @@ func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int6
 			role = profile.Role
 		}
 	}
+	var claudeModelOverride string
 	if prefs, err := h.prefsRepo.Get(ctx, userID); err == nil {
 		preferredModel = prefs.PreferredModel
+		// Pass specific Claude model variant if user selected one
+		if prefs.ClaudeModel != "" && domain.IsValidClaudeModel(prefs.ClaudeModel) {
+			claudeModelOverride = string(prefs.ClaudeModel)
+		}
 	}
 
 	// Call chat service. No blanket timeout — the Claude HTTP client already has
 	// a per-request timeout (default 120s) that handles hung requests.
 	// As long as Claude keeps responding (tool round-trips), let it work freely.
-	response, err := h.chatService.HandleMessage(ctx, userID, text, role, contentBlocks, onProgress, preferredModel)
+	response, err := h.chatService.HandleMessage(ctx, userID, text, role, contentBlocks, onProgress, preferredModel, claudeModelOverride)
 
 	// Delete "thinking" indicator
 	if thinkMsgID > 0 {
