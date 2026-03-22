@@ -269,21 +269,22 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 		}
 
 		// Inner tool round-trip loop: Claude may request multiple tool calls
-		// before producing a final text response (e.g. memory: view → create → done).
-		// Limited to 3 round-trips to stay well within the handler's 120s timeout.
-		const maxToolRoundTrips = 3
-		for toolRound := 0; toolRound < maxToolRoundTrips+1; toolRound++ {
+		// before producing a final text response. No strict round-trip limit —
+		// we let the model work freely but guard against context deadline.
+		// The soft cap (10) is only a safety net against infinite loops.
+		const maxToolRoundTrips = 10
+		for toolRound := 0; toolRound < maxToolRoundTrips; toolRound++ {
 			// Guard: check remaining context time before making a request.
-			// Each Claude round-trip can take 10-30s; abort if insufficient time remains.
+			// Each Claude round-trip can take 5-30s; need enough headroom.
 			if deadline, ok := ctx.Deadline(); ok {
 				remaining := time.Until(deadline)
-				if remaining < 15*time.Second {
+				if remaining < 10*time.Second {
 					claudeLog.Warn().
 						Dur("remaining", remaining).
 						Int("tool_round", toolRound).
 						Msg("insufficient time for another Claude request, aborting")
 					lastErr = fmt.Errorf("claude: context deadline too close (%s remaining) after %d tool rounds", remaining, toolRound)
-					break // break inner, try outer retry (which will also likely fail)
+					break
 				}
 			}
 
@@ -324,28 +325,16 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 					return nil, fmt.Errorf("claude requested unsupported client-side tool execution")
 				}
 
-				if toolRound >= maxToolRoundTrips {
-					claudeLog.Warn().Int("rounds", toolRound).Msg("tool round-trip limit reached, extracting partial text")
-					// Try to extract any text Claude produced alongside tool_use
-					text, toolsUsed := extractClaudeContent(resp)
-					if text != "" {
-						return &ports.ChatResponse{
-							Content:             text,
-							ToolsUsed:           toolsUsed,
-							InputTokens:         totalInput,
-							OutputTokens:        totalOutput,
-							CacheCreationTokens: totalCacheCreate,
-							CacheReadTokens:     totalCacheRead,
-						}, nil
-					}
-					lastErr = fmt.Errorf("claude tool loop exceeded %d round-trips with no text", maxToolRoundTrips)
-					break // break inner, retry outer
-				}
-
 				// Process tool_use blocks and build tool_result responses
-				toolResults := c.processToolUse(ctx, req.UserID, resp.Content)
+				toolResults, toolNames := c.processToolUse(ctx, req.UserID, resp.Content)
 				if len(toolResults) == 0 {
 					return nil, fmt.Errorf("claude returned tool_use but no tool calls found")
+				}
+
+				// Report progress to user (if callback is set)
+				if req.OnProgress != nil {
+					status := toolProgressStatus(toolNames, toolRound+1)
+					req.OnProgress(status)
 				}
 
 				// Append assistant message (with tool_use) and user message (with tool_results)
@@ -357,6 +346,7 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 				claudeLog.Info().
 					Int("round", toolRound+1).
 					Int("tool_calls", len(toolResults)).
+					Strs("tools", toolNames).
 					Msg("tool round-trip")
 
 				continue // next tool round
@@ -400,9 +390,10 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 }
 
 // processToolUse extracts tool_use blocks from the response and executes them,
-// returning tool_result content blocks for the next request.
-func (c *ClaudeClient) processToolUse(ctx context.Context, userID int64, content []claudeContentBlock) []claudeContentBlock {
+// returning tool_result content blocks for the next request, plus the tool names used.
+func (c *ClaudeClient) processToolUse(ctx context.Context, userID int64, content []claudeContentBlock) ([]claudeContentBlock, []string) {
 	var results []claudeContentBlock
+	var names []string
 
 	for _, block := range content {
 		if block.Type != "tool_use" || block.ID == "" {
@@ -421,9 +412,10 @@ func (c *ClaudeClient) processToolUse(ctx context.Context, userID int64, content
 			ToolUseID: block.ID,
 			Content:   result,
 		})
+		names = append(names, block.Name)
 	}
 
-	return results
+	return results, names
 }
 
 // IsAvailable returns true if the client is configured.
@@ -553,6 +545,39 @@ func deriveToolName(toolType string) string {
 		}
 	}
 	return toolType
+}
+
+// toolProgressStatus generates a user-friendly status message for tool round-trips.
+// Shows what the model is actively doing so the user isn't staring at "Thinking...".
+func toolProgressStatus(toolNames []string, round int) string {
+	if len(toolNames) == 0 {
+		return "Working..."
+	}
+
+	// Map tool names to user-friendly descriptions
+	descriptions := make([]string, 0, len(toolNames))
+	for _, name := range toolNames {
+		switch name {
+		case "memory":
+			descriptions = append(descriptions, "updating memory")
+		case "web_search":
+			descriptions = append(descriptions, "searching the web")
+		case "web_fetch":
+			descriptions = append(descriptions, "reading a webpage")
+		case "code_execution":
+			descriptions = append(descriptions, "running code")
+		default:
+			descriptions = append(descriptions, "using "+name)
+		}
+	}
+
+	status := strings.Join(descriptions, ", ")
+	// Capitalize first letter
+	if len(status) > 0 {
+		status = strings.ToUpper(status[:1]) + status[1:]
+	}
+
+	return fmt.Sprintf("\u2699\ufe0f %s... (step %d)", status, round)
 }
 
 // isClaudeTransient checks if an error is worth retrying.

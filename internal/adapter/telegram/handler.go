@@ -1498,6 +1498,15 @@ func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int6
 	// Send "thinking" indicator
 	thinkMsgID, _ := h.bot.SendMessage(ctx, chatID, "\u2699\ufe0f Thinking...")
 
+	// Progress callback: updates the "thinking" message with tool activity status.
+	// This lets the user see what the model is doing (e.g. "Searching the web...")
+	// instead of staring at a static "Thinking..." message.
+	onProgress := func(status string) {
+		if thinkMsgID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, thinkMsgID, status)
+		}
+	}
+
 	// Get user role for tool resolution
 	role := domain.RoleFree
 	if h.middleware != nil {
@@ -1508,11 +1517,11 @@ func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int6
 	}
 
 	// Call chat service with a per-request timeout to prevent unbounded waits.
-	// Extended thinking + server tools (web search, code execution) can take
-	// significantly longer than text-only responses. Allow 120s for full pipeline.
-	chatCtx, chatCancel := context.WithTimeout(ctx, 120*time.Second)
+	// Extended thinking + tool round-trips (memory, web search, code execution)
+	// can take multiple rounds. Allow 5 minutes for complex multi-tool pipelines.
+	chatCtx, chatCancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer chatCancel()
-	response, err := h.chatService.HandleMessage(chatCtx, userID, text, role, contentBlocks)
+	response, err := h.chatService.HandleMessage(chatCtx, userID, text, role, contentBlocks, onProgress)
 
 	// Delete "thinking" indicator
 	if thinkMsgID > 0 {

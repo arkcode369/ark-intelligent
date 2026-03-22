@@ -62,8 +62,9 @@ func (cs *ChatService) SetOwnerNotify(fn OwnerNotifyFunc) {
 
 // HandleMessage processes a free-text user message through the AI pipeline.
 // contentBlocks is non-nil when the message contains media (images, documents).
+// onProgress is an optional callback for reporting status updates during tool round-trips.
 // Returns the assistant's response text.
-func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text string, role domain.UserRole, contentBlocks []ports.ContentBlock) (string, error) {
+func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text string, role domain.UserRole, contentBlocks []ports.ContentBlock, onProgress func(string)) (string, error) {
 	// 1. Load conversation history (last 20 messages for context window)
 	history, err := cs.convRepo.GetHistory(ctx, userID, 20)
 	if err != nil {
@@ -114,6 +115,7 @@ func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text str
 		Messages:     messages,
 		SystemPrompt: systemPrompt,
 		Tools:        tools,
+		OnProgress:   onProgress,
 	}
 
 	resp, err := cs.claude.Chat(ctx, req)

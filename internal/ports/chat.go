@@ -58,6 +58,12 @@ type ChatRequest struct {
 	SystemPrompt string
 	Tools        []ServerTool
 	MaxTokens    int
+
+	// OnProgress is an optional callback invoked during long-running operations
+	// (tool round-trips, web search, etc.) to report status to the user.
+	// The status string is a short human-readable description (e.g. "Reading memory...").
+	// May be nil — callers must check before invoking.
+	OnProgress func(status string)
 }
 
 // ChatResponse holds the output from a chat engine call.
