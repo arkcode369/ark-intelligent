@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"strings"
@@ -1486,8 +1487,8 @@ func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int6
 		}
 	}
 
-	// Check per-user chat cooldown
-	if !h.checkChatCooldown(userID) {
+	// Check per-user chat cooldown (owner bypassed — unlimited access)
+	if !h.bot.isOwner(userID) && !h.checkChatCooldown(userID) {
 		_, err := h.bot.SendHTML(ctx, chatID,
 			"\u23f3 Please wait a moment before sending another message.")
 		return err
@@ -1505,16 +1506,38 @@ func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int6
 		}
 	}
 
-	// Call chat service
-	response, err := h.chatService.HandleMessage(ctx, userID, text, role, contentBlocks)
+	// Call chat service with a per-request timeout to prevent unbounded waits.
+	// Claude retry loop can take up to 6 minutes (3 retries × 120s timeout);
+	// cap total time at 90 seconds for acceptable UX.
+	chatCtx, chatCancel := context.WithTimeout(ctx, 90*time.Second)
+	defer chatCancel()
+	response, err := h.chatService.HandleMessage(chatCtx, userID, text, role, contentBlocks)
 
 	// Delete "thinking" indicator
 	if thinkMsgID > 0 {
 		_ = h.bot.DeleteMessage(ctx, chatID, thinkMsgID)
 	}
 
+	// Handle template fallback: still send the response but refund the AI quota
+	// since no real AI call succeeded.
+	if errors.Is(err, aisvc.ErrAIFallback) {
+		if h.middleware != nil {
+			h.middleware.RefundAIQuota(ctx, userID)
+		}
+		// Send the template fallback content (err contains ErrAIFallback but response is valid)
+		if _, sendErr := h.bot.SendHTML(ctx, chatID, response); sendErr != nil {
+			_, sendErr = h.bot.SendMessage(ctx, chatID, response)
+			return sendErr
+		}
+		return nil
+	}
+
 	if err != nil {
 		log.Error().Err(err).Int64("user_id", userID).Msg("chat service error")
+		// Refund AI quota on total failure (context timeout, etc.)
+		if h.middleware != nil {
+			h.middleware.RefundAIQuota(ctx, userID)
+		}
 		_, sendErr := h.bot.SendHTML(ctx, chatID,
 			"Error processing your message. Please try again later or use /help.")
 		return sendErr

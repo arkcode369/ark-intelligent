@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,11 @@ import (
 )
 
 var chatLog = logger.Component("chat-service")
+
+// ErrAIFallback is returned when all AI services fail and a template fallback
+// is used. The caller should still display the returned content, but can use
+// this error to refund consumed AI quota since no real AI call succeeded.
+var ErrAIFallback = errors.New("all AI services unavailable, using template fallback")
 
 // ChatService orchestrates the chatbot pipeline:
 // 1. Load conversation history
@@ -147,7 +153,7 @@ func (cs *ChatService) HandleMessage(ctx context.Context, userID int64, text str
 
 	// 7. Template fallback (last resort)
 	chatLog.Error().Int64("user_id", userID).Msg("all AI services unavailable — using template fallback")
-	return templateFallback(), nil
+	return templateFallback(), ErrAIFallback
 }
 
 // ClearHistory wipes conversation history for a user.

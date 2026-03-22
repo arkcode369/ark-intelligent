@@ -305,6 +305,27 @@ func (m *Middleware) CheckAIQuota(ctx context.Context, userID int64) (bool, stri
 	return true, ""
 }
 
+// RefundAIQuota decrements the daily AI counter for a user.
+// Used when AI quota was consumed but no real AI call succeeded (e.g., template fallback).
+// Safe to call even if counter is already 0 (no underflow).
+func (m *Middleware) RefundAIQuota(ctx context.Context, userID int64) {
+	if userID == 0 {
+		return
+	}
+	mu := m.getUserMutex(userID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	profile, err := m.userRepo.GetUser(ctx, userID)
+	if err != nil || profile == nil {
+		return
+	}
+	if profile.DailyAICount > 0 {
+		profile.DailyAICount--
+		_ = m.userRepo.UpsertUser(ctx, profile)
+	}
+}
+
 // GetAICooldown returns the AI cooldown duration for the user's tier.
 func (m *Middleware) GetAICooldown(ctx context.Context, userID int64) time.Duration {
 	if userID == 0 || (m.ownerID != 0 && userID == m.ownerID) {
