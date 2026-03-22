@@ -33,11 +33,20 @@ type SignalTypeStats struct {
 //  1. Confidence recalibration — replaces rule-based confidence with historical win rate
 //  2. Signal suppression — drops signal types with confirmed negative EV
 //  3. VIX/risk adjustment — applies risk context multiplier to final confidence
+//
+// Stats are stored at two granularity levels:
+//   - granularStats: keyed by "SIGNAL_TYPE:CURRENCY" (e.g. "SMART_MONEY:EUR")
+//   - typeStats: keyed by "SIGNAL_TYPE" (pooled across all currencies)
+//
+// DetectAll prefers granular stats when sample size is sufficient, falling back
+// to pooled stats. This prevents a signal type that works for EUR from being
+// suppressed because it underperforms on JPY (or vice versa).
 type RecalibratedDetector struct {
-	base       *SignalDetector
-	signalRepo ports.SignalRepository
-	mu         sync.RWMutex // protects typeStats
-	typeStats  map[string]*SignalTypeStats
+	base         *SignalDetector
+	signalRepo   ports.SignalRepository
+	mu           sync.RWMutex // protects typeStats and granularStats
+	typeStats    map[string]*SignalTypeStats // pooled by signal type
+	granularStats map[string]*SignalTypeStats // keyed "TYPE:CURRENCY"
 }
 
 // NewRecalibratedDetector creates a recalibrated detector backed by historical data.
@@ -49,12 +58,14 @@ func NewRecalibratedDetector(signalRepo ports.SignalRepository) *RecalibratedDet
 	}
 }
 
-// LoadTypeStats fetches and caches per-signal-type win rate statistics.
+// LoadTypeStats fetches and caches per-signal-type win rate statistics
+// at two granularity levels: per signal type (pooled) and per type+currency (granular).
 // Call this once before a detection run to avoid repeated DB reads.
 func (rd *RecalibratedDetector) LoadTypeStats(ctx context.Context) error {
 	if rd.signalRepo == nil {
 		rd.mu.Lock()
 		rd.typeStats = nil
+		rd.granularStats = nil
 		rd.mu.Unlock()
 		return nil
 	}
@@ -64,15 +75,30 @@ func (rd *RecalibratedDetector) LoadTypeStats(ctx context.Context) error {
 		return err
 	}
 
-	// Group signals by type
-	grouped := make(map[string][]domain.PersistedSignal)
+	// Group signals by type (pooled) and by type:currency (granular)
+	byType := make(map[string][]domain.PersistedSignal)
+	byTypeCurrency := make(map[string][]domain.PersistedSignal)
 	for _, s := range allSignals {
-		grouped[s.SignalType] = append(grouped[s.SignalType], s)
+		byType[s.SignalType] = append(byType[s.SignalType], s)
+		granularKey := s.SignalType + ":" + s.Currency
+		byTypeCurrency[granularKey] = append(byTypeCurrency[granularKey], s)
 	}
 
-	stats := make(map[string]*SignalTypeStats, len(grouped))
+	pooled := computeStatsMap(byType)
+	granular := computeStatsMap(byTypeCurrency)
 
-	for sigType, signals := range grouped {
+	rd.mu.Lock()
+	rd.typeStats = pooled
+	rd.granularStats = granular
+	rd.mu.Unlock()
+
+	return nil
+}
+
+// computeStatsMap computes SignalTypeStats for each group in the map.
+func computeStatsMap(grouped map[string][]domain.PersistedSignal) map[string]*SignalTypeStats {
+	stats := make(map[string]*SignalTypeStats, len(grouped))
+	for key, signals := range grouped {
 		var wins, evaluated int
 		var sumReturn float64
 
@@ -105,14 +131,9 @@ func (rd *RecalibratedDetector) LoadTypeStats(ctx context.Context) error {
 			}
 		}
 
-		stats[sigType] = st
+		stats[key] = st
 	}
-
-	rd.mu.Lock()
-	rd.typeStats = stats
-	rd.mu.Unlock()
-
-	return nil
+	return stats
 }
 
 // TypeStats returns the stats for a signal type, or nil if no data yet.
@@ -125,15 +146,19 @@ func (rd *RecalibratedDetector) TypeStats(sigType string) *SignalTypeStats {
 	return rd.typeStats[sigType]
 }
 
-// AllTypeStats returns a shallow copy of all loaded type stats.
+// AllTypeStats returns a shallow copy of all loaded type stats (pooled + granular).
+// Granular keys use "TYPE:CURRENCY" format, pooled keys use "TYPE" format.
 func (rd *RecalibratedDetector) AllTypeStats() map[string]*SignalTypeStats {
 	rd.mu.RLock()
 	defer rd.mu.RUnlock()
-	if rd.typeStats == nil {
+	if rd.typeStats == nil && rd.granularStats == nil {
 		return nil
 	}
-	out := make(map[string]*SignalTypeStats, len(rd.typeStats))
+	out := make(map[string]*SignalTypeStats)
 	for k, v := range rd.typeStats {
+		out[k] = v
+	}
+	for k, v := range rd.granularStats {
 		out[k] = v
 	}
 	return out
@@ -141,9 +166,12 @@ func (rd *RecalibratedDetector) AllTypeStats() map[string]*SignalTypeStats {
 
 // DetectAll runs detection, applies recalibration + suppression + VIX filter.
 //
-//   - Suppressed signal types (confirmed negative EV, n >= 10) are dropped entirely.
-//   - Confidence is replaced with historical win rate when n >= 5.
-//   - riskCtx (optional) applies VIX/SPX multiplier to final confidence.
+// Lookup order for each signal:
+//  1. Granular stats ("TYPE:CURRENCY") — used if sample size >= threshold.
+//  2. Pooled stats ("TYPE") — fallback when granular data is insufficient.
+//
+// This means suppression/recalibration is per-currency when data allows,
+// preventing cross-currency contamination of signal quality metrics.
 func (rd *RecalibratedDetector) DetectAll(
 	analyses []domain.COTAnalysis,
 	historyMap map[string][]domain.COTRecord,
@@ -153,7 +181,8 @@ func (rd *RecalibratedDetector) DetectAll(
 	rawSignals := rd.base.DetectAll(analyses, historyMap)
 
 	rd.mu.RLock()
-	localStats := rd.typeStats // safe: map reference under read lock
+	localPooled := rd.typeStats
+	localGranular := rd.granularStats
 	rd.mu.RUnlock()
 
 	result := make([]Signal, 0, len(rawSignals))
@@ -161,14 +190,10 @@ func (rd *RecalibratedDetector) DetectAll(
 	for _, sig := range rawSignals {
 		sigTypeKey := string(sig.Type)
 
-		var stats *SignalTypeStats
-		if localStats != nil {
-			stats = localStats[sigTypeKey]
-		}
+		// Two-tier stats lookup: granular first, then pooled
+		stats := rd.resolveStats(sigTypeKey, sig.Currency, localGranular, localPooled)
 
 		// --- Signal Suppression ---
-		// SMELL-1 fix: removed dead write to sig.Factors before continue.
-		// The signal is dropped entirely, so any factor annotation is never read.
 		if stats != nil && stats.Suppressed {
 			continue
 		}
@@ -179,12 +204,18 @@ func (rd *RecalibratedDetector) DetectAll(
 			// Replace rule-based confidence with empirical win rate
 			sig.Confidence = stats.WinRate
 			// BUG-H1 fix: recalculate Strength to stay consistent with new Confidence.
-			// Strength must reflect empirical quality, not the stale rule-based estimate.
 			sig.Strength = confidenceToStrength(sig.Confidence)
 			// Annotate the change for transparency
 			if math.Abs(originalConf-sig.Confidence) > 5 {
+				label := "📊 Confidence recalibrated"
+				// Indicate whether granular or pooled stats were used
+				granularKey := sigTypeKey + ":" + sig.Currency
+				if localGranular != nil && localGranular[granularKey] != nil &&
+					localGranular[granularKey].SampleSize >= minSampleForRecalibration {
+					label += " [" + sig.Currency + "]"
+				}
 				sig.Factors = append(sig.Factors,
-					"📊 Confidence recalibrated: "+fmtWinRate(originalConf)+" → "+fmtWinRate(sig.Confidence)+
+					label+": "+fmtWinRate(originalConf)+" → "+fmtWinRate(sig.Confidence)+
 						" (n="+strconv.Itoa(stats.SampleSize)+")",
 				)
 			}
@@ -223,12 +254,44 @@ func (rd *RecalibratedDetector) DetectAll(
 	return result
 }
 
-// SuppressedTypes returns the list of signal types currently being suppressed.
+// resolveStats picks the best available stats for a signal.
+// Prefers granular (type:currency) when sample size is sufficient for the
+// operation at hand; otherwise falls back to pooled (type-only) stats.
+func (rd *RecalibratedDetector) resolveStats(
+	sigType, currency string,
+	granular, pooled map[string]*SignalTypeStats,
+) *SignalTypeStats {
+	// Try granular first
+	if granular != nil {
+		key := sigType + ":" + currency
+		if gs := granular[key]; gs != nil {
+			// Use granular if it has enough data for at least recalibration.
+			// For suppression (n>=10), granular is also used when available,
+			// preventing a bad currency from poisoning a good one.
+			if gs.SampleSize >= minSampleForRecalibration {
+				return gs
+			}
+		}
+	}
+	// Fall back to pooled
+	if pooled != nil {
+		return pooled[sigType]
+	}
+	return nil
+}
+
+// SuppressedTypes returns the list of signal types/keys currently being suppressed.
+// Includes both pooled ("THIN_MARKET") and granular ("THIN_MARKET:JPY") entries.
 func (rd *RecalibratedDetector) SuppressedTypes() []string {
 	rd.mu.RLock()
 	defer rd.mu.RUnlock()
 	var out []string
 	for k, v := range rd.typeStats {
+		if v.Suppressed {
+			out = append(out, k)
+		}
+	}
+	for k, v := range rd.granularStats {
 		if v.Suppressed {
 			out = append(out, k)
 		}

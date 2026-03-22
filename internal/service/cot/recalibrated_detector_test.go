@@ -42,9 +42,14 @@ func (m *mockSignalRepo) UpdateSignal(_ context.Context, _ domain.PersistedSigna
 
 // buildEvaluatedSignal builds a signal with a given outcome for testing.
 func buildEvaluatedSignal(sigType, outcome string) domain.PersistedSignal {
+	return buildEvaluatedSignalForCurrency(sigType, outcome, "EUR")
+}
+
+// buildEvaluatedSignalForCurrency builds a signal for a specific currency.
+func buildEvaluatedSignalForCurrency(sigType, outcome, currency string) domain.PersistedSignal {
 	return domain.PersistedSignal{
 		ContractCode: "099741",
-		Currency:     "EUR",
+		Currency:     currency,
 		SignalType:   sigType,
 		Direction:    "BULLISH",
 		Strength:     4,
@@ -299,5 +304,124 @@ func TestSuppressedSignal_DroppedFromOutput(t *testing.T) {
 	}
 	if foundSmartMoney {
 		t.Error("SMART_MONEY should NOT be suppressed (100% win rate)")
+	}
+}
+
+// TestTwoTierStats_GranularPreferredOverPooled verifies that per-currency stats
+// are used when sufficient data exists, preventing cross-currency contamination.
+func TestTwoTierStats_GranularPreferredOverPooled(t *testing.T) {
+	var signals []domain.PersistedSignal
+
+	// EUR SMART_MONEY: 8 wins, 2 losses = 80% (n=10, sufficient for granular)
+	for i := 0; i < 8; i++ {
+		signals = append(signals, buildEvaluatedSignalForCurrency("SMART_MONEY", domain.OutcomeWin, "EUR"))
+	}
+	for i := 0; i < 2; i++ {
+		signals = append(signals, buildEvaluatedSignalForCurrency("SMART_MONEY", domain.OutcomeLoss, "EUR"))
+	}
+
+	// JPY SMART_MONEY: 2 wins, 8 losses = 20% (n=10, sufficient for granular)
+	for i := 0; i < 2; i++ {
+		signals = append(signals, buildEvaluatedSignalForCurrency("SMART_MONEY", domain.OutcomeWin, "JPY"))
+	}
+	for i := 0; i < 8; i++ {
+		signals = append(signals, buildEvaluatedSignalForCurrency("SMART_MONEY", domain.OutcomeLoss, "JPY"))
+	}
+	// Pooled: 10 wins / 20 total = 50% — NOT suppressed at pooled level
+
+	repo := &mockSignalRepo{signals: signals}
+	rd := cot.NewRecalibratedDetector(repo)
+	_ = rd.LoadTypeStats(context.Background())
+
+	// Check that pooled SMART_MONEY is not suppressed (50% >= 50)
+	pooledStats := rd.TypeStats("SMART_MONEY")
+	if pooledStats == nil {
+		t.Fatal("expected pooled stats for SMART_MONEY")
+	}
+	if pooledStats.Suppressed {
+		t.Error("pooled SMART_MONEY should NOT be suppressed (50%)")
+	}
+
+	// Check granular stats exist
+	allStats := rd.AllTypeStats()
+	eurStats := allStats["SMART_MONEY:EUR"]
+	jpyStats := allStats["SMART_MONEY:JPY"]
+
+	if eurStats == nil {
+		t.Fatal("expected granular stats for SMART_MONEY:EUR")
+	}
+	if jpyStats == nil {
+		t.Fatal("expected granular stats for SMART_MONEY:JPY")
+	}
+
+	// EUR should have edge (80%)
+	if !eurStats.HasEdge {
+		t.Errorf("EUR SMART_MONEY should have edge, win rate=%.1f%%", eurStats.WinRate)
+	}
+	if eurStats.Suppressed {
+		t.Error("EUR SMART_MONEY should NOT be suppressed")
+	}
+
+	// JPY should be suppressed (20%)
+	if !jpyStats.Suppressed {
+		t.Errorf("JPY SMART_MONEY should be suppressed, win rate=%.1f%%", jpyStats.WinRate)
+	}
+
+	// SuppressedTypes should include granular key
+	suppressed := rd.SuppressedTypes()
+	foundJPYGranular := false
+	for _, s := range suppressed {
+		if s == "SMART_MONEY:JPY" {
+			foundJPYGranular = true
+		}
+	}
+	if !foundJPYGranular {
+		t.Errorf("expected SMART_MONEY:JPY in suppressed types, got %v", suppressed)
+	}
+}
+
+// TestTwoTierStats_FallbackToPooled verifies that pooled stats are used
+// when granular data is insufficient.
+func TestTwoTierStats_FallbackToPooled(t *testing.T) {
+	var signals []domain.PersistedSignal
+
+	// EUR SMART_MONEY: 3 wins (n=3, below minSampleForRecalibration=5)
+	for i := 0; i < 3; i++ {
+		signals = append(signals, buildEvaluatedSignalForCurrency("SMART_MONEY", domain.OutcomeWin, "EUR"))
+	}
+
+	// JPY SMART_MONEY: 3 wins (n=3, below threshold)
+	for i := 0; i < 3; i++ {
+		signals = append(signals, buildEvaluatedSignalForCurrency("SMART_MONEY", domain.OutcomeWin, "JPY"))
+	}
+
+	// GBP SMART_MONEY: 2 wins (n=2, below threshold)
+	for i := 0; i < 2; i++ {
+		signals = append(signals, buildEvaluatedSignalForCurrency("SMART_MONEY", domain.OutcomeWin, "GBP"))
+	}
+	// Pooled: 8 wins / 8 total = 100% (n=8, >= minSampleForRecalibration)
+
+	repo := &mockSignalRepo{signals: signals}
+	rd := cot.NewRecalibratedDetector(repo)
+	_ = rd.LoadTypeStats(context.Background())
+
+	// Pooled should have 8 signals
+	pooled := rd.TypeStats("SMART_MONEY")
+	if pooled == nil {
+		t.Fatal("expected pooled stats for SMART_MONEY")
+	}
+	if pooled.SampleSize != 8 {
+		t.Errorf("expected pooled sample size 8, got %d", pooled.SampleSize)
+	}
+
+	// Each granular bucket (n=3 or n=2) is below minSampleForRecalibration,
+	// so resolveStats should fall back to pooled stats.
+	allStats := rd.AllTypeStats()
+	eurStats := allStats["SMART_MONEY:EUR"]
+	if eurStats == nil {
+		t.Fatal("expected granular stats for SMART_MONEY:EUR")
+	}
+	if eurStats.SampleSize != 3 {
+		t.Errorf("expected EUR granular sample size 3, got %d", eurStats.SampleSize)
 	}
 }
