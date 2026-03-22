@@ -270,8 +270,23 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 
 		// Inner tool round-trip loop: Claude may request multiple tool calls
 		// before producing a final text response (e.g. memory: view → create → done).
-		const maxToolRoundTrips = 5
-		for toolRound := 0; toolRound <= maxToolRoundTrips; toolRound++ {
+		// Limited to 3 round-trips to stay well within the handler's 120s timeout.
+		const maxToolRoundTrips = 3
+		for toolRound := 0; toolRound < maxToolRoundTrips+1; toolRound++ {
+			// Guard: check remaining context time before making a request.
+			// Each Claude round-trip can take 10-30s; abort if insufficient time remains.
+			if deadline, ok := ctx.Deadline(); ok {
+				remaining := time.Until(deadline)
+				if remaining < 15*time.Second {
+					claudeLog.Warn().
+						Dur("remaining", remaining).
+						Int("tool_round", toolRound).
+						Msg("insufficient time for another Claude request, aborting")
+					lastErr = fmt.Errorf("claude: context deadline too close (%s remaining) after %d tool rounds", remaining, toolRound)
+					break // break inner, try outer retry (which will also likely fail)
+				}
+			}
+
 			resp, err := c.doRequest(ctx, &apiReq)
 			if err != nil {
 				lastErr = fmt.Errorf("claude request (attempt %d): %w", attempt+1, err)
@@ -310,8 +325,21 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 				}
 
 				if toolRound >= maxToolRoundTrips {
-					claudeLog.Warn().Int("rounds", toolRound).Msg("tool round-trip limit reached")
-					return nil, fmt.Errorf("claude tool loop exceeded %d round-trips", maxToolRoundTrips)
+					claudeLog.Warn().Int("rounds", toolRound).Msg("tool round-trip limit reached, extracting partial text")
+					// Try to extract any text Claude produced alongside tool_use
+					text, toolsUsed := extractClaudeContent(resp)
+					if text != "" {
+						return &ports.ChatResponse{
+							Content:             text,
+							ToolsUsed:           toolsUsed,
+							InputTokens:         totalInput,
+							OutputTokens:        totalOutput,
+							CacheCreationTokens: totalCacheCreate,
+							CacheReadTokens:     totalCacheRead,
+						}, nil
+					}
+					lastErr = fmt.Errorf("claude tool loop exceeded %d round-trips with no text", maxToolRoundTrips)
+					break // break inner, retry outer
 				}
 
 				// Process tool_use blocks and build tool_result responses
