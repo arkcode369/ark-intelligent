@@ -4,9 +4,9 @@ package domain
 type ClaudeModelID string
 
 const (
-	ClaudeModelOpus4   ClaudeModelID = "claude-opus-4-5"
-	ClaudeModelSonnet4 ClaudeModelID = "claude-sonnet-4-5"
-	ClaudeModelHaiku4  ClaudeModelID = "claude-haiku-4-5"
+	ClaudeModelOpus4   ClaudeModelID = "claude-opus-4-6"
+	ClaudeModelSonnet4 ClaudeModelID = "claude-sonnet-4-6"
+	ClaudeModelHaiku4  ClaudeModelID = "claude-haiku-4-6"
 )
 
 // ValidClaudeModels returns all supported Claude model IDs.
@@ -18,11 +18,11 @@ func ValidClaudeModels() []ClaudeModelID {
 func ClaudeModelLabel(m ClaudeModelID) string {
 	switch m {
 	case ClaudeModelOpus4:
-		return "Opus 4.5 (Terbaik)"
+		return "Opus 4.6 (Terbaik)"
 	case ClaudeModelSonnet4:
-		return "Sonnet 4.5 (Seimbang)"
+		return "Sonnet 4.6 (Seimbang)"
 	case ClaudeModelHaiku4:
-		return "Haiku 4.5 (Cepat)"
+		return "Haiku 4.6 (Cepat)"
 	default:
 		return string(m)
 	}
