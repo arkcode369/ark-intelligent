@@ -950,9 +950,10 @@ func (b *Bot) handleChatMessage(ctx context.Context, msg *Message) {
 		username = msg.From.Username
 	}
 
-	// Authorization via middleware (uses synthetic "__chat" command)
+	// Authorization via middleware (ban + rate limit only — no command counter increment).
+	// AI quota is checked separately in HandleFreeText via CheckAIQuota.
 	if userID != 0 && b.middleware != nil {
-		result := b.middleware.Authorize(ctx, userID, username, "__chat")
+		result := b.middleware.AuthorizeCallback(ctx, userID)
 		if !result.Allowed {
 			log.Warn().Int64("user_id", userID).Str("reason", result.Reason).Msg("chat message denied by middleware")
 			_, _ = b.SendHTML(ctx, chatID, fmt.Sprintf("\u26d4 %s", result.Reason))
