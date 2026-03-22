@@ -139,6 +139,7 @@ func main() {
 	// 5b. Claude chatbot layer (optional — graceful degradation)
 	// -----------------------------------------------------------------------
 	var chatService *aisvc.ChatService
+	var claudeAnalyzer *aisvc.ClaudeAnalyzer
 	var geminiForFallback *aisvc.GeminiClient
 
 	if cfg.HasClaude() {
@@ -151,6 +152,10 @@ func main() {
 		} else {
 			claudeClient.SetThinkingBudget(0) // explicitly disable
 		}
+
+		// ClaudeAnalyzer: AIAnalyzer implementation for /outlook when user prefers Claude.
+		claudeAnalyzer = aisvc.NewClaudeAnalyzer(claudeClient, eventRepo, cotRepo)
+		log.Info().Str("endpoint", cfg.ClaudeEndpoint).Msg("ClaudeAnalyzer initialized for /outlook")
 
 		// Memory tool: per-user file-based memory persisted in BadgerDB
 		memoryRepo := storage.NewMemoryRepo(db, 30*24*time.Hour) // 30-day TTL
@@ -267,11 +272,12 @@ func main() {
 		newsFetcher,
 		aiAnalyzer,     // nil-safe: handler checks IsAvailable()
 		changelogContent,
-		newsSched,      // SurpriseProvider: weekly per-currency surprise accumulator
-		authMiddleware, // User management middleware
-		priceRepo,      // Price data for backtest/context (nil-safe)
-		signalRepo,     // Signal persistence for backtest (nil-safe)
-		chatService,    // Claude chatbot service (nil-safe)
+		newsSched,       // SurpriseProvider: weekly per-currency surprise accumulator
+		authMiddleware,  // User management middleware
+		priceRepo,       // Price data for backtest/context (nil-safe)
+		signalRepo,      // Signal persistence for backtest (nil-safe)
+		chatService,     // Claude chatbot service (nil-safe)
+		claudeAnalyzer,  // Claude AIAnalyzer for /outlook (nil-safe)
 	)
 
 	// Register free-text handler for chatbot mode

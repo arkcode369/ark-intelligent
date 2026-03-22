@@ -66,10 +66,15 @@ type Handler struct {
 	// chatService handles free-text (chatbot) messages via Claude.
 	// May be nil — chatbot mode disabled if Claude endpoint not configured.
 	chatService *aisvc.ChatService
+
+	// claudeAnalyzer is an AIAnalyzer backed by Claude.
+	// Used by /outlook when the user's PreferredModel is "claude".
+	// May be nil if Claude is not configured.
+	claudeAnalyzer *aisvc.ClaudeAnalyzer
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
-// newsScheduler and chatService may be nil; all callers guard with nil checks before use.
+// newsScheduler, chatService, and claudeAnalyzer may be nil; all callers guard with nil checks before use.
 func NewHandler(
 	bot *Bot,
 	eventRepo ports.EventRepository,
@@ -84,25 +89,27 @@ func NewHandler(
 	priceRepo ports.PriceRepository,
 	signalRepo ports.SignalRepository,
 	chatService *aisvc.ChatService,
+	claudeAnalyzer *aisvc.ClaudeAnalyzer,
 ) *Handler {
 	h := &Handler{
-		bot:           bot,
-		fmt:           NewFormatter(),
-		kb:            NewKeyboardBuilder(),
-		eventRepo:     eventRepo,
-		cotRepo:       cotRepo,
-		prefsRepo:     prefsRepo,
-		newsRepo:      newsRepo,
-		newsFetcher:   newsFetcher,
-		aiAnalyzer:    aiAnalyzer,
-		changelog:     changelog,
-		newsScheduler: newsScheduler,
-		aiCooldown:    make(map[int64]time.Time),
-		chatCooldown:  make(map[int64]time.Time),
-		middleware:    middleware,
-		priceRepo:     priceRepo,
-		signalRepo:    signalRepo,
-		chatService:   chatService,
+		bot:            bot,
+		fmt:            NewFormatter(),
+		kb:             NewKeyboardBuilder(),
+		eventRepo:      eventRepo,
+		cotRepo:        cotRepo,
+		prefsRepo:      prefsRepo,
+		newsRepo:       newsRepo,
+		newsFetcher:    newsFetcher,
+		aiAnalyzer:     aiAnalyzer,
+		changelog:      changelog,
+		newsScheduler:  newsScheduler,
+		aiCooldown:     make(map[int64]time.Time),
+		chatCooldown:   make(map[int64]time.Time),
+		middleware:     middleware,
+		priceRepo:      priceRepo,
+		signalRepo:     signalRepo,
+		chatService:    chatService,
+		claudeAnalyzer: claudeAnalyzer,
 	}
 
 	// Register all commands
@@ -482,6 +489,22 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		prefs = domain.DefaultPrefs()
 	}
 
+	// Route to Claude if user prefers Claude and ClaudeAnalyzer is available.
+	// WithModel() returns a per-request scoped copy — fully thread-safe, no shared state mutation.
+	activeAnalyzer := h.aiAnalyzer // default: Gemini
+	if prefs.PreferredModel == "claude" && h.claudeAnalyzer != nil && h.claudeAnalyzer.IsAvailable() {
+		modelOverride := ""
+		if prefs.ClaudeModel != "" && domain.IsValidClaudeModel(prefs.ClaudeModel) {
+			modelOverride = string(prefs.ClaudeModel)
+		}
+		activeAnalyzer = h.claudeAnalyzer.WithModel(modelOverride)
+		log.Info().
+			Str("model", modelOverride).
+			Int64("user_id", userID).
+			Str("subcmd", subcmd).
+			Msg("/outlook routed to Claude")
+	}
+
 	placeholderID := 0
 	if editMsgID > 0 {
 		_ = h.bot.EditMessage(ctx, chatID, editMsgID, "Generating intelligence report... (10-15s) ⏳")
@@ -499,7 +522,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 			_ = h.bot.EditMessage(ctx, chatID, placeholderID, "Failed to load news for analysis.")
 			return fetchErr
 		}
-		result, err = h.aiAnalyzer.AnalyzeNewsOutlook(ctx, weekEvts, prefs.Language)
+		result, err = activeAnalyzer.AnalyzeNewsOutlook(ctx, weekEvts, prefs.Language)
 	} else if subcmd == "fred" {
 		// Use cached FRED data (or fetch fresh if stale) then run AI analysis
 		macroData, fredErr := fred.GetCachedOrFetch(ctx)
@@ -507,7 +530,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 			_ = h.bot.EditMessage(ctx, chatID, placeholderID, "Failed to fetch FRED macro data. Check FRED_API_KEY.")
 			return fredErr
 		}
-		result, err = h.aiAnalyzer.AnalyzeFREDOutlook(ctx, macroData, prefs.Language)
+		result, err = activeAnalyzer.AnalyzeFREDOutlook(ctx, macroData, prefs.Language)
 	} else if subcmd == "combine" {
 		cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
 		weekEvts, _ := h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
@@ -526,14 +549,14 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 				weeklyData.PriceContexts = priceCtxs
 			}
 		}
-		result, err = h.aiAnalyzer.AnalyzeCombinedOutlook(ctx, weeklyData)
+		result, err = activeAnalyzer.AnalyzeCombinedOutlook(ctx, weeklyData)
 	} else if subcmd == "cross" {
 		cotSlice, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
 		cotMap := make(map[string]*domain.COTAnalysis, len(cotSlice))
 		for i := range cotSlice {
 			cotMap[cotSlice[i].Contract.Code] = &cotSlice[i]
 		}
-		result, err = h.aiAnalyzer.AnalyzeCrossMarket(ctx, cotMap)
+		result, err = activeAnalyzer.AnalyzeCrossMarket(ctx, cotMap)
 	} else { // "cot" or default
 		cotAnalyses, _ := h.cotRepo.GetAllLatestAnalyses(ctx)
 		// Gap E — pass MacroData so FRED regime context is injected into the /outlook cot prompt
@@ -550,7 +573,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 				weeklyData.PriceContexts = priceCtxs
 			}
 		}
-		result, err = h.aiAnalyzer.GenerateWeeklyOutlook(ctx, weeklyData)
+		result, err = activeAnalyzer.GenerateWeeklyOutlook(ctx, weeklyData)
 	}
 
 	if err != nil {
