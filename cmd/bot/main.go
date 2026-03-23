@@ -27,7 +27,6 @@ import (
 	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
 	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
-	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
@@ -218,21 +217,22 @@ func main() {
 	// 7. Background schedulers
 	// -----------------------------------------------------------------------
 	sched := scheduler.New(&scheduler.Deps{
-		COTAnalyzer:    cotAnalyzer,
-		AIAnalyzer:     aiAnalyzer,
-		Bot:            bot,
-		COTRepo:        cotRepo,
-		PrefsRepo:      prefsRepo,
-		ChatID:         cfg.ChatID,
-		CachedAI:       cachedAI,
-		DB:             db,
-		PriceRepo:      priceRepo,
-		SignalRepo:     signalRepo,
-		PriceFetcher:   priceFetcher,
-		Evaluator:      signalEvaluator,
-		FREDAlertCheck: authMiddleware.ShouldReceiveFREDAlerts,
-		IsBanned:       authMiddleware.IsUserBanned,
-		OwnerChatID:    ownerChatIDForScheduler(bot.OwnerID()),
+		COTAnalyzer:        cotAnalyzer,
+		AIAnalyzer:         aiAnalyzer,
+		Bot:                bot,
+		COTRepo:            cotRepo,
+		PrefsRepo:          prefsRepo,
+		ChatID:             cfg.ChatID,
+		CachedAI:           cachedAI,
+		DB:                 db,
+		PriceRepo:          priceRepo,
+		SignalRepo:         signalRepo,
+		PriceFetcher:       priceFetcher,
+		Evaluator:          signalEvaluator,
+		ImpactBootstrapper: newssvc.NewImpactBootstrapper(newsFetcher, priceRepo, impactRepo, priceFetcher),
+		FREDAlertCheck:     authMiddleware.ShouldReceiveFREDAlerts,
+		IsBanned:           authMiddleware.IsUserBanned,
+		OwnerChatID:        ownerChatIDForScheduler(bot.OwnerID()),
 	})
 
 	sched.Start(ctx, &scheduler.Intervals{
@@ -370,22 +370,16 @@ func main() {
 			log.Info().Int("signals", created).Msg("backtest signals bootstrapped")
 		}
 
-		// Backfill FRED regime labels onto bootstrapped signals (cold start fix).
-		// Bootstrapped signals have FREDRegime="" because historical FRED data
-		// isn't available. We approximate by stamping all unlabelled signals with
-		// the current regime — better than "No data available" in the macro matrix.
-		if md, fredErr := fred.GetCachedOrFetch(initCtx); fredErr == nil && md != nil {
-			regime := fred.ClassifyMacroRegime(md)
-			if regime.Name != "" {
-				backfilled, bfErr := backtestsvc.BackfillRegimeLabels(initCtx, signalRepo, regime.Name)
-				if bfErr != nil {
-					log.Warn().Err(bfErr).Msg("regime backfill failed (non-fatal)")
-				} else if backfilled > 0 {
-					log.Info().Int("backfilled", backfilled).Str("regime", regime.Name).Msg("FRED regime labels backfilled onto signals")
-				}
+		// Backfill FRED regime labels onto signals using historical FRED data.
+		// For each unlabelled signal, fetches the regime that was active at its
+		// DetectedAt date rather than stamping the current regime on everything.
+		{
+			backfilled, bfErr := backtestsvc.BackfillRegimeLabels(initCtx, signalRepo)
+			if bfErr != nil {
+				log.Warn().Err(bfErr).Msg("regime backfill failed (non-fatal)")
+			} else if backfilled > 0 {
+				log.Info().Int("backfilled", backfilled).Msg("FRED regime labels backfilled onto signals")
 			}
-		} else if fredErr != nil {
-			log.Warn().Err(fredErr).Msg("FRED fetch for regime backfill failed (non-fatal)")
 		}
 
 		// Always evaluate pending signals — covers both fresh bootstrap and restarts

@@ -18,18 +18,26 @@ var bootstrapLog = logger.Component("impact-bootstrap")
 // of events (previous + current month), filters for HIGH-impact releases
 // that already have an Actual value, and computes a weekly close-to-close
 // price change around each event date.
+//
+// When stored price data is insufficient (e.g. fresh bot with empty DB),
+// the bootstrapper falls back to fetching historical weekly prices on-demand
+// via the optional PriceFetcher.
 type ImpactBootstrapper struct {
-	fetcher    *MQL5Fetcher
-	priceRepo  ports.PriceRepository
-	impactRepo *storage.ImpactRepo
+	fetcher      *MQL5Fetcher
+	priceRepo    ports.PriceRepository
+	priceFetcher ports.PriceFetcher
+	impactRepo   *storage.ImpactRepo
 }
 
 // NewImpactBootstrapper creates a new ImpactBootstrapper.
-func NewImpactBootstrapper(fetcher *MQL5Fetcher, priceRepo ports.PriceRepository, impactRepo *storage.ImpactRepo) *ImpactBootstrapper {
+// priceFetcher is optional — if non-nil it is used as a fallback when stored
+// price data is insufficient to compute impact for a given contract.
+func NewImpactBootstrapper(fetcher *MQL5Fetcher, priceRepo ports.PriceRepository, impactRepo *storage.ImpactRepo, priceFetcher ports.PriceFetcher) *ImpactBootstrapper {
 	return &ImpactBootstrapper{
-		fetcher:    fetcher,
-		priceRepo:  priceRepo,
-		impactRepo: impactRepo,
+		fetcher:      fetcher,
+		priceRepo:    priceRepo,
+		priceFetcher: priceFetcher,
+		impactRepo:   impactRepo,
 	}
 }
 
@@ -110,7 +118,26 @@ func (ib *ImpactBootstrapper) processEvent(ctx context.Context, ev domain.NewsEv
 	// in the previous/current month.
 	records, err := ib.priceRepo.GetHistory(ctx, mapping.ContractCode, 12)
 	if err != nil || len(records) < 2 {
-		return 0, nil
+		// Fallback: fetch historical prices on-demand if repo is empty
+		// (common on first boot before the price job has populated the DB).
+		if ib.priceFetcher != nil {
+			bootstrapLog.Debug().
+				Str("contract", mapping.ContractCode).
+				Str("currency", mapping.Currency).
+				Msg("stored price data insufficient, fetching on-demand")
+			fetched, fetchErr := ib.priceFetcher.FetchWeekly(ctx, *mapping, 12)
+			if fetchErr != nil || len(fetched) < 2 {
+				return 0, nil
+			}
+			// Persist fetched prices so subsequent events for the same
+			// contract don't need another API call.
+			if saveErr := ib.priceRepo.SavePrices(ctx, fetched); saveErr != nil {
+				bootstrapLog.Warn().Err(saveErr).Str("contract", mapping.ContractCode).Msg("failed to persist on-demand prices")
+			}
+			records = fetched
+		} else {
+			return 0, nil
+		}
 	}
 
 	// records are newest-first; find the closest bar before and after the event.
