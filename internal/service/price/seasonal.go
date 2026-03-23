@@ -76,7 +76,7 @@ func (sa *SeasonalAnalyzer) AnalyzeContract(ctx context.Context, contractCode, c
 	if err != nil {
 		return nil, fmt.Errorf("get price history for %s: %w", currency, err)
 	}
-	if len(records) < 8 { // need at least 2 months of data
+	if len(records) < 4 { // need at least a few weeks of data
 		return nil, fmt.Errorf("insufficient price data for %s (%d records)", currency, len(records))
 	}
 
@@ -182,7 +182,7 @@ func (sa *SeasonalAnalyzer) AnalyzeContract(ctx context.Context, contractCode, c
 
 // classifyBias determines seasonal bias from average return and win rate.
 func classifyBias(avgReturn, winRate float64, sampleSize int) string {
-	if sampleSize < 2 {
+	if sampleSize < 1 {
 		return "NEUTRAL"
 	}
 	if avgReturn > 0 && winRate > 55.0 {

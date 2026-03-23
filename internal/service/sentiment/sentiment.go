@@ -13,7 +13,6 @@ package sentiment
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -83,6 +82,7 @@ func fetchCNNFearGreed(ctx context.Context, client *http.Client, data *Sentiment
 		return
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ArkIntelligent/1.0)")
+	req.Header.Set("Referer", "https://www.cnn.com/markets/fear-and-greed")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -137,115 +137,9 @@ func normalizeFearGreedLabel(rating string) string {
 // AAII Investor Sentiment Survey
 // ---------------------------------------------------------------------------
 
-// aaiiSentimentURL is the public data endpoint for the AAII weekly survey.
-const aaiiSentimentURL = "https://www.aaii.com/sentimentsurvey/sent_results"
-
-func fetchAAIISentiment(ctx context.Context, client *http.Client, data *SentimentData) {
-	req, err := http.NewRequestWithContext(ctx, "GET", aaiiSentimentURL, nil)
-	if err != nil {
-		log.Warn().Err(err).Msg("AAII: failed to build request")
-		return
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ArkIntelligent/1.0)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Warn().Err(err).Msg("AAII: request failed")
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Warn().Int("status", resp.StatusCode).Msg("AAII: non-2xx response")
-		return
-	}
-
-	// AAII does not expose a stable JSON API. The results page returns HTML
-	// that we attempt to parse for the three sentiment percentages.
-	// If the page structure changes, we gracefully degrade.
-	bullish, bearish, neutral, ok := parseAAIIHTML(resp)
-	if !ok {
-		log.Warn().Msg("AAII: failed to parse sentiment percentages from HTML — endpoint may have changed")
-		return
-	}
-
-	data.AAIIBullish = bullish
-	data.AAIIBearish = bearish
-	data.AAIINeutral = neutral
-	if bearish > 0 {
-		data.AAIIBullBear = bullish / bearish
-	}
-	data.AAIIAvailable = true
-
-	log.Debug().
-		Float64("bullish", bullish).
-		Float64("bearish", bearish).
-		Float64("neutral", neutral).
-		Float64("bull_bear", data.AAIIBullBear).
-		Msg("AAII sentiment fetched")
-}
-
-// parseAAIIHTML attempts to extract bullish/bearish/neutral percentages
-// from the AAII sentiment survey results page.
-// Returns (bullish, bearish, neutral, ok).
-func parseAAIIHTML(resp *http.Response) (float64, float64, float64, bool) {
-	// Read a limited amount of the body to avoid huge allocations.
-	buf := make([]byte, 256*1024) // 256 KB should be plenty
-	n, _ := resp.Body.Read(buf)
-	body := string(buf[:n])
-
-	// The AAII page typically contains percentage values near keywords
-	// like "Bullish", "Neutral", "Bearish". We look for patterns like:
-	//   Bullish  38.0%
-	//   Neutral  30.5%
-	//   Bearish  31.5%
-	bullish := extractPercentNear(body, "Bullish")
-	bearish := extractPercentNear(body, "Bearish")
-	neutral := extractPercentNear(body, "Neutral")
-
-	if bullish < 0 || bearish < 0 || neutral < 0 {
-		return 0, 0, 0, false
-	}
-
-	// Sanity check: percentages should roughly sum to ~100
-	sum := bullish + bearish + neutral
-	if sum < 90 || sum > 110 {
-		return 0, 0, 0, false
-	}
-
-	return bullish, bearish, neutral, true
-}
-
-// extractPercentNear finds a keyword in the body and extracts the nearest
-// percentage value (e.g., "38.0" from "Bullish  38.0%").
-// Returns -1 if not found.
-func extractPercentNear(body, keyword string) float64 {
-	idx := strings.Index(body, keyword)
-	if idx < 0 {
-		// Try case-insensitive
-		idx = strings.Index(strings.ToLower(body), strings.ToLower(keyword))
-	}
-	if idx < 0 {
-		return -1
-	}
-
-	// Search in a window after the keyword for a number
-	window := body[idx:]
-	if len(window) > 200 {
-		window = window[:200]
-	}
-
-	var val float64
-	// Try to find a decimal number pattern
-	for i := 0; i < len(window); i++ {
-		if window[i] >= '0' && window[i] <= '9' {
-			n, err := fmt.Sscanf(window[i:], "%f", &val)
-			if err == nil && n == 1 && val >= 0 && val <= 100 {
-				return val
-			}
-		}
-	}
-
-	return -1
+func fetchAAIISentiment(_ context.Context, _ *http.Client, data *SentimentData) {
+	// AAII is behind Imperva bot protection and cannot be scraped with
+	// simple HTTP requests. Browser automation would be required.
+	log.Debug().Msg("AAII: skipping — site is behind Imperva bot protection and requires browser automation")
+	data.AAIIAvailable = false
 }

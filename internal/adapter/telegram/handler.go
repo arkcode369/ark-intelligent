@@ -170,6 +170,7 @@ func NewHandler(
 	bot.RegisterCallback("cal:filter:", h.cbNewsFilter)
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
+	bot.RegisterCallback("cmd:", h.cbQuickCommand)
 
 	log.Info().Int("commands", 23).Int("callbacks", 6).Msg("registered commands and callback prefixes")
 	return h
@@ -326,7 +327,7 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 
 	// Build price context for this contract (best-effort, non-fatal)
 	var priceCtxMap map[string]*domain.PriceContext
-	if editMsgID == 0 && h.priceRepo != nil {
+	if h.priceRepo != nil {
 		ctxBuilder := pricesvc.NewContextBuilder(h.priceRepo)
 		if pc, pcErr := ctxBuilder.Build(ctx, contractCode, displayCode); pcErr == nil && pc != nil {
 			priceCtxMap = map[string]*domain.PriceContext{contractCode: pc}
@@ -1122,6 +1123,41 @@ func (h *Handler) cbNewsNav(ctx context.Context, chatID string, msgID int, userI
 
 	kb := h.kb.CalendarFilter(activeFilter, targetDateStr, isWeek)
 	return h.sendCalendarChunked(ctx, chatID, msgID, htmlStr, kb)
+}
+
+// cbQuickCommand handles "cmd:" prefixed callbacks, routing them to the
+// corresponding command handler. This enables inline keyboard buttons to
+// invoke the same logic as slash commands.
+func (h *Handler) cbQuickCommand(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
+	action := strings.TrimPrefix(data, "cmd:")
+
+	// Check for commands with arguments (e.g. "seasonal:EUR")
+	var cmd, args string
+	if idx := strings.Index(action, ":"); idx >= 0 {
+		cmd = action[:idx]
+		args = action[idx+1:]
+	} else {
+		cmd = action
+	}
+
+	switch cmd {
+	case "signals":
+		return h.cmdSignals(ctx, chatID, userID, args)
+	case "macro":
+		return h.cmdMacro(ctx, chatID, userID, args)
+	case "rank":
+		return h.cmdRank(ctx, chatID, userID, args)
+	case "calendar":
+		return h.cmdCalendar(ctx, chatID, userID, args)
+	case "accuracy":
+		return h.cmdAccuracy(ctx, chatID, userID, args)
+	case "sentiment":
+		return h.cmdSentiment(ctx, chatID, userID, args)
+	case "seasonal":
+		return h.cmdSeasonal(ctx, chatID, userID, args)
+	default:
+		return nil
+	}
 }
 
 // handleMonthNav handles prevmonth / thismonth / nextmonth navigation.

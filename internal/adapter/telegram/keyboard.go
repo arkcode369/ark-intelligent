@@ -380,6 +380,13 @@ func (kb *KeyboardBuilder) COTDetailMenu(code string, isRaw bool) ports.InlineKe
 		})
 	}
 
+	// Quick-access buttons for related features
+	currency := kb.contractLabel(code, code) // derive currency label from contract code
+	rows = append(rows, []ports.InlineButton{
+		{Text: "📈 Seasonal", CallbackData: fmt.Sprintf("cmd:seasonal:%s", currency)},
+		{Text: "💹 Sentiment", CallbackData: "cmd:sentiment"},
+	})
+
 	rows = append(rows, []ports.InlineButton{
 		{Text: "<< Back to Overview", CallbackData: "cot:overview"},
 	})
@@ -394,6 +401,16 @@ func (kb *KeyboardBuilder) MainMenu() ports.InlineKeyboard {
 			{
 				{Text: "COT Analysis", CallbackData: "nav:cot"},
 				{Text: "Weekly Outlook", CallbackData: "nav:outlook"},
+			},
+			{
+				{Text: "📊 Signals", CallbackData: "cmd:signals"},
+				{Text: "🏦 Macro", CallbackData: "cmd:macro"},
+				{Text: "📈 Rank", CallbackData: "cmd:rank"},
+			},
+			{
+				{Text: "📅 Calendar", CallbackData: "cmd:calendar"},
+				{Text: "🎯 Accuracy", CallbackData: "cmd:accuracy"},
+				{Text: "💹 Sentiment", CallbackData: "cmd:sentiment"},
 			},
 		},
 	}
