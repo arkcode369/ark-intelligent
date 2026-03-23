@@ -250,8 +250,9 @@ func (c *ClaudeClient) Chat(ctx context.Context, req ports.ChatRequest) (*ports.
 
 	// Enable extended thinking only for Opus models — Haiku and Sonnet do not
 	// support extended thinking and will return an API error if it is requested.
+	// DisableThinking allows callers to opt out for latency-sensitive paths.
 	supportsThinking := strings.Contains(effectiveModel, "opus")
-	if c.thinkingBudget > 0 && supportsThinking {
+	if c.thinkingBudget > 0 && supportsThinking && !req.DisableThinking {
 		apiReq.Thinking = &claudeThinking{
 			Type:         "enabled",
 			BudgetTokens: c.thinkingBudget,
@@ -601,11 +602,17 @@ func toolProgressStatus(toolNames []string, round int) string {
 }
 
 // isClaudeTransient checks if an error is worth retrying.
+// 504 (FUNCTION_INVOCATION_TIMEOUT from Vercel) is NOT retried because the
+// request will always timeout if it exceeds the proxy's function limit.
 func isClaudeTransient(err error) bool {
 	if err == nil {
 		return false
 	}
 	errStr := err.Error()
+	// 504 from Vercel proxy is deterministic — retrying won't help
+	if strings.Contains(errStr, "504") {
+		return false
+	}
 	return strings.Contains(errStr, "429") ||
 		strings.Contains(errStr, "500") ||
 		strings.Contains(errStr, "502") ||

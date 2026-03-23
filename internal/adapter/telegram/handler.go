@@ -589,11 +589,12 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		Language:         prefs.Language,
 	}
 
-	// ---------- Route to Claude (unified + web search) or Gemini (fallback) ----------
+	// ---------- Route based on user's PreferredModel setting ----------
 	var result string
+	useClaude := prefs.PreferredModel != "gemini" && h.claudeAnalyzer != nil && h.claudeAnalyzer.IsAvailable()
 
-	if h.claudeAnalyzer != nil && h.claudeAnalyzer.IsAvailable() {
-		// Claude path: unified outlook with web_search + web_fetch
+	if useClaude {
+		// Claude path: multi-phase unified outlook with thinking + web_search
 		modelOverride := ""
 		if prefs.ClaudeModel != "" && domain.IsValidClaudeModel(prefs.ClaudeModel) {
 			modelOverride = string(prefs.ClaudeModel)
@@ -602,10 +603,25 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		log.Info().
 			Str("model", modelOverride).
 			Int64("user_id", userID).
-			Msg("/outlook unified routed to Claude with web_search")
+			Msg("/outlook unified routed to Claude (multi-phase)")
 		result, err = analyzer.GenerateUnifiedOutlook(ctx, unifiedData)
+
+		// If Claude fails (e.g. Vercel timeout on all phases), fall back to Gemini
+		if err != nil || result == "" {
+			log.Warn().Err(err).Msg("/outlook Claude failed, falling back to Gemini")
+			weeklyData := ports.WeeklyData{
+				COTAnalyses:   cotAnalyses,
+				NewsEvents:    weekEvts,
+				MacroData:     macroData,
+				BacktestStats: backtestStats,
+				PriceContexts: priceCtxs,
+				Language:      prefs.Language,
+			}
+			result, err = h.aiAnalyzer.AnalyzeCombinedOutlook(ctx, weeklyData)
+		}
 	} else {
-		// Gemini fallback: use combined outlook (no web search capability)
+		// Gemini path: direct combined outlook (no web search capability)
+		log.Info().Int64("user_id", userID).Msg("/outlook routed to Gemini")
 		weeklyData := ports.WeeklyData{
 			COTAnalyses:   cotAnalyses,
 			NewsEvents:    weekEvts,

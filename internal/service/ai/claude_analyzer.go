@@ -219,36 +219,134 @@ func (ca *ClaudeAnalyzer) AnalyzeActualRelease(ctx context.Context, event domain
 // GenerateUnifiedOutlook creates a comprehensive unified outlook fusing ALL
 // data sources and enabling Claude's web_search + web_fetch tools for
 // real-time data enrichment. This is the primary /outlook path.
+//
+// Multi-phase design to stay within Vercel's 60s function timeout:
+//
+//	Phase 1: Full analysis with extended thinking, NO web tools
+//	Phase 2a/2b/2c: Individual web searches (1 search per request, lightweight context)
+//	Phase 3: Final synthesis combining analysis + web findings
+//
+// If any phase fails, the best available result is returned (graceful degradation).
 func (ca *ClaudeAnalyzer) GenerateUnifiedOutlook(ctx context.Context, data UnifiedOutlookData) (string, error) {
 	prompt := BuildUnifiedOutlookPrompt(data)
 
-	// Build request with web_search and web_fetch tools enabled.
-	// These are server-managed tools — Claude's servers execute them automatically.
-	req := ports.ChatRequest{
+	// --- Phase 1: Deep analysis with thinking, no web tools ---
+	log.Info().Msg("unified outlook: phase 1 — deep analysis with thinking")
+	phase1Req := ports.ChatRequest{
 		SystemPrompt:  SystemPrompt(),
 		OverrideModel: ca.overrideModel,
 		Messages: []ports.ChatMessage{
-			{Role: "user", Content: prompt},
+			{Role: "user", Content: prompt + "\n\nIMPORTANT: Analyze ALL the data above thoroughly. Do NOT use web tools yet — focus on the data provided. Provide your full analysis including all 6 sections requested."},
 		},
 		MaxTokens: 4096,
-		Tools: []ports.ServerTool{
-			{Type: "web_search_20250305", Name: "web_search", MaxUses: 5},
-			{Type: "web_fetch_20260309", Name: "web_fetch", MaxUses: 3},
-		},
 	}
 
-	resp, err := ca.claude.Chat(ctx, req)
+	phase1Resp, err := ca.claude.Chat(ctx, phase1Req)
 	if err != nil {
-		log.Error().Err(err).Msg("ClaudeAnalyzer: unified outlook failed")
-		return "Unified outlook unavailable.", nil
+		log.Error().Err(err).Msg("ClaudeAnalyzer: unified outlook phase 1 failed")
+		return "", fmt.Errorf("unified outlook phase 1: %w", err)
+	}
+	log.Info().
+		Int("input_tokens", phase1Resp.InputTokens).
+		Int("output_tokens", phase1Resp.OutputTokens).
+		Msg("unified outlook: phase 1 complete")
+
+	// --- Phase 2: Sequential web searches (1 per request to fit in 60s) ---
+	// Each sub-request has minimal context: just a short summary + 1 search query.
+	// This avoids sending the full prompt + phase1 response which would be too large.
+	webSearchQueries := []string{
+		"Search for the latest forex market prices and major moves today for EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, NZD/USD, USD/CHF, Gold, and Crude Oil. Report current prices and percentage changes.",
+		"Search for the latest central bank news, Fed statements, ECB/BOJ/BOE decisions, and any interest rate expectations changes this week.",
+		"Search for breaking geopolitical news, trade policy developments, and risk events that could impact forex and commodity markets this week.",
+	}
+
+	var webFindings []string
+	var allToolsUsed []string
+
+	for i, query := range webSearchQueries {
+		log.Info().Int("round", i+1).Msg("unified outlook: phase 2 — web search round")
+
+		searchReq := ports.ChatRequest{
+			OverrideModel:   ca.overrideModel,
+			DisableThinking: true,
+			Messages: []ports.ChatMessage{
+				{Role: "user", Content: query + "\n\nProvide a concise factual summary of what you find. Be brief — just the key data points and facts."},
+			},
+			MaxTokens: 1024,
+			Tools: []ports.ServerTool{
+				{Type: "web_search_20250305", Name: "web_search", MaxUses: 1},
+			},
+		}
+
+		searchResp, err := ca.claude.Chat(ctx, searchReq)
+		if err != nil {
+			log.Warn().Err(err).Int("round", i+1).Msg("unified outlook: web search round failed, skipping")
+			continue
+		}
+
+		log.Info().
+			Int("round", i+1).
+			Int("input_tokens", searchResp.InputTokens).
+			Int("output_tokens", searchResp.OutputTokens).
+			Strs("tools_used", searchResp.ToolsUsed).
+			Msg("unified outlook: web search round complete")
+
+		if searchResp.Content != "" {
+			webFindings = append(webFindings, searchResp.Content)
+			allToolsUsed = append(allToolsUsed, searchResp.ToolsUsed...)
+		}
+	}
+
+	// If no web data was gathered, return Phase 1 result
+	if len(webFindings) == 0 {
+		log.Warn().Msg("unified outlook: all web searches failed, returning phase 1 result")
+		return formatResponse("UNIFIED OUTLOOK", phase1Resp.Content), nil
+	}
+
+	// --- Phase 3: Final synthesis with reduced context ---
+	// Only send a compact version to stay within Vercel 60s timeout.
+	// Instead of resending the full original prompt, we provide the phase 1
+	// analysis + web findings and ask Claude to merge them.
+	log.Info().Int("web_findings", len(webFindings)).Msg("unified outlook: phase 3 — final synthesis")
+
+	// Build web findings summary
+	var webSummary string
+	for i, finding := range webFindings {
+		webSummary += fmt.Sprintf("\n--- Web Research %d ---\n%s\n", i+1, finding)
+	}
+
+	lang := "Indonesian (Bahasa Indonesia)"
+	if data.Language == "en" {
+		lang = "English"
 	}
 
 	toolInfo := ""
-	if len(resp.ToolsUsed) > 0 {
-		toolInfo = fmt.Sprintf(" [enriched via: %s]", joinUnique(resp.ToolsUsed))
+	if len(allToolsUsed) > 0 {
+		toolInfo = fmt.Sprintf(" [enriched via: %s]", joinUnique(allToolsUsed))
 	}
 
-	return formatResponse("UNIFIED OUTLOOK"+toolInfo, resp.Content), nil
+	phase3Req := ports.ChatRequest{
+		OverrideModel:   ca.overrideModel,
+		DisableThinking: true,
+		Messages: []ports.ChatMessage{
+			{Role: "user", Content: fmt.Sprintf("Below is a market analysis and fresh web research data. Produce the FINAL unified outlook by merging both. Where the web data contradicts or updates the analysis, highlight the discrepancy. Respond in %s. Be concise but comprehensive.\n\n=== ANALYSIS ===\n%s\n\n=== WEB RESEARCH ===\n%s\n\nProduce the definitive UNIFIED OUTLOOK covering: (1) Macro regime & context, (2) Currency-by-currency analysis with bias and conviction, (3) Top 3 trade setups, (4) Cross-market signals, (5) Key risks & catalysts.", lang, phase1Resp.Content, webSummary)},
+		},
+		MaxTokens: 2048,
+	}
+
+	phase3Resp, err := ca.claude.Chat(ctx, phase3Req)
+	if err != nil {
+		// Phase 3 failed — return Phase 1 analysis + raw web findings appended
+		log.Warn().Err(err).Msg("unified outlook: phase 3 synthesis failed, returning phase 1 + web findings")
+		combined := phase1Resp.Content + "\n\n---\n📡 WEB RESEARCH UPDATE:\n" + webSummary
+		return formatResponse("UNIFIED OUTLOOK"+toolInfo, combined), nil
+	}
+	log.Info().
+		Int("input_tokens", phase3Resp.InputTokens).
+		Int("output_tokens", phase3Resp.OutputTokens).
+		Msg("unified outlook: phase 3 complete")
+
+	return formatResponse("UNIFIED OUTLOOK"+toolInfo, phase3Resp.Content), nil
 }
 
 // joinUnique deduplicates and joins string slice.

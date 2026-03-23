@@ -64,6 +64,11 @@ type ChatRequest struct {
 	// Example: "claude-sonnet-4-5", "claude-haiku-4-5"
 	OverrideModel string
 
+	// DisableThinking disables extended thinking for this request even if the
+	// client has a thinking budget configured. Useful for latency-sensitive
+	// paths (e.g. unified outlook through a Vercel proxy with 60s timeout).
+	DisableThinking bool
+
 	// OnProgress is an optional callback invoked during long-running operations
 	// (tool round-trips, web search, etc.) to report status to the user.
 	// The status string is a short human-readable description (e.g. "Reading memory...").
