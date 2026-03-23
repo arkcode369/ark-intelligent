@@ -504,20 +504,36 @@ func (b *Bot) SendWithKeyboard(ctx context.Context, chatID string, text string, 
 }
 
 // EditMessage edits an existing message's text.
+// If the text exceeds Telegram's 4096-char limit, the first chunk replaces the
+// original message and remaining chunks are sent as new follow-up messages.
 func (b *Bot) EditMessage(ctx context.Context, chatID string, msgID int, text string) error {
 	if chatID == "" {
 		chatID = b.defaultID
 	}
 
+	chunks := splitMessage(text, 4096)
+
+	// Edit the original message with the first chunk.
 	params := map[string]interface{}{
 		"message_id":               msgID,
-		"text":                     text,
+		"text":                     chunks[0],
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": true,
 	}
 	b.setChatID(params, chatID)
 
-	return b.apiCallNoResult(ctx, "editMessageText", params)
+	if err := b.apiCallNoResult(ctx, "editMessageText", params); err != nil {
+		return err
+	}
+
+	// Send any remaining chunks as new messages.
+	for _, chunk := range chunks[1:] {
+		if _, err := b.SendHTML(ctx, chatID, chunk); err != nil {
+			return fmt.Errorf("editMessage overflow chunk: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // EditWithKeyboard edits message text and keyboard.
