@@ -72,7 +72,7 @@ func EstimateHMMRegime(prices []domain.PriceRecord) (*HMMResult, error) {
 	obs := discretizeReturns(returns)
 
 	// Initialize HMM with domain-informed priors
-	model := initHMMPriors(returns)
+	model := initHMMPriors()
 
 	// Baum-Welch training
 	maxIter := 50
@@ -179,7 +179,7 @@ func sortFloat64s(data []float64) {
 // --- HMM Initialization ---
 
 // initHMMPriors creates an HMM with domain-informed initial parameters.
-func initHMMPriors(returns []float64) HMMModel {
+func initHMMPriors() HMMModel {
 	var m HMMModel
 
 	// Initial state: most likely risk-off
@@ -468,6 +468,12 @@ func normalize(v []float64) {
 	if sum > 0 {
 		for i := range v {
 			v[i] /= sum
+		}
+	} else {
+		// Fallback: uniform distribution to avoid all-zero cascading
+		n := float64(len(v))
+		for i := range v {
+			v[i] = 1.0 / n
 		}
 	}
 }

@@ -263,36 +263,61 @@ func optimizeWindowWeights(signals []domain.PersistedSignal) (map[string]float64
 	return normalizeCoefficients(reg.Coefficients), nil
 }
 
-// evaluateWithWeights simulates signal selection using given weights
-// and returns OOS win rate and average return.
+// evaluateWithWeights scores signals using given weights, selects those
+// above a conviction threshold, and computes OOS win rate and return on the
+// selected subset. This allows adaptive weights to produce different results
+// from static weights by changing which signals are considered "high conviction".
 func evaluateWithWeights(signals []domain.PersistedSignal, weights map[string]float64) (winRate, avgReturn float64) {
 	if len(signals) == 0 {
 		return 0, 0
 	}
 
-	wins := 0
-	totalReturn := 0.0
-
+	// Score every signal with the given weights
+	type scored struct {
+		signal domain.PersistedSignal
+		score  float64
+	}
+	scoredSigs := make([]scored, 0, len(signals))
 	for _, s := range signals {
-		scores := extractFactorScores(s)
-		// Compute weighted score
-		weightedScore := 0.0
+		factorScores := extractFactorScores(s)
+		wScore := 0.0
 		for i, name := range factorNames {
-			w := weights[name]
-			weightedScore += scores[i] * w / 100.0
+			wScore += factorScores[i] * weights[name] / 100.0
 		}
-
-		// A signal is "selected" if weighted score > 0 and direction aligns,
-		// or weighted score < 0 and direction is bearish
-		// For simplicity, evaluate all signals (the weights affect conviction, not filtering)
-		if s.Outcome1W == domain.OutcomeWin {
-			wins++
-		}
-		totalReturn += s.Return1W
+		scoredSigs = append(scoredSigs, scored{signal: s, score: wScore})
 	}
 
-	winRate = float64(wins) / float64(len(signals)) * 100
-	avgReturn = totalReturn / float64(len(signals))
+	// Sort by absolute score descending (highest conviction first)
+	sort.Slice(scoredSigs, func(i, j int) bool {
+		return math.Abs(scoredSigs[i].score) > math.Abs(scoredSigs[j].score)
+	})
+
+	// Select top 70% by conviction (filter low-conviction signals)
+	selectN := len(scoredSigs) * 70 / 100
+	if selectN < 3 {
+		selectN = len(scoredSigs) // If too few, use all
+	}
+	selected := scoredSigs[:selectN]
+
+	wins := 0
+	totalReturn := 0.0
+	for _, ss := range selected {
+		// Check if weight-based direction agrees with signal direction
+		// Positive score = model agrees with bullish, negative = agrees with bearish
+		agrees := (ss.score >= 0 && ss.signal.Direction == "BULLISH") ||
+			(ss.score < 0 && ss.signal.Direction == "BEARISH")
+
+		if agrees && ss.signal.Outcome1W == domain.OutcomeWin {
+			wins++
+		} else if !agrees && ss.signal.Outcome1W == domain.OutcomeLoss {
+			// Model correctly predicted the opposite direction
+			wins++
+		}
+		totalReturn += ss.signal.Return1W
+	}
+
+	winRate = float64(wins) / float64(len(selected)) * 100
+	avgReturn = totalReturn / float64(len(selected))
 	return winRate, avgReturn
 }
 

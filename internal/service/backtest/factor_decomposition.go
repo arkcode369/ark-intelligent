@@ -129,7 +129,7 @@ func decomposeSignals(signals []domain.PersistedSignal, label string) *Decomposi
 	betas, rSquared, pValues := simpleOLS(X, returns)
 
 	// Compute average contribution of each factor
-	factorNames := []string{"COT Positioning", "Macro Regime", "Trend Following", "Volatility"}
+	decompositionFactors := []string{"COT Positioning", "Macro Regime", "Trend Following", "Volatility"}
 	factors := make([]FactorContribution, 4)
 
 	totalAbsBeta := 0.0
@@ -137,7 +137,6 @@ func decomposeSignals(signals []domain.PersistedSignal, label string) *Decomposi
 		totalAbsBeta += math.Abs(betas[j+1]) // skip intercept
 	}
 
-	meanReturn := mean(returns)
 	topFactor := ""
 	topContrib := 0.0
 
@@ -177,7 +176,7 @@ func decomposeSignals(signals []domain.PersistedSignal, label string) *Decomposi
 		}
 
 		factors[j] = FactorContribution{
-			Name:          factorNames[j],
+			Name:          decompositionFactors[j],
 			Coefficient:   roundN(beta, 6),
 			AvgContrib:    roundN(avgContrib, 4),
 			PctExplained:  roundN(pctExplained, 2),
@@ -188,7 +187,7 @@ func decomposeSignals(signals []domain.PersistedSignal, label string) *Decomposi
 
 		if math.Abs(beta) > topContrib {
 			topContrib = math.Abs(beta)
-			topFactor = factorNames[j]
+			topFactor = decompositionFactors[j]
 		}
 	}
 
@@ -210,7 +209,6 @@ func decomposeSignals(signals []domain.PersistedSignal, label string) *Decomposi
 			edgeSource = fmt.Sprintf("Primary alpha from %s", factors[0].Name)
 		}
 	}
-	_ = meanReturn
 
 	return &DecompositionResult{
 		Factors:     factors,
@@ -404,6 +402,10 @@ func simpleOLS(X [][]float64, y []float64) ([]float64, float64, []float64) {
 	r2 := 0.0
 	if ssTot > 1e-10 {
 		r2 = 1 - ssRes/ssTot
+	}
+	// Clamp R² to [0, 1] — negative R² means model is worse than mean
+	if r2 < 0 {
+		r2 = 0
 	}
 
 	// Approximate p-values from t-statistics
