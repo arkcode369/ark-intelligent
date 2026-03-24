@@ -259,6 +259,10 @@ func simpleLinearRegression(x, y []float64) (float64, float64, float64) {
 	if ssTot > 1e-15 {
 		r2 = 1 - ssRes/ssTot
 	}
+	// Clamp R² to [0, 1] — negative means model is worse than mean
+	if r2 < 0 {
+		r2 = 0
+	}
 
 	return slope, intercept, r2
 }
@@ -302,6 +306,8 @@ func CombineRegimeClassification(adxRegime *PriceRegime, hurst *HurstResult) *Hu
 
 	// Handle nil inputs — avoid nil pointer dereference on embedded *PriceRegime
 	if adxRegime == nil && hurst == nil {
+		ctx.PriceRegime = &PriceRegime{Regime: RegimeRanging}
+		ctx.HurstRegime = RegimeRanging
 		return ctx
 	}
 	if adxRegime == nil {

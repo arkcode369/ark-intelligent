@@ -154,8 +154,17 @@ func decomposeSignals(signals []domain.PersistedSignal, label string) *Decomposi
 			norms = volNorm
 		}
 
-		// Average contribution = beta * mean(factor)
-		avgContrib := beta * mean(norms)
+		// Average absolute contribution = beta * mean(|factor|)
+		// Using mean absolute value since z-scored factors have mean≈0
+		absSum := 0.0
+		for _, v := range norms {
+			absSum += math.Abs(v)
+		}
+		meanAbsNorm := 0.0
+		if len(norms) > 0 {
+			meanAbsNorm = absSum / float64(len(norms))
+		}
+		avgContrib := beta * meanAbsNorm
 
 		// % of R² explained (Shapley-like approximation via relative coefficient size)
 		pctExplained := 0.0

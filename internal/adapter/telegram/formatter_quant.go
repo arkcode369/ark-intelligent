@@ -591,7 +591,7 @@ func (f *Formatter) FormatWFOptimization(r *backtestsvc.WFOResult) string {
 		impIcon = "▼"
 	}
 	b.WriteString(fmt.Sprintf("<code>Improvement   : %+.1fpp</code> %s\n", r.Improvement, impIcon))
-	b.WriteString(fmt.Sprintf("<code>Avg OOS Return: %+.4f%%</code>\n", r.AvgOOSReturn*100))
+	b.WriteString(fmt.Sprintf("<code>Avg OOS Return: %+.2f%%</code>\n", r.AvgOOSReturn))
 
 	// Stability
 	b.WriteString("\n<b>🔒 Stability</b>\n")
