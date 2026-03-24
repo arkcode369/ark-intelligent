@@ -156,6 +156,9 @@ func NewHandler(
 	bot.RegisterCommand("/carry", h.cmdCarry)       // Interest rate differential / carry trade
 	bot.RegisterCommand("/garch", h.cmdGarch)       // GARCH(1,1) volatility forecast
 	bot.RegisterCommand("/hurst", h.cmdHurst)       // Hurst exponent / regime analysis
+	bot.RegisterCommand("/regime", h.cmdRegime)     // HMM regime-switching model
+	bot.RegisterCommand("/factors", h.cmdFactors)   // Factor decomposition
+	bot.RegisterCommand("/wfopt", h.cmdWFOpt)       // Walk-forward weight optimization
 
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
@@ -179,7 +182,7 @@ func NewHandler(
 	bot.RegisterCallback("cmd:", h.cbQuickCommand)
 	bot.RegisterCallback("imp:", h.cbImpact)
 
-	log.Info().Int("commands", 28).Int("callbacks", 8).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 31).Int("callbacks", 8).Msg("registered commands and callback prefixes")
 	return h
 }
 
@@ -229,6 +232,9 @@ func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, arg
 /carry — Interest rate differential / carry trade
 /garch — GARCH(1,1) vol forecast · <code>/garch EUR</code>
 /hurst — Hurst exponent regime · <code>/hurst EUR</code>
+/regime — HMM regime-switching · <code>/regime EUR</code>
+/factors — Factor return decomposition
+/wfopt — Walk-forward weight optimization
 
 <b>⚙️ Settings</b>
 /settings · /membership · /status · /clear
@@ -236,7 +242,7 @@ func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, arg
 <b>🔐 Admin</b>
 /users · /setrole · /ban · /unban
 
-<code>ARK v3.4.0</code>`
+<code>ARK v3.5.0</code>`
 
 	_, err := h.bot.SendHTML(ctx, chatID, html)
 	return err

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
+	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	fredSvc "github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 )
@@ -378,4 +379,183 @@ func dailyToPriceRecords(prices []domain.DailyPrice) []domain.PriceRecord {
 		}
 	}
 	return records
+}
+
+// ---------------------------------------------------------------------------
+// HMM Regime-Switching Model
+// ---------------------------------------------------------------------------
+
+// cmdRegime handles /regime [currency] — HMM regime analysis.
+func (h *Handler) cmdRegime(ctx context.Context, chatID string, userID int64, args string) error {
+	args = strings.TrimSpace(strings.ToUpper(args))
+
+	if args == "" {
+		return h.regimeOverview(ctx, chatID)
+	}
+
+	mapping := domain.FindPriceMappingByCurrency(args)
+	if mapping == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, fmt.Sprintf(
+			"Unknown instrument: <code>%s</code>\n\nUsage: <code>/regime EUR</code>",
+			args,
+		))
+		return err
+	}
+
+	return h.regimeDetail(ctx, chatID, mapping)
+}
+
+// regimeOverview shows HMM regime for key instruments.
+func (h *Handler) regimeOverview(ctx context.Context, chatID string) error {
+	if h.dailyPriceRepo == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "Price data not available yet.")
+		return err
+	}
+
+	currencies := []string{"EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "XAU", "OIL", "BTC", "SPX500"}
+	var lines []string
+
+	for _, cur := range currencies {
+		mapping := domain.FindPriceMappingByCurrency(cur)
+		if mapping == nil {
+			continue
+		}
+		prices, err := h.dailyPriceRepo.GetDailyHistory(ctx, mapping.ContractCode, 120)
+		if err != nil || len(prices) < 60 {
+			continue
+		}
+
+		records := dailyToPriceRecords(prices)
+		hmm, err := pricesvc.EstimateHMMRegime(records)
+		if err != nil {
+			continue
+		}
+
+		icon := "⚪"
+		switch hmm.CurrentState {
+		case pricesvc.HMMRiskOn:
+			icon = "🟢"
+		case pricesvc.HMMRiskOff:
+			icon = "🟡"
+		case pricesvc.HMMCrisis:
+			icon = "🔴"
+		}
+
+		warning := ""
+		if hmm.TransitionWarning != "" {
+			warning = " ⚠️"
+		}
+
+		lines = append(lines, fmt.Sprintf(
+			"<code>%-6s %-9s P:%.0f%%</code> %s%s",
+			cur, hmm.CurrentState,
+			hmm.StateProbabilities[stateIndex(hmm.CurrentState)]*100,
+			icon, warning,
+		))
+	}
+
+	if len(lines) == 0 {
+		_, err := h.bot.SendHTML(ctx, chatID, "Insufficient price data for HMM regime estimation (need ≥60 daily bars).")
+		return err
+	}
+
+	msg := "🔀 <b>HMM REGIME-SWITCHING MODEL</b>\n\n" +
+		strings.Join(lines, "\n") +
+		"\n\n🟢 Risk-On  🟡 Risk-Off  🔴 Crisis  ⚠️ Transition\n" +
+		"<i>Use</i> <code>/regime EUR</code> <i>for detailed view</i>"
+
+	_, err := h.bot.SendHTML(ctx, chatID, msg)
+	return err
+}
+
+// regimeDetail shows detailed HMM regime for a single instrument.
+func (h *Handler) regimeDetail(ctx context.Context, chatID string, mapping *domain.PriceSymbolMapping) error {
+	if h.dailyPriceRepo == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "Price data not available yet.")
+		return err
+	}
+
+	prices, err := h.dailyPriceRepo.GetDailyHistory(ctx, mapping.ContractCode, 120)
+	if err != nil || len(prices) < 60 {
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf(
+			"Insufficient data for <code>%s</code> HMM (need ≥60 daily bars, got %d).",
+			mapping.Currency, len(prices),
+		))
+		return sendErr
+	}
+
+	records := dailyToPriceRecords(prices)
+	hmm, err := pricesvc.EstimateHMMRegime(records)
+	if err != nil {
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("HMM estimation failed: %s", err.Error()))
+		return sendErr
+	}
+
+	htmlOut := h.fmt.FormatHMMRegime(mapping.Currency, hmm)
+	_, err = h.bot.SendHTML(ctx, chatID, htmlOut)
+	return err
+}
+
+// stateIndex returns the numeric index for an HMM state label.
+func stateIndex(state string) int {
+	switch state {
+	case pricesvc.HMMRiskOn:
+		return 0
+	case pricesvc.HMMRiskOff:
+		return 1
+	case pricesvc.HMMCrisis:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Factor Decomposition
+// ---------------------------------------------------------------------------
+
+// cmdFactors handles /factors — factor return decomposition.
+func (h *Handler) cmdFactors(ctx context.Context, chatID string, userID int64, args string) error {
+	if h.signalRepo == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "Signal repository not available.")
+		return err
+	}
+
+	_, _ = h.bot.SendHTML(ctx, chatID, "Running factor decomposition...")
+
+	decomposer := backtestsvc.NewFactorDecomposer(h.signalRepo)
+	result, err := decomposer.Decompose(ctx)
+	if err != nil {
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Factor decomposition failed: %s", err.Error()))
+		return sendErr
+	}
+
+	htmlOut := h.fmt.FormatFactorDecomposition(result)
+	_, err = h.bot.SendHTML(ctx, chatID, htmlOut)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Walk-Forward Optimization
+// ---------------------------------------------------------------------------
+
+// cmdWFOpt handles /wfopt — walk-forward weight optimization.
+func (h *Handler) cmdWFOpt(ctx context.Context, chatID string, userID int64, args string) error {
+	if h.signalRepo == nil {
+		_, err := h.bot.SendHTML(ctx, chatID, "Signal repository not available.")
+		return err
+	}
+
+	_, _ = h.bot.SendHTML(ctx, chatID, "Running walk-forward optimization (26W train → 4W test)...")
+
+	optimizer := backtestsvc.NewWalkForwardOptimizer(h.signalRepo)
+	result, err := optimizer.Optimize(ctx)
+	if err != nil {
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Walk-forward optimization failed: %s", err.Error()))
+		return sendErr
+	}
+
+	htmlOut := h.fmt.FormatWFOptimization(result)
+	_, err = h.bot.SendHTML(ctx, chatID, htmlOut)
+	return err
 }

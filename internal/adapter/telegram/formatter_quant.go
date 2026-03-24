@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
+	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 )
 
@@ -387,3 +388,236 @@ func (f *Formatter) FormatHurst(currency string, h *pricesvc.HurstResult, regime
 	return b.String()
 }
 
+// ---------------------------------------------------------------------------
+// HMM Regime-Switching Formatter
+// ---------------------------------------------------------------------------
+
+// FormatHMMRegime formats an HMM regime result for Telegram display.
+func (f *Formatter) FormatHMMRegime(currency string, h *pricesvc.HMMResult) string {
+	var b strings.Builder
+
+	icon := "⚪"
+	switch h.CurrentState {
+	case pricesvc.HMMRiskOn:
+		icon = "🟢"
+	case pricesvc.HMMRiskOff:
+		icon = "🟡"
+	case pricesvc.HMMCrisis:
+		icon = "🔴"
+	}
+
+	b.WriteString(fmt.Sprintf("🔀 <b>%s — HMM Regime Model</b> %s\n\n", currency, icon))
+
+	// Current state
+	b.WriteString("<b>📊 Current Regime</b>\n")
+	b.WriteString(fmt.Sprintf("<code>State     : %s</code> %s\n", h.CurrentState, icon))
+	b.WriteString(fmt.Sprintf("<code>P(Risk-On): %.1f%%</code>\n", h.StateProbabilities[0]*100))
+	b.WriteString(fmt.Sprintf("<code>P(Risk-Of): %.1f%%</code>\n", h.StateProbabilities[1]*100))
+	b.WriteString(fmt.Sprintf("<code>P(Crisis) : %.1f%%</code>\n", h.StateProbabilities[2]*100))
+	b.WriteString(fmt.Sprintf("<code>Samples   : %d</code>\n", h.SampleSize))
+	b.WriteString(fmt.Sprintf("<code>Converged : %v (%d iter)</code>\n", h.Converged, h.Iterations))
+
+	// Transition warning
+	if h.TransitionWarning != "" {
+		b.WriteString(fmt.Sprintf("\n⚠️ <b>%s</b>\n", h.TransitionWarning))
+	}
+
+	// Transition matrix
+	b.WriteString("\n<b>🔄 Transition Probabilities</b>\n")
+	labels := []string{"R_ON", "R_OF", "CRIS"}
+	b.WriteString("<code>        R_ON  R_OF  CRIS</code>\n")
+	for i, label := range labels {
+		b.WriteString(fmt.Sprintf("<code>%-5s  %.2f  %.2f  %.2f</code>\n",
+			label,
+			h.TransitionMatrix[i][0],
+			h.TransitionMatrix[i][1],
+			h.TransitionMatrix[i][2],
+		))
+	}
+
+	// Recent Viterbi path
+	if len(h.ViterbiPath) > 0 {
+		b.WriteString("\n<b>📈 Recent State Path</b>\n<code>")
+		for i, state := range h.ViterbiPath {
+			if i > 0 && i%5 == 0 {
+				b.WriteString(" ")
+			}
+			switch state {
+			case pricesvc.HMMRiskOn:
+				b.WriteString("●")
+			case pricesvc.HMMRiskOff:
+				b.WriteString("○")
+			case pricesvc.HMMCrisis:
+				b.WriteString("✕")
+			}
+		}
+		b.WriteString("</code>\n")
+		b.WriteString("<code>● Risk-On  ○ Risk-Off  ✕ Crisis</code>\n")
+	}
+
+	// Trading implications
+	b.WriteString("\n<b>💡 Trading Implications</b>\n")
+	mult := pricesvc.HMMConfidenceMultiplier(h)
+	switch h.CurrentState {
+	case pricesvc.HMMRiskOn:
+		b.WriteString("<code>→ Trend-following signals more reliable</code>\n")
+		b.WriteString("<code>→ Wider position sizing acceptable</code>\n")
+	case pricesvc.HMMRiskOff:
+		b.WriteString("<code>→ Reduce position sizes by 10%</code>\n")
+		b.WriteString("<code>→ Prefer defensive/hedge signals</code>\n")
+	case pricesvc.HMMCrisis:
+		b.WriteString("<code>→ Reduce position sizes by 30%</code>\n")
+		b.WriteString("<code>→ Avoid trend trades, prefer safe havens</code>\n")
+	}
+	b.WriteString(fmt.Sprintf("<code>Signal multiplier: %.2fx</code>\n", mult))
+
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// Factor Decomposition Formatter
+// ---------------------------------------------------------------------------
+
+// FormatFactorDecomposition formats a factor decomposition result for Telegram display.
+func (f *Formatter) FormatFactorDecomposition(r *backtestsvc.DecompositionResult) string {
+	var b strings.Builder
+
+	b.WriteString("🧬 <b>FACTOR DECOMPOSITION</b>\n")
+	b.WriteString(fmt.Sprintf("<code>R²: %.4f  Adj.R²: %.4f  n=%d</code>\n\n", r.RSquared, r.AdjRSquared, r.SampleSize))
+
+	b.WriteString("<b>📊 Factor Contributions</b>\n")
+	for _, fc := range r.Factors {
+		sigIcon := " "
+		if fc.IsSignificant {
+			sigIcon = "★"
+		}
+
+		dirIcon := "→"
+		switch fc.Direction {
+		case "POSITIVE":
+			dirIcon = "▲"
+		case "NEGATIVE":
+			dirIcon = "▼"
+		}
+
+		bar := factorBar(fc.PctExplained, r.RSquared*100)
+
+		b.WriteString(fmt.Sprintf("<code>%s %-17s β:%+.4f %s</code>\n",
+			sigIcon, fc.Name, fc.Coefficient, dirIcon))
+		b.WriteString(fmt.Sprintf("<code>  Explained: %.1f%%  %s</code>\n",
+			fc.PctExplained, bar))
+		if fc.IsSignificant {
+			b.WriteString(fmt.Sprintf("<code>  p=%.4f ★ significant</code>\n", fc.PValue))
+		} else {
+			b.WriteString(fmt.Sprintf("<code>  p=%.4f</code>\n", fc.PValue))
+		}
+	}
+
+	// Residual
+	b.WriteString(fmt.Sprintf("\n<code>Unexplained: %.1f%%</code>\n", r.ResidualPct))
+
+	// Edge source
+	b.WriteString(fmt.Sprintf("\n<b>🎯 Top Factor:</b> %s\n", r.TopFactor))
+	b.WriteString(fmt.Sprintf("<b>💡 Edge Source:</b> %s\n", r.EdgeSource))
+
+	// Per-currency breakdown
+	if len(r.PerCurrency) > 0 {
+		b.WriteString("\n<b>📋 Per-Currency Top Factor</b>\n")
+		for cur, decomp := range r.PerCurrency {
+			b.WriteString(fmt.Sprintf("<code>%-6s → %s (R²=%.3f, n=%d)</code>\n",
+				cur, decomp.TopFactor, decomp.RSquared, decomp.SampleSize))
+		}
+	}
+
+	return b.String()
+}
+
+// factorBar creates a visual bar for factor contribution.
+func factorBar(pct, maxPct float64) string {
+	const width = 10
+	if maxPct <= 0 {
+		return "[" + strings.Repeat("░", width) + "]"
+	}
+	filled := int(pct / maxPct * float64(width))
+	if filled > width {
+		filled = width
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
+}
+
+// ---------------------------------------------------------------------------
+// Walk-Forward Optimization Formatter
+// ---------------------------------------------------------------------------
+
+// FormatWFOptimization formats a walk-forward optimization result for Telegram display.
+func (f *Formatter) FormatWFOptimization(r *backtestsvc.WFOResult) string {
+	var b strings.Builder
+
+	b.WriteString("🔄 <b>WALK-FORWARD OPTIMIZATION</b>\n")
+	b.WriteString(fmt.Sprintf("<code>Windows: %d  Train: %dW  Test: %dW</code>\n\n", r.ValidWindows, 26, 4))
+
+	// Aggregate optimal weights
+	b.WriteString("<b>📊 Optimized Weights (avg across windows)</b>\n")
+	for _, factor := range []string{"COT", "Stress", "FRED", "Price"} {
+		w := r.AggregateWeights[factor]
+		bar := weightBar(w)
+		b.WriteString(fmt.Sprintf("<code>%-8s %5.1f%% %s</code>\n", factor, w, bar))
+	}
+
+	// Per-regime weights
+	if len(r.RegimeWeights) > 0 {
+		b.WriteString("\n<b>🔀 Per-Regime Weights</b>\n")
+		for regime, weights := range r.RegimeWeights {
+			b.WriteString(fmt.Sprintf("<code>%s:</code>\n", regime))
+			for _, factor := range []string{"COT", "Stress", "FRED", "Price"} {
+				w := weights[factor]
+				b.WriteString(fmt.Sprintf("<code>  %-8s %5.1f%%</code>\n", factor, w))
+			}
+		}
+	}
+
+	// Performance comparison
+	b.WriteString("\n<b>📈 Performance (OOS)</b>\n")
+	b.WriteString(fmt.Sprintf("<code>Static V3 WR  : %.1f%%</code>\n", r.StaticOOSWinRate))
+	b.WriteString(fmt.Sprintf("<code>Adaptive WR   : %.1f%%</code>\n", r.AdaptiveOOSWinRate))
+
+	impIcon := "→"
+	if r.Improvement > 1 {
+		impIcon = "▲"
+	} else if r.Improvement < -1 {
+		impIcon = "▼"
+	}
+	b.WriteString(fmt.Sprintf("<code>Improvement   : %+.1fpp</code> %s\n", r.Improvement, impIcon))
+	b.WriteString(fmt.Sprintf("<code>Avg OOS Return: %+.4f%%</code>\n", r.AvgOOSReturn*100))
+
+	// Stability
+	b.WriteString("\n<b>🔒 Stability</b>\n")
+	stabIcon := "🟢"
+	if r.WeightStability < 50 {
+		stabIcon = "🔴"
+	} else if r.WeightStability < 70 {
+		stabIcon = "🟡"
+	}
+	b.WriteString(fmt.Sprintf("<code>Weight Stability: %.0f%%</code> %s\n", r.WeightStability, stabIcon))
+
+	// Recommendation
+	b.WriteString(fmt.Sprintf("\n<b>💡 Recommendation:</b>\n<code>%s</code>\n", r.Recommendation))
+
+	return b.String()
+}
+
+// weightBar creates a visual bar for weight percentage.
+func weightBar(pct float64) string {
+	const width = 10
+	filled := int(pct / 100 * float64(width))
+	if filled > width {
+		filled = width
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
+}
