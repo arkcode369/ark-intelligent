@@ -620,8 +620,18 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 	oldPreviousVal, hasOldPrevious := ParseNumericValue(ev.OldPrevious)
 
 	if hasActual && hasForecast {
-		// Use ImpactDirection-aware surprise computation
-		ev.SurpriseScore = ComputeSurpriseWithDirection(actualVal, forecastVal, nil, ev.ImpactDirection)
+		// BUG #5 FIX: Fetch historical (actual - forecast) diffs for the same event/currency
+		// so ComputeSurpriseWithDirection can normalize by stddev instead of using raw diff.
+		// Without this, a raw diff of 0.05 could incorrectly label as "MAJOR BULLISH SURPRISE"
+		// because the threshold (abs >= 2.0) was designed for sigma units, not raw values.
+		// GetHistoricalSurprises returns nil (not an error) when < 3 data points exist,
+		// in which case ComputeSurpriseWithDirection gracefully falls back to raw diff.
+		history, histErr := s.repo.GetHistoricalSurprises(ctx, ev.Event, ev.Currency, 6)
+		if histErr != nil {
+			schedLog.Warn().Str("event", ev.Event).Err(histErr).Msg("failed to fetch historical surprises; falling back to raw diff")
+			history = nil
+		}
+		ev.SurpriseScore = ComputeSurpriseWithDirection(actualVal, forecastVal, history, ev.ImpactDirection)
 		ev.SurpriseLabel = ClassifySurpriseWithDirection(ev.SurpriseScore, ev.ImpactDirection)
 	}
 

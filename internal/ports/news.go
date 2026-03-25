@@ -19,6 +19,12 @@ type NewsRepository interface {
 
 	// SaveRevision records a data revision for historical tracking.
 	SaveRevision(ctx context.Context, rev domain.EventRevision) error
+
+	// GetHistoricalSurprises returns a slice of (actual - forecast) raw differences
+	// for a given event name + currency pair, looking back up to lookbackMonths months.
+	// Used to build a historical stddev for normalization in ComputeSurpriseWithDirection.
+	// Returns nil (not an error) if fewer than 3 data points are available.
+	GetHistoricalSurprises(ctx context.Context, eventName string, currency string, lookbackMonths int) ([]float64, error)
 }
 
 // NewsFetcher defines the interface for fetching the economic calendar.

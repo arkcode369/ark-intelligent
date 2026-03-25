@@ -44,8 +44,15 @@ func parseNumeric(s string) *float64 {
 	return nil
 }
 
-// directionArrow checks if Actual beats Forecast using numeric comparison.
-func directionArrow(actual, forecast string) string {
+// directionArrow checks if Actual beats Forecast using numeric comparison,
+// respecting ImpactDirection from MQL5 so inverted indicators (unemployment,
+// CPI miss, trade deficit) show the correct color for the currency.
+//
+// impactDirection semantics (MQL5):
+//   0 = neutral/unknown  → fall back to raw numeric comparison
+//   1 = higher actual is bullish for the currency (e.g. NFP, GDP)
+//   2 = higher actual is bearish for the currency (e.g. Unemployment Claims, CPI when above target)
+func directionArrow(actual, forecast string, impactDirection ...int) string {
 	if actual == "" || forecast == "" {
 		return "⚪"
 	}
@@ -54,9 +61,31 @@ func directionArrow(actual, forecast string) string {
 	if aVal == nil || fVal == nil {
 		return "⚪"
 	}
-	if *aVal > *fVal {
+
+	diff := *aVal - *fVal
+
+	// Determine effective direction using ImpactDirection when provided
+	dir := 0
+	if len(impactDirection) > 0 {
+		dir = impactDirection[0]
+	}
+
+	var effectiveDiff float64
+	switch dir {
+	case 1:
+		// Higher actual = bullish for currency (normal indicator)
+		effectiveDiff = diff
+	case 2:
+		// Higher actual = bearish for currency (inverted indicator: unemployment, deficits, etc.)
+		effectiveDiff = -diff
+	default:
+		// Unknown direction: use raw diff
+		effectiveDiff = diff
+	}
+
+	if effectiveDiff > 0 {
 		return "🟢"
-	} else if *aVal < *fVal {
+	} else if effectiveDiff < 0 {
 		return "🔴"
 	}
 	return "⚪"
@@ -100,7 +129,7 @@ func (f *Formatter) FormatCalendarDay(dateStr string, events []domain.NewsEvent,
 		b.WriteString(fmt.Sprintf("↳ <i>%s</i>\n", e.Event))
 
 		if e.Actual != "" {
-			arrow := directionArrow(e.Actual, e.Forecast)
+			arrow := directionArrow(e.Actual, e.Forecast, e.ImpactDirection)
 			line := fmt.Sprintf("   ✅ Actual: <b>%s</b> %s (Fcast: %s | Prev: %s)", e.Actual, arrow, e.Forecast, e.Previous)
 			if e.SurpriseLabel != "" {
 				line += fmt.Sprintf(" — <i>%s</i>", e.SurpriseLabel)
@@ -163,7 +192,7 @@ func (f *Formatter) FormatCalendarWeek(weekStart string, events []domain.NewsEve
 
 		line := fmt.Sprintf("%s %s %s: <i>%s</i>", e.FormatImpactColor(), timeDisplay, e.Currency, e.Event)
 		if e.Actual != "" {
-			arrow := directionArrow(e.Actual, e.Forecast)
+			arrow := directionArrow(e.Actual, e.Forecast, e.ImpactDirection)
 			line += fmt.Sprintf(" — ✅<b>%s</b>%s", e.Actual, arrow)
 			if e.SurpriseLabel != "" {
 				line += fmt.Sprintf(" <i>%s</i>", e.SurpriseLabel)
@@ -209,7 +238,7 @@ func (f *Formatter) FormatCalendarMonth(monthLabel string, events []domain.NewsE
 
 		line := fmt.Sprintf("%s %s %s: <i>%s</i>", e.FormatImpactColor(), timeDisplay, e.Currency, e.Event)
 		if e.Actual != "" {
-			arrow := directionArrow(e.Actual, e.Forecast)
+			arrow := directionArrow(e.Actual, e.Forecast, e.ImpactDirection)
 			line += fmt.Sprintf(" — ✅<b>%s</b>%s", e.Actual, arrow)
 		}
 		b.WriteString(line + "\n")
