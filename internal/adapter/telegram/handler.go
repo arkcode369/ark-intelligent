@@ -298,7 +298,33 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 		return err
 	}
 
-	html := h.fmt.FormatCOTOverview(analyses)
+	// Build conviction scores for overview (best-effort, non-fatal)
+	var overviewConvictions []cot.ConvictionScore
+	macroDataOv, fredErrOv := fred.GetCachedOrFetch(ctx)
+	if fredErrOv == nil && macroDataOv != nil {
+		regimeOv := fred.ClassifyMacroRegime(macroDataOv)
+		var priceCtxsOv map[string]*domain.PriceContext
+		if h.priceRepo != nil {
+			ctxBuilderOv := pricesvc.NewContextBuilder(h.priceRepo)
+			if pcs, pcErr := ctxBuilderOv.BuildAll(ctx); pcErr == nil {
+				priceCtxsOv = pcs
+			}
+		}
+		for _, a := range analyses {
+			surpriseSigma := 0.0
+			if h.newsScheduler != nil {
+				surpriseSigma = h.newsScheduler.GetSurpriseSigma(a.Contract.Currency)
+			}
+			var pc *domain.PriceContext
+			if priceCtxsOv != nil {
+				pc = priceCtxsOv[a.Contract.Code]
+			}
+			cs := cot.ComputeConvictionScoreV3(a, regimeOv, surpriseSigma, "", macroDataOv, pc)
+			overviewConvictions = append(overviewConvictions, cs)
+		}
+	}
+
+	html := h.fmt.FormatCOTOverview(analyses, overviewConvictions)
 	kb := h.kb.COTCurrencySelector(analyses)
 	_, err = h.bot.SendWithKeyboard(ctx, chatID, html, kb)
 	return err
@@ -461,7 +487,32 @@ func (h *Handler) cbCOTDetail(ctx context.Context, chatID string, msgID int, use
 		if err != nil || len(analyses) == 0 {
 			return h.bot.EditMessage(ctx, chatID, msgID, "No COT data available.")
 		}
-		html := h.fmt.FormatCOTOverview(analyses)
+		// Build conviction scores for overview (best-effort, non-fatal)
+		var cbConvictions []cot.ConvictionScore
+		cbMacro, cbFredErr := fred.GetCachedOrFetch(ctx)
+		if cbFredErr == nil && cbMacro != nil {
+			cbRegime := fred.ClassifyMacroRegime(cbMacro)
+			var cbPriceCtxs map[string]*domain.PriceContext
+			if h.priceRepo != nil {
+				cbBuilder := pricesvc.NewContextBuilder(h.priceRepo)
+				if pcs, pcErr := cbBuilder.BuildAll(ctx); pcErr == nil {
+					cbPriceCtxs = pcs
+				}
+			}
+			for _, a := range analyses {
+				surpriseSigma := 0.0
+				if h.newsScheduler != nil {
+					surpriseSigma = h.newsScheduler.GetSurpriseSigma(a.Contract.Currency)
+				}
+				var pc *domain.PriceContext
+				if cbPriceCtxs != nil {
+					pc = cbPriceCtxs[a.Contract.Code]
+				}
+				cs := cot.ComputeConvictionScoreV3(a, cbRegime, surpriseSigma, "", cbMacro, pc)
+				cbConvictions = append(cbConvictions, cs)
+			}
+		}
+		html := h.fmt.FormatCOTOverview(analyses, cbConvictions)
 		kb := h.kb.COTCurrencySelector(analyses)
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, html, kb)
 	}

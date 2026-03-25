@@ -222,42 +222,184 @@ func (f *Formatter) FormatCalendarMonth(monthLabel string, events []domain.NewsE
 // COT Formatting
 // ---------------------------------------------------------------------------
 
-// FormatCOTOverview formats a summary of all COT analyses.
-func (f *Formatter) FormatCOTOverview(analyses []domain.COTAnalysis) string {
+// cotGroup defines the display groups for COT overview.
+type cotGroup struct {
+	Header    string
+	Emoji     string
+	Codes     []string // contract codes in preferred order
+}
+
+// cotGroups defines the canonical grouping and order for COT overview display.
+var cotGroups = []cotGroup{
+	{
+		Header: "FOREX MAJORS",
+		Emoji:  "🌍",
+		Codes:  []string{"098662", "099741", "096742", "097741", "232741", "112741", "090741", "092741"},
+	},
+	{
+		Header: "EQUITY INDICES",
+		Emoji:  "📈",
+		Codes:  []string{"13874A", "209742", "124601", "239742"},
+	},
+	{
+		Header: "COMMODITIES",
+		Emoji:  "🏅",
+		Codes:  []string{"088691", "084691", "085692", "067651", "022651", "111659"},
+	},
+	{
+		Header: "BONDS",
+		Emoji:  "📊",
+		Codes:  []string{"042601", "044601", "043602", "020601"},
+	},
+	{
+		Header: "CRYPTO",
+		Emoji:  "₿",
+		Codes:  []string{"133741", "146021"},
+	},
+}
+
+// cotIdxLabel returns a short label for a COT Index value.
+func cotIdxLabel(idx float64) string {
+	switch {
+	case idx >= 80:
+		return "X.Long"
+	case idx >= 60:
+		return "Bullish"
+	case idx >= 40:
+		return "Neutral"
+	case idx >= 20:
+		return "Bearish"
+	default:
+		return "X.Short"
+	}
+}
+
+// convictionMiniBar renders a small conviction bar: e.g. "▓▓▓░░ 62"
+func convictionMiniBar(score float64, dir string) string {
+	filled := int(score / 20) // 0-5 blocks
+	if filled > 5 {
+		filled = 5
+	}
+	bar := strings.Repeat("▓", filled) + strings.Repeat("░", 5-filled)
+	icon := "⚪"
+	switch {
+	case score >= 65 && dir == "LONG":
+		icon = "🟢"
+	case score >= 65 && dir == "SHORT":
+		icon = "🔴"
+	case score >= 55:
+		icon = "🟡"
+	}
+	return fmt.Sprintf("%s[%s]%.0f", icon, bar, score)
+}
+
+// FormatCOTOverview formats a grouped, sorted summary of all COT analyses.
+// convictions may be nil — conviction column is hidden gracefully.
+func (f *Formatter) FormatCOTOverview(analyses []domain.COTAnalysis, convictions []cot.ConvictionScore) string {
 	var b strings.Builder
 
-	b.WriteString("<b>COT Positioning Overview</b>\n")
+	// Build lookup maps
+	byCode := make(map[string]domain.COTAnalysis, len(analyses))
+	for _, a := range analyses {
+		byCode[a.Contract.Code] = a
+	}
+	convMap := make(map[string]cot.ConvictionScore, len(convictions))
+	for _, cs := range convictions {
+		convMap[cs.Currency] = cs
+	}
+	shown := make(map[string]bool)
+
+	b.WriteString("📋 <b>COT POSITIONING OVERVIEW</b>\n")
 	if len(analyses) > 0 {
-		b.WriteString(fmt.Sprintf("<i>Report: %s</i>\n\n",
-			analyses[0].ReportDate.Format("Jan 2, 2006")))
+		b.WriteString(fmt.Sprintf("<i>Report: %s</i>\n", analyses[0].ReportDate.Format("Jan 2, 2006")))
+	}
+	hasConv := len(convictions) > 0
+	if hasConv {
+		b.WriteString("<i>Conv = Conviction Score (COT+FRED+Price)</i>\n")
+	}
+	b.WriteString("\n")
+
+	for _, grp := range cotGroups {
+		// Collect analyses for this group
+		var grpAnalyses []domain.COTAnalysis
+		for _, code := range grp.Codes {
+			if a, ok := byCode[code]; ok {
+				grpAnalyses = append(grpAnalyses, a)
+				shown[code] = true
+			}
+		}
+		if len(grpAnalyses) == 0 {
+			continue
+		}
+
+		// Sort within group by COT Index descending (strongest conviction first)
+		sort.Slice(grpAnalyses, func(i, j int) bool {
+			// Use conviction score if available, otherwise COT Index
+			ci, ciOk := convMap[grpAnalyses[i].Contract.Currency]
+			cj, cjOk := convMap[grpAnalyses[j].Contract.Currency]
+			if ciOk && cjOk {
+				return ci.Score > cj.Score
+			}
+			return grpAnalyses[i].COTIndex > grpAnalyses[j].COTIndex
+		})
+
+		b.WriteString(fmt.Sprintf("%s <b>%s</b>\n", grp.Emoji, grp.Header))
+
+		for _, a := range grpAnalyses {
+			bias := "NEUTRAL"
+			biasIcon := "⚪"
+			if a.NetPosition > 0 {
+				bias = "LONG"
+				biasIcon = "🟢"
+			} else if a.NetPosition < 0 {
+				bias = "SHORT"
+				biasIcon = "🔴"
+			}
+
+			idxLbl := cotIdxLabel(a.COTIndex)
+
+			// Line 1: name + bias
+			b.WriteString(fmt.Sprintf("%s <b>%s</b> %s\n", biasIcon, a.Contract.Name, bias))
+
+			// Line 2: Net | Idx | Conv (if available)
+			if cs, ok := convMap[a.Contract.Currency]; ok {
+				b.WriteString(fmt.Sprintf("<code>  Net:%-10s Idx:%.0f%% (%s)</code>\n",
+					fmtutil.FmtNum(a.NetPosition, 0), a.COTIndex, idxLbl))
+				b.WriteString(fmt.Sprintf("<code>  Chg:%-10s Mom:%-10s Conv:%s</code>\n",
+					fmtutil.FmtNumSigned(a.NetChange, 0),
+					f.momentumLabel(a.MomentumDir),
+					convictionMiniBar(cs.Score, cs.Direction)))
+			} else {
+				b.WriteString(fmt.Sprintf("<code>  Net:%-10s Idx:%.0f%% (%s)</code>\n",
+					fmtutil.FmtNum(a.NetPosition, 0), a.COTIndex, idxLbl))
+				b.WriteString(fmt.Sprintf("<code>  Chg:%-10s Mom:%s</code>\n",
+					fmtutil.FmtNumSigned(a.NetChange, 0),
+					f.momentumLabel(a.MomentumDir)))
+			}
+			b.WriteString("\n")
+		}
 	}
 
+	// Catch-all: any analyses not in a group (future contracts)
+	var ungrouped []domain.COTAnalysis
 	for _, a := range analyses {
-		bias := "NEUTRAL"
-		if a.NetPosition > 0 {
-			bias = "LONG"
-		} else if a.NetPosition < 0 {
-			bias = "SHORT"
+		if !shown[a.Contract.Code] {
+			ungrouped = append(ungrouped, a)
 		}
-
-		// COT Index classification
-		idxLabel := "Neutral"
-		if a.COTIndex >= 80 {
-			idxLabel = "Extreme Long"
-		} else if a.COTIndex <= 20 {
-			idxLabel = "Extreme Short"
-		} else if a.COTIndex >= 60 {
-			idxLabel = "Bullish"
-		} else if a.COTIndex <= 40 {
-			idxLabel = "Bearish"
+	}
+	if len(ungrouped) > 0 {
+		b.WriteString("📌 <b>OTHER</b>\n")
+		for _, a := range ungrouped {
+			bias := "NEUTRAL"
+			if a.NetPosition > 0 {
+				bias = "LONG"
+			} else if a.NetPosition < 0 {
+				bias = "SHORT"
+			}
+			b.WriteString(fmt.Sprintf("<b>%s</b> %s\n", a.Contract.Name, bias))
+			b.WriteString(fmt.Sprintf("<code>  Net: %s | Idx: %.0f%%</code>\n\n",
+				fmtutil.FmtNum(a.NetPosition, 0), a.COTIndex))
 		}
-
-		b.WriteString(fmt.Sprintf("<b>%s</b> %s\n", a.Contract.Name, bias))
-		b.WriteString(fmt.Sprintf("<code>  Net: %s | Idx: %.0f%% (%s)</code>\n",
-			fmtutil.FmtNum(a.NetPosition, 0), a.COTIndex, idxLabel))
-		b.WriteString(fmt.Sprintf("<code>  Chg: %s | Mom: %s</code>\n\n",
-			fmtutil.FmtNumSigned(a.NetChange, 0),
-			f.momentumLabel(a.MomentumDir)))
 	}
 
 	b.WriteString("<i>Tap a currency for detailed breakdown</i>\n")
