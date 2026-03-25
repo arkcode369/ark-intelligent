@@ -19,7 +19,7 @@ type RetentionPolicy struct {
 	COTMaxAge      time.Duration // Default: 52 weeks
 	RevisionMaxAge time.Duration // Default: 6 months
 	HistoryMaxAge  time.Duration // Default: 24 months
-	PriceMaxAge    time.Duration // Default: 104 weeks (2 years)
+	PriceMaxAge    time.Duration // Default: 260 weeks (5 years)
 	SignalMaxAge   time.Duration // Default: 52 weeks
 }
 
@@ -30,7 +30,7 @@ func DefaultRetentionPolicy() RetentionPolicy {
 		COTMaxAge:      52 * 7 * 24 * time.Hour,   // 52 weeks
 		RevisionMaxAge: 6 * 30 * 24 * time.Hour,   // ~6 months
 		HistoryMaxAge:  24 * 30 * 24 * time.Hour,   // ~24 months
-		PriceMaxAge:    104 * 7 * 24 * time.Hour,   // ~2 years
+		PriceMaxAge:    260 * 7 * 24 * time.Hour,   // ~5 years (matches seasonal analysis window)
 		SignalMaxAge:   52 * 7 * 24 * time.Hour,    // 52 weeks
 	}
 }

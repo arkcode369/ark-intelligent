@@ -589,7 +589,7 @@ func (s *Scheduler) jobPriceFetch(ctx context.Context) error {
 
 	if fetcher, ok := s.deps.PriceFetcher.(*pricesvc.Fetcher); ok {
 		var err error
-		records, report, err = fetcher.FetchAllDetailed(ctx, 52)
+		records, report, err = fetcher.FetchAllDetailed(ctx, 260)
 		if err != nil {
 			s.notifyOwnerPriceFetch(ctx, report, err)
 			return fmt.Errorf("price fetch: %w", err)
@@ -606,7 +606,7 @@ func (s *Scheduler) jobPriceFetch(ctx context.Context) error {
 		}
 	} else {
 		var err error
-		records, err = s.deps.PriceFetcher.FetchAll(ctx, 52)
+		records, err = s.deps.PriceFetcher.FetchAll(ctx, 260)
 		if err != nil {
 			return fmt.Errorf("price fetch: %w", err)
 		}
