@@ -531,69 +531,281 @@ func (f *Formatter) FormatCOTDetailWithCode(a domain.COTAnalysis, displayCode st
 	return b.String()
 }
 
-// FormatCOTRaw formats raw uncalculated CFTC data for a contract.
+// FormatCOTRaw formats raw CFTC data with plain-language explanations and calculated metrics.
 func (f *Formatter) FormatCOTRaw(r domain.COTRecord) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("<b>Raw COT Data: %s</b>\n", r.ContractName))
-	b.WriteString(fmt.Sprintf("<i>Report: %s</i>\n\n", r.ReportDate.Format("Jan 2, 2006")))
+	b.WriteString(fmt.Sprintf("📊 <b>DATA MENTAH COT: %s</b>\n", r.ContractName))
+	b.WriteString(fmt.Sprintf("<i>Laporan: %s | Sumber: CFTC (resmi)</i>\n", r.ReportDate.Format("Jan 2, 2006")))
+	b.WriteString("<i>Data ini adalah angka posisi asli sebelum dikalkulasi</i>\n\n")
 
-	b.WriteString("<b>Open Interest:</b>\n")
-	b.WriteString(fmt.Sprintf("<code>  Total:    %s</code>\n\n", fmtutil.FmtNum(r.OpenInterest, 0)))
+	// Open Interest
+	b.WriteString("📌 <b>OPEN INTEREST (Total Kontrak Aktif)</b>\n")
+	b.WriteString(fmt.Sprintf("<code>  Total: %s kontrak</code>\n", fmtutil.FmtNum(r.OpenInterest, 0)))
+	b.WriteString("<i>  → Semakin besar = semakin banyak uang yang aktif di pasar ini</i>\n\n")
 
-	if r.ContractName == "Gold" || r.ContractName == "Crude Oil WTI" {
-		// Disaggregated Format
-		b.WriteString("<b>Managed Money (Specs):</b>\n")
-		b.WriteString(fmt.Sprintf("<code>  Long:     %s</code>\n", fmtutil.FmtNum(r.ManagedMoneyLong, 0)))
-		b.WriteString(fmt.Sprintf("<code>  Short:    %s</code>\n\n", fmtutil.FmtNum(r.ManagedMoneyShort, 0)))
+	isDisagg := r.ContractName == "Gold" || r.ContractName == "Crude Oil WTI" ||
+		r.ContractName == "Silver" || r.ContractName == "Copper" ||
+		r.ContractName == "NY Harbor ULSD" || r.ContractName == "RBOB Gasoline"
 
-		b.WriteString("<b>Prod/Swap (Commercials):</b>\n")
-		b.WriteString(fmt.Sprintf("<code>  Long:     %s</code>\n", fmtutil.FmtNum(r.ProdMercLong+r.SwapDealerLong, 0)))
-		b.WriteString(fmt.Sprintf("<code>  Short:    %s</code>\n", fmtutil.FmtNum(r.ProdMercShort+r.SwapDealerShort, 0)))
+	if isDisagg {
+		// ── DISAGGREGATED (Komoditas fisik: Gold, Oil, dll) ──
+		mmLong := r.ManagedMoneyLong
+		mmShort := r.ManagedMoneyShort
+		mmNet := mmLong - mmShort
+		var mmRatio float64
+		if mmShort > 0 {
+			mmRatio = mmLong / mmShort
+		}
+		mmNetIcon := "🟢"
+		mmNetDesc := "NET BELI"
+		if mmNet < 0 {
+			mmNetIcon = "🔴"
+			mmNetDesc = "NET JUAL"
+		}
+
+		b.WriteString("🧠 <b>MANAGED MONEY — Hedge Fund / Spekulan Besar</b>\n")
+		b.WriteString("<i>  Siapa ini? Dana investasi besar yang mencari profit dari pergerakan harga</i>\n")
+		b.WriteString(fmt.Sprintf("<code>  Long (beli) : %s kontrak</code>\n", fmtutil.FmtNum(mmLong, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Short (jual): %s kontrak</code>\n", fmtutil.FmtNum(mmShort, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Net         : %s%s (%s)</code>\n",
+			func() string {
+				if mmNet >= 0 {
+					return "+"
+				}
+				return ""
+			}(),
+			fmtutil.FmtNum(mmNet, 0), mmNetDesc))
+		if mmRatio > 0 {
+			b.WriteString(fmt.Sprintf("<code>  Rasio L/S   : %.2fx lebih banyak %s</code>\n",
+				func() float64 {
+					if mmRatio >= 1 {
+						return mmRatio
+					}
+					if mmShort > 0 && mmLong > 0 {
+						return mmShort / mmLong
+					}
+					return mmRatio
+				}(),
+				func() string {
+					if mmRatio >= 1 {
+						return "beli vs jual"
+					}
+					return "jual vs beli"
+				}()))
+		}
+		b.WriteString(fmt.Sprintf("<i>  → Spekulan sedang %s %s — mereka %s harga naik</i>\n\n",
+			mmNetIcon, mmNetDesc,
+			func() string {
+				if mmNet > 0 {
+					return "EKSPEKTASI"
+				}
+				return "TIDAK ekspektasi"
+			}()))
+
+		// Commercials (Prod/Swap)
+		commLong := r.ProdMercLong + r.SwapDealerLong
+		commShort := r.ProdMercShort + r.SwapDealerShort
+		commNet := commLong - commShort
+		commNetDesc := "net beli"
+		if commNet < 0 {
+			commNetDesc = "net jual (hedge)"
+		}
+
+		b.WriteString("🏭 <b>PROD/SWAP — Produsen & Korporasi</b>\n")
+		b.WriteString("<i>  Siapa ini? Perusahaan tambang, kilang minyak, bank komoditas</i>\n")
+		b.WriteString(fmt.Sprintf("<code>  Long (beli) : %s kontrak</code>\n", fmtutil.FmtNum(commLong, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Short (jual): %s kontrak</code>\n", fmtutil.FmtNum(commShort, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Net         : %s%s (%s)</code>\n",
+			func() string {
+				if commNet >= 0 {
+					return "+"
+				}
+				return ""
+			}(),
+			fmtutil.FmtNum(commNet, 0), commNetDesc))
+		b.WriteString("<i>  → Produsen biasanya net SHORT untuk lindungi produksi mereka.\n")
+		b.WriteString("     Ini NORMAL dan bukan sinyal bearish murni.</i>\n\n")
+
+		// Perbandingan Specs vs Commercials
+		b.WriteString("⚡ <b>BACAAN CEPAT</b>\n")
+		if mmNet > 0 && commNet < 0 {
+			b.WriteString("  ✅ Kondisi normal: spekulan beli, produsen hedge\n")
+			if mmNet > 50000 {
+				b.WriteString("  ⚠️ Spekulan sudah beli banyak — risiko pembalikan jika mereka mulai keluar\n")
+			}
+		} else if mmNet < 0 && commNet > 0 {
+			b.WriteString("  🔀 Kondisi terbalik: spekulan jual, tapi produsen justru beli\n")
+			b.WriteString("  → Ini sinyal langka — bisa jadi titik balik harga\n")
+		} else if mmNet < 0 && commNet < 0 {
+			b.WriteString("  🔴 Semua pihak net jual — tekanan turun signifikan\n")
+		}
+
 	} else {
-		// TFF Format
-		b.WriteString("<b>Lev Funds (Specs):</b>\n")
-		b.WriteString(fmt.Sprintf("<code>  Long:     %s</code>\n", fmtutil.FmtNum(r.LevFundLong, 0)))
-		b.WriteString(fmt.Sprintf("<code>  Short:    %s</code>\n\n", fmtutil.FmtNum(r.LevFundShort, 0)))
+		// ── TFF (Financial: Mata uang, Bonds, Indices) ──
+		lfLong := r.LevFundLong
+		lfShort := r.LevFundShort
+		lfNet := lfLong - lfShort
+		lfNetIcon := "🟢"
+		lfNetDesc := "NET BELI"
+		if lfNet < 0 {
+			lfNetIcon = "🔴"
+			lfNetDesc = "NET JUAL"
+		}
+		var lfRatio float64
+		if lfShort > 0 {
+			lfRatio = lfLong / lfShort
+		}
 
-		b.WriteString("<b>Asset Manager (Real Money):</b>\n")
-		b.WriteString(fmt.Sprintf("<code>  Long:     %s</code>\n", fmtutil.FmtNum(r.AssetMgrLong, 0)))
-		b.WriteString(fmt.Sprintf("<code>  Short:    %s</code>\n\n", fmtutil.FmtNum(r.AssetMgrShort, 0)))
+		b.WriteString("⚡ <b>LEVERAGED FUNDS — Hedge Fund / CTA</b>\n")
+		b.WriteString("<i>  Siapa ini? Dana spekulatif yang trading dengan leverage tinggi</i>\n")
+		b.WriteString(fmt.Sprintf("<code>  Long (beli) : %s kontrak</code>\n", fmtutil.FmtNum(lfLong, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Short (jual): %s kontrak</code>\n", fmtutil.FmtNum(lfShort, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Net         : %s%s (%s)</code>\n",
+			func() string {
+				if lfNet >= 0 {
+					return "+"
+				}
+				return ""
+			}(),
+			fmtutil.FmtNum(lfNet, 0), lfNetDesc))
+		if lfRatio > 0 && lfShort > 0 {
+			dominant := "beli"
+			ratio := lfRatio
+			if lfRatio < 1 {
+				dominant = "jual"
+				ratio = lfShort / lfLong
+			}
+			b.WriteString(fmt.Sprintf("<code>  Rasio L/S   : %.2fx lebih banyak %s</code>\n", ratio, dominant))
+		}
+		b.WriteString(fmt.Sprintf("<i>  → %s Hedge fund sedang %s — ini sinyal paling penting untuk arah harga</i>\n\n",
+			lfNetIcon, lfNetDesc))
 
-		b.WriteString("<b>Dealers (Commercials):</b>\n")
-		b.WriteString(fmt.Sprintf("<code>  Long:     %s</code>\n", fmtutil.FmtNum(r.DealerLong, 0)))
-		b.WriteString(fmt.Sprintf("<code>  Short:    %s</code>\n", fmtutil.FmtNum(r.DealerShort, 0)))
-	}
+		// Asset Manager
+		amLong := r.AssetMgrLong
+		amShort := r.AssetMgrShort
+		amNet := amLong - amShort
+		amNetDesc := "net beli"
+		if amNet < 0 {
+			amNetDesc = "net jual"
+		}
 
-	// Trader counts
-	if r.TotalTraders > 0 || r.TotalTradersDisag > 0 {
-		b.WriteString("\n<b>Trader Depth:</b>\n")
-		if r.ContractName == "Gold" || r.ContractName == "Crude Oil WTI" {
-			if r.MMoneyLongTraders > 0 {
-				b.WriteString(fmt.Sprintf("<code>  MM Long:  %d traders</code>\n", r.MMoneyLongTraders))
-			}
-			if r.MMoneyShortTraders > 0 {
-				b.WriteString(fmt.Sprintf("<code>  MM Short: %d traders</code>\n", r.MMoneyShortTraders))
-			}
-			b.WriteString(fmt.Sprintf("<code>  Total:    %d traders</code>\n", r.TotalTradersDisag))
-		} else {
-			if r.DealerLongTraders > 0 {
-				b.WriteString(fmt.Sprintf("<code>  Dlr Long: %d traders</code>\n", r.DealerLongTraders))
-			}
-			if r.DealerShortTraders > 0 {
-				b.WriteString(fmt.Sprintf("<code>  Dlr Short:%d traders</code>\n", r.DealerShortTraders))
-			}
-			if r.LevFundLongTraders > 0 {
-				b.WriteString(fmt.Sprintf("<code>  LF Long:  %d traders</code>\n", r.LevFundLongTraders))
-			}
-			if r.LevFundShortTraders > 0 {
-				b.WriteString(fmt.Sprintf("<code>  LF Short: %d traders</code>\n", r.LevFundShortTraders))
-			}
-			b.WriteString(fmt.Sprintf("<code>  Total:    %d traders</code>\n", r.TotalTraders))
+		b.WriteString("🏦 <b>ASSET MANAGER — Dana Pensiun & Reksa Dana</b>\n")
+		b.WriteString("<i>  Siapa ini? Dana pensiun, reksa dana, asuransi — uang jangka panjang</i>\n")
+		b.WriteString(fmt.Sprintf("<code>  Long (beli) : %s kontrak</code>\n", fmtutil.FmtNum(amLong, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Short (jual): %s kontrak</code>\n", fmtutil.FmtNum(amShort, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Net         : %s%s (%s)</code>\n",
+			func() string {
+				if amNet >= 0 {
+					return "+"
+				}
+				return ""
+			}(),
+			fmtutil.FmtNum(amNet, 0), amNetDesc))
+		b.WriteString("<i>  → Pergerakan Asset Manager lebih lambat tapi lebih sustained</i>\n\n")
+
+		// Dealers
+		dlrLong := r.DealerLong
+		dlrShort := r.DealerShort
+		dlrNet := dlrLong - dlrShort
+
+		b.WriteString("🏛 <b>DEALERS — Bank Besar / Market Maker</b>\n")
+		b.WriteString("<i>  Siapa ini? Bank investasi yang jadi perantara pasar</i>\n")
+		b.WriteString(fmt.Sprintf("<code>  Long (beli) : %s kontrak</code>\n", fmtutil.FmtNum(dlrLong, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Short (jual): %s kontrak</code>\n", fmtutil.FmtNum(dlrShort, 0)))
+		b.WriteString(fmt.Sprintf("<code>  Net         : %s%s</code>\n",
+			func() string {
+				if dlrNet >= 0 {
+					return "+"
+				}
+				return ""
+			}(),
+			fmtutil.FmtNum(dlrNet, 0)))
+		b.WriteString("<i>  → Dealer biasanya posisi berlawanan dengan Lev Funds (mereka sisi lain transaksi)</i>\n\n")
+
+		// Bacaan cepat
+		b.WriteString("⚡ <b>BACAAN CEPAT</b>\n")
+		if lfNet > 0 && amNet > 0 {
+			b.WriteString("  🟢 Hedge fund DAN asset manager sama-sama beli — sinyal naik kuat\n")
+		} else if lfNet < 0 && amNet < 0 {
+			b.WriteString("  🔴 Hedge fund DAN asset manager sama-sama jual — sinyal turun kuat\n")
+		} else if lfNet > 0 && amNet < 0 {
+			b.WriteString("  🟡 Hedge fund beli tapi asset manager jual — sinyal campur\n")
+		} else if lfNet < 0 && amNet > 0 {
+			b.WriteString("  🟡 Hedge fund jual tapi asset manager beli — sinyal campur\n")
 		}
 	}
 
-	b.WriteString("\n<i>Data sourced directly from CFTC</i>")
+	// Trader depth — selalu tampil dengan penjelasan
+	b.WriteString("\n👥 <b>KEDALAMAN PASAR (Jumlah Trader Aktif)</b>\n")
+	if isDisagg {
+		totalT := r.TotalTradersDisag
+		if totalT > 0 {
+			b.WriteString(fmt.Sprintf("<code>  Spekulan Long : %d trader</code>\n", r.MMoneyLongTraders))
+			b.WriteString(fmt.Sprintf("<code>  Spekulan Short: %d trader</code>\n", r.MMoneyShortTraders))
+			b.WriteString(fmt.Sprintf("<code>  Total Aktif   : %d trader</code>\n", totalT))
+			if r.MMoneyLongTraders > 0 && r.MMoneyShortTraders > 0 {
+				ratio := float64(r.MMoneyLongTraders) / float64(r.MMoneyShortTraders)
+				b.WriteString(fmt.Sprintf("<i>  → Rasio trader: %.1fx lebih banyak yang beli vs jual</i>\n", ratio))
+			}
+			depthLabel := "sedang"
+			depthDesc := "likuiditas normal"
+			if totalT > 300 {
+				depthLabel = "DEEP (dalam)"
+				depthDesc = "likuiditas bagus, mudah masuk/keluar posisi"
+			} else if totalT < 100 {
+				depthLabel = "TIPIS"
+				depthDesc = "hati-hati — pasar tipis, slippage bisa besar"
+			}
+			b.WriteString(fmt.Sprintf("<i>  → Pasar %s — %s</i>\n", depthLabel, depthDesc))
+		}
+	} else {
+		totalT := r.TotalTraders
+		if totalT > 0 {
+			if r.LevFundLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  Lev Fund Long : %d trader</code>\n", r.LevFundLongTraders))
+			}
+			if r.LevFundShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  Lev Fund Short: %d trader</code>\n", r.LevFundShortTraders))
+			}
+			if r.AssetMgrLongTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  AssetMgr Long : %d trader</code>\n", r.AssetMgrLongTraders))
+			}
+			if r.AssetMgrShortTraders > 0 {
+				b.WriteString(fmt.Sprintf("<code>  AssetMgr Short: %d trader</code>\n", r.AssetMgrShortTraders))
+			}
+			b.WriteString(fmt.Sprintf("<code>  Total Aktif   : %d trader</code>\n", totalT))
+			depthLabel := "sedang"
+			depthDesc := "likuiditas normal"
+			if totalT > 300 {
+				depthLabel = "DEEP (dalam)"
+				depthDesc = "likuiditas bagus"
+			} else if totalT < 80 {
+				depthLabel = "TIPIS"
+				depthDesc = "hati-hati — pasar tipis"
+			}
+			b.WriteString(fmt.Sprintf("<i>  → Pasar %s — %s</i>\n", depthLabel, depthDesc))
+		}
+	}
+
+	// Small Specs jika ada
+	if r.SmallLong > 0 || r.SmallShort > 0 {
+		smallNet := r.SmallLong - r.SmallShort
+		b.WriteString("\n🐟 <b>SMALL SPECULATORS — Trader Retail Kecil</b>\n")
+		b.WriteString(fmt.Sprintf("<code>  Long : %s | Short: %s | Net: %s%s</code>\n",
+			fmtutil.FmtNum(r.SmallLong, 0),
+			fmtutil.FmtNum(r.SmallShort, 0),
+			func() string {
+				if smallNet >= 0 {
+					return "+"
+				}
+				return ""
+			}(),
+			fmtutil.FmtNum(smallNet, 0)))
+		b.WriteString("<i>  → Retail trader — sering dianggap 'wrong-side' oleh institusi</i>\n")
+	}
+
+	b.WriteString("\n<i>📌 Data resmi dari CFTC, dirilis setiap Jumat untuk data Selasa sebelumnya</i>")
 	return b.String()
 }
 
