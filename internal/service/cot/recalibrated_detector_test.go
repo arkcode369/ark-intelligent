@@ -42,6 +42,9 @@ func (m *mockSignalRepo) UpdateSignal(_ context.Context, _ domain.PersistedSigna
 func (m *mockSignalRepo) GetRecentSignals(_ context.Context, _ int) ([]domain.PersistedSignal, error) {
 	return m.signals, nil
 }
+func (m *mockSignalRepo) SignalExists(_ context.Context, _ string, _ time.Time, _ string) (bool, error) {
+	return false, nil
+}
 
 // buildEvaluatedSignal builds a signal with a given outcome for testing.
 func buildEvaluatedSignal(sigType, outcome string) domain.PersistedSignal {

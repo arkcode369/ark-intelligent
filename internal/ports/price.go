@@ -71,4 +71,7 @@ type SignalRepository interface {
 
 	// GetRecentSignals retrieves all signals from the last N days, newest-first.
 	GetRecentSignals(ctx context.Context, days int) ([]domain.PersistedSignal, error)
+
+	// SignalExists checks if a signal with the given key already exists.
+	SignalExists(ctx context.Context, contractCode string, reportDate time.Time, signalType string) (bool, error)
 }

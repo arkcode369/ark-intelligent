@@ -829,6 +829,18 @@ func (s *Scheduler) persistSignals(ctx context.Context, signals []cotsvc.Signal,
 			continue
 		}
 
+		// Deduplicate: skip if signal already exists in the repository
+		if s.deps.SignalRepo != nil {
+			exists, err := s.deps.SignalRepo.SignalExists(ctx, sig.ContractCode, analysis.ReportDate, string(sig.Type))
+			if err == nil && exists {
+				log.Debug().
+					Str("contract", sig.ContractCode).
+					Str("type", string(sig.Type)).
+					Msg("signal already exists — skipping duplicate")
+				continue
+			}
+		}
+
 		// Look up entry price — skip signal if no price available
 		priceRec, err := s.deps.PriceRepo.GetLatest(ctx, sig.ContractCode)
 		if err != nil || priceRec == nil || priceRec.Close <= 0 {

@@ -397,6 +397,12 @@ func (f *Formatter) FormatHurst(currency string, h *pricesvc.HurstResult, regime
 func (f *Formatter) FormatHMMRegime(currency string, h *pricesvc.HMMResult) string {
 	var b strings.Builder
 
+	if h == nil {
+		b.WriteString(fmt.Sprintf("🔀 <b>%s — HMM Regime Model</b>\n\n", currency))
+		b.WriteString("<code>Transition matrix unavailable</code>\n")
+		return b.String()
+	}
+
 	icon := "⚪"
 	switch h.CurrentState {
 	case pricesvc.HMMRiskOn:

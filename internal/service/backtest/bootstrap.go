@@ -7,7 +7,8 @@ import (
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
-	"github.com/arkcode369/ark-intelligent/internal/service/cot"
+	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 )
 
 // SignalExistenceChecker is the subset of SignalRepository needed for dedup.
@@ -30,7 +31,7 @@ type Bootstrapper struct {
 	priceRepo  ports.PriceRepository
 	signalRepo ports.SignalRepository
 	sigChecker SignalExistenceChecker
-	detector   *cot.SignalDetector
+	detector   *cotsvc.SignalDetector
 }
 
 // NewBootstrapper creates a new backtest bootstrapper.
@@ -45,7 +46,7 @@ func NewBootstrapper(
 		priceRepo:  priceRepo,
 		signalRepo: signalRepo,
 		sigChecker: sigChecker,
-		detector:   cot.NewSignalDetector(),
+		detector:   cotsvc.NewSignalDetector(),
 	}
 }
 
@@ -170,6 +171,22 @@ func (b *Bootstrapper) bootstrapContract(ctx context.Context, mapping domain.Pri
 				COTIndex:       analysis.COTIndex,
 				SentimentScore: analysis.SentimentScore,
 			}
+
+			// ConvictionScore: compute simplified score using only COT data.
+			// Bootstrap lacks historical FRED data and calendar surprises,
+			// so we pass neutral regime/calendar — only COT component contributes.
+			cs := cotsvc.ComputeConvictionScore(*analysis, fred.MacroRegime{}, 0, "", nil)
+			ps.ConvictionScore = cs.Score
+
+			// FREDRegime: left empty — the BackfillRegimeLabels() mechanism
+			// retroactively populates this field from stored FRED snapshots.
+
+			// DailyTrend fields (DailyTrend, DailyMATrend, DailyTrendAdj, RawConfidence):
+			// The bootstrapper only has weekly PriceRepository, not a DailyPriceStore,
+			// so we cannot run the DailyTrendFilter here. These fields remain empty
+			// for bootstrap-generated signals. If daily price data becomes available
+			// to the bootstrapper in the future, add a DailyTrendFilter pass here.
+
 			toSave = append(toSave, ps)
 		}
 

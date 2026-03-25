@@ -1223,6 +1223,22 @@ func (h *Handler) cbQuickCommand(ctx context.Context, chatID string, msgID int, 
 		return h.cmdPrice(ctx, chatID, userID, args)
 	case "levels":
 		return h.cmdLevels(ctx, chatID, userID, args)
+	case "corr":
+		return h.cmdCorr(ctx, chatID, userID, args)
+	case "carry":
+		return h.cmdCarry(ctx, chatID, userID, args)
+	case "intraday":
+		return h.cmdIntraday(ctx, chatID, userID, args)
+	case "garch":
+		return h.cmdGarch(ctx, chatID, userID, args)
+	case "hurst":
+		return h.cmdHurst(ctx, chatID, userID, args)
+	case "regime":
+		return h.cmdRegime(ctx, chatID, userID, args)
+	case "factors":
+		return h.cmdFactors(ctx, chatID, userID, args)
+	case "wfopt":
+		return h.cmdWFOpt(ctx, chatID, userID, args)
 	default:
 		return nil
 	}

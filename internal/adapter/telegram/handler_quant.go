@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
@@ -23,7 +24,7 @@ func (h *Handler) cmdCorr(ctx context.Context, chatID string, userID int64, args
 	if err != nil {
 		errMsg := fmt.Sprintf(
 			"<b>Correlation matrix unavailable</b>\n\n%s\n\n<i>Daily prices may still be loading. Try again in a few minutes.</i>",
-			err.Error(),
+			html.EscapeString(err.Error()),
 		)
 		_, sendErr := h.bot.SendHTML(ctx, chatID, errMsg)
 		return sendErr
@@ -48,7 +49,7 @@ func (h *Handler) cmdCarry(ctx context.Context, chatID string, userID int64, arg
 	engine := fredSvc.NewRateDifferentialEngine()
 	ranking, err := engine.FetchCarryRanking(ctx)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Failed to fetch carry data: %s", err.Error()))
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Failed to fetch carry data: %s", html.EscapeString(err.Error())))
 		return sendErr
 	}
 
@@ -88,14 +89,17 @@ func (h *Handler) intradayOverview(ctx context.Context, chatID string) error {
 
 	currencies := []string{"EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "XAU", "XAG", "OIL", "BTC", "ETH", "SPX500"}
 	var lines []string
+	skipped := 0
 
 	for _, cur := range currencies {
 		mapping := domain.FindPriceMappingByCurrency(cur)
 		if mapping == nil {
+			skipped++
 			continue
 		}
 		ic, err := builder.Build(ctx, mapping.ContractCode, mapping.Currency)
 		if err != nil {
+			skipped++
 			continue
 		}
 
@@ -129,6 +133,9 @@ func (h *Handler) intradayOverview(ctx context.Context, chatID string) error {
 	msg := "⏰ <b>4H INTRADAY OVERVIEW</b>\n\n" +
 		strings.Join(lines, "\n") +
 		"\n\n<i>Use</i> <code>/intraday EUR</code> <i>for detailed view</i>"
+	if skipped > 0 {
+		msg += fmt.Sprintf("\n\n⚠️ %d instruments unavailable (insufficient data)", skipped)
+	}
 
 	_, err := h.bot.SendHTML(ctx, chatID, msg)
 	return err
@@ -184,20 +191,24 @@ func (h *Handler) garchOverview(ctx context.Context, chatID string) error {
 
 	currencies := []string{"EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "XAU", "XAG", "OIL", "BTC", "ETH", "SPX500"}
 	var lines []string
+	skipped := 0
 
 	for _, cur := range currencies {
 		mapping := domain.FindPriceMappingByCurrency(cur)
 		if mapping == nil {
+			skipped++
 			continue
 		}
 		prices, err := h.dailyPriceRepo.GetDailyHistory(ctx, mapping.ContractCode, 120)
 		if err != nil || len(prices) < 30 {
+			skipped++
 			continue
 		}
 
 		records := dailyToPriceRecords(prices)
 		garch, err := pricesvc.EstimateGARCH(records)
 		if err != nil {
+			skipped++
 			continue
 		}
 
@@ -224,6 +235,9 @@ func (h *Handler) garchOverview(ctx context.Context, chatID string) error {
 		strings.Join(lines, "\n") +
 		"\n\n🔴 Increasing  ⚪ Stable  🟢 Decreasing\n" +
 		"<i>Use</i> <code>/garch EUR</code> <i>for detailed view</i>"
+	if skipped > 0 {
+		msg += fmt.Sprintf("\n\n⚠️ %d instruments unavailable (insufficient data)", skipped)
+	}
 
 	_, err := h.bot.SendHTML(ctx, chatID, msg)
 	return err
@@ -248,7 +262,7 @@ func (h *Handler) garchDetail(ctx context.Context, chatID string, mapping *domai
 	records := dailyToPriceRecords(prices)
 	garch, err := pricesvc.EstimateGARCH(records)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("GARCH estimation failed: %s", err.Error()))
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("GARCH estimation failed: %s", html.EscapeString(err.Error())))
 		return sendErr
 	}
 
@@ -290,20 +304,24 @@ func (h *Handler) hurstOverview(ctx context.Context, chatID string) error {
 
 	currencies := []string{"EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "XAU", "XAG", "OIL", "BTC", "ETH", "SPX500"}
 	var lines []string
+	skipped := 0
 
 	for _, cur := range currencies {
 		mapping := domain.FindPriceMappingByCurrency(cur)
 		if mapping == nil {
+			skipped++
 			continue
 		}
 		prices, err := h.dailyPriceRepo.GetDailyHistory(ctx, mapping.ContractCode, 200)
 		if err != nil || len(prices) < 50 {
+			skipped++
 			continue
 		}
 
 		records := dailyToPriceRecords(prices)
 		hurst, err := pricesvc.ComputeHurstExponent(records)
 		if err != nil {
+			skipped++
 			continue
 		}
 
@@ -330,6 +348,9 @@ func (h *Handler) hurstOverview(ctx context.Context, chatID string) error {
 		strings.Join(lines, "\n") +
 		"\n\n📈 Trending  ⚪ Random Walk  🔄 Mean-Reverting\n" +
 		"<i>Use</i> <code>/hurst EUR</code> <i>for detailed view</i>"
+	if skipped > 0 {
+		msg += fmt.Sprintf("\n\n⚠️ %d instruments unavailable (insufficient data)", skipped)
+	}
 
 	_, err := h.bot.SendHTML(ctx, chatID, msg)
 	return err
@@ -354,7 +375,7 @@ func (h *Handler) hurstDetail(ctx context.Context, chatID string, mapping *domai
 	records := dailyToPriceRecords(prices)
 	hurst, err := pricesvc.ComputeHurstExponent(records)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Hurst estimation failed: %s", err.Error()))
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Hurst estimation failed: %s", html.EscapeString(err.Error())))
 		return sendErr
 	}
 
@@ -418,20 +439,24 @@ func (h *Handler) regimeOverview(ctx context.Context, chatID string) error {
 
 	currencies := []string{"EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "XAU", "XAG", "OIL", "BTC", "ETH", "SPX500"}
 	var lines []string
+	skipped := 0
 
 	for _, cur := range currencies {
 		mapping := domain.FindPriceMappingByCurrency(cur)
 		if mapping == nil {
+			skipped++
 			continue
 		}
 		prices, err := h.dailyPriceRepo.GetDailyHistory(ctx, mapping.ContractCode, 120)
 		if err != nil || len(prices) < 60 {
+			skipped++
 			continue
 		}
 
 		records := dailyToPriceRecords(prices)
 		hmm, err := pricesvc.EstimateHMMRegime(records)
 		if err != nil {
+			skipped++
 			continue
 		}
 
@@ -467,6 +492,9 @@ func (h *Handler) regimeOverview(ctx context.Context, chatID string) error {
 		strings.Join(lines, "\n") +
 		"\n\n🟢 Risk-On  🟡 Risk-Off  🔴 Crisis  ⚠️ Transition\n" +
 		"<i>Use</i> <code>/regime EUR</code> <i>for detailed view</i>"
+	if skipped > 0 {
+		msg += fmt.Sprintf("\n\n⚠️ %d instruments unavailable (insufficient data)", skipped)
+	}
 
 	_, err := h.bot.SendHTML(ctx, chatID, msg)
 	return err
@@ -491,7 +519,7 @@ func (h *Handler) regimeDetail(ctx context.Context, chatID string, mapping *doma
 	records := dailyToPriceRecords(prices)
 	hmm, err := pricesvc.EstimateHMMRegime(records)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("HMM estimation failed: %s", err.Error()))
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("HMM estimation failed: %s", html.EscapeString(err.Error())))
 		return sendErr
 	}
 
@@ -530,7 +558,7 @@ func (h *Handler) cmdFactors(ctx context.Context, chatID string, userID int64, a
 	decomposer := backtestsvc.NewFactorDecomposer(h.signalRepo)
 	result, err := decomposer.Decompose(ctx)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Factor decomposition failed: %s", err.Error()))
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Factor decomposition failed: %s", html.EscapeString(err.Error())))
 		return sendErr
 	}
 
@@ -555,7 +583,7 @@ func (h *Handler) cmdWFOpt(ctx context.Context, chatID string, userID int64, arg
 	optimizer := backtestsvc.NewWalkForwardOptimizer(h.signalRepo)
 	result, err := optimizer.Optimize(ctx)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Walk-forward optimization failed: %s", err.Error()))
+		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("Walk-forward optimization failed: %s", html.EscapeString(err.Error())))
 		return sendErr
 	}
 
