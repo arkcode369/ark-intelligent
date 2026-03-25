@@ -474,6 +474,8 @@ func (f *Formatter) FormatCOTDetailWithCode(a domain.COTAnalysis, displayCode st
 	b.WriteString(fmt.Sprintf("\n<b>%s:</b>\n", hedgerLabel))
 	b.WriteString(fmt.Sprintf("<code>  Net Position:   %s</code>\n", fmtutil.FmtNumSigned(a.CommercialNet, 0)))
 	b.WriteString(fmt.Sprintf("<code>  Comm %% OI:      %.1f%%</code>\n", a.CommPctOfOI))
+	b.WriteString(fmt.Sprintf("<code>  COT Index:      %.1f%%</code>\n", a.COTIndexComm))
+	b.WriteString(fmt.Sprintf("<code>  Signal:         %s</code>\n", commercialSignalLabel(a.CommercialSignal, rt)))
 
 	// COT Index
 	b.WriteString(fmt.Sprintf("\n<b>COT Index (%s):</b>\n", smartMoneyLabel))
@@ -533,6 +535,12 @@ func (f *Formatter) FormatCOTDetailWithCode(a domain.COTAnalysis, displayCode st
 	b.WriteString(fmt.Sprintf("<code>  ST Bias:        %s</code>\n", a.ShortTermBias))
 	b.WriteString(fmt.Sprintf("<code>  Crowding:       %.0f/100</code>\n", a.CrowdingIndex))
 	b.WriteString(fmt.Sprintf("<code>  Divergence:     %v</code>\n", a.DivergenceFlag))
+
+	// Smart Money vs Commercial Signal Confluence
+	b.WriteString("\n<b>Signal Confluence:</b>\n")
+	b.WriteString(fmt.Sprintf("<code>  Smart Money:    %s</code>\n", a.SpeculatorSignal))
+	b.WriteString(fmt.Sprintf("<code>  %s:   %s</code>\n", hedgerLabel, commercialSignalLabel(a.CommercialSignal, rt)))
+	b.WriteString(signalConfluenceInterpretation(a.SpeculatorSignal, a.CommercialSignal, rt))
 
 	// Quick copy commands — prefer currency code (e.g. GOLD, EUR) over contract code
 	if displayCode != "" {
@@ -1355,6 +1363,77 @@ func cotLabel(idx float64) string {
 		return "Bearish"
 	default:
 		return "Extreme Short"
+	}
+}
+
+// commercialSignalLabel returns a display string for the commercial signal,
+// noting whether it's contrarian or structural depending on report type.
+func commercialSignalLabel(signal, rt string) string {
+	// For TFF (forex/indices): Dealers are the "dumb money" market maker side —
+	// their signal is LESS reliable as a contrarian indicator (unlike classic commercials).
+	// For DISAGGREGATED (commodities): Prod/Swap are true producers = contrarian smart.
+	suffix := ""
+	if rt == "TFF" {
+		suffix = " (dealer)"
+	} else if rt == "DISAGGREGATED" {
+		suffix = " (contrarian)"
+	}
+	return signal + suffix
+}
+
+// signalConfluenceInterpretation returns a plain-language interpretation
+// of the combined Smart Money + Commercial signal alignment.
+func signalConfluenceInterpretation(specSignal, commSignal, rt string) string {
+	isBullish := func(s string) bool {
+		return s == "BULLISH" || s == "STRONG_BULLISH"
+	}
+	isBearish := func(s string) bool {
+		return s == "BEARISH" || s == "STRONG_BEARISH"
+	}
+	isStrong := func(s string) bool {
+		return s == "STRONG_BULLISH" || s == "STRONG_BEARISH"
+	}
+
+	specBull := isBullish(specSignal)
+	specBear := isBearish(specSignal)
+	commBull := isBullish(commSignal)
+	commBear := isBearish(commSignal)
+	commNeutral := !commBull && !commBear
+
+	switch {
+	// Strong agreement both sides
+	case specBull && commBull && isStrong(specSignal) && isStrong(commSignal):
+		return "<i>  ✅✅ KONFIRMASI KUAT: Smart money DAN hedger keduanya sangat bullish</i>\n"
+	case specBear && commBear && isStrong(specSignal) && isStrong(commSignal):
+		return "<i>  🔴🔴 KONFIRMASI KUAT: Smart money DAN hedger keduanya sangat bearish</i>\n"
+
+	// Normal agreement
+	case specBull && commBull:
+		return "<i>  ✅ KONFIRMASI: Smart money dan hedger sama-sama bullish</i>\n"
+	case specBear && commBear:
+		return "<i>  🔴 KONFIRMASI: Smart money dan hedger sama-sama bearish</i>\n"
+
+	// Classic divergence for commodities (normal)
+	case specBull && commBear && rt == "DISAGGREGATED":
+		return "<i>  ⚖️ Normal untuk komoditas: spekulan beli, produsen hedge jual</i>\n"
+	case specBear && commBull && rt == "DISAGGREGATED":
+		return "<i>  🔀 Tidak biasa: spekulan jual, tapi produsen justru akumulasi beli</i>\n"
+
+	// Divergence for forex/indices
+	case specBull && commBear:
+		return "<i>  ⚠️ KONFLIK: Smart money bullish tapi dealer/hedger bearish — hati-hati</i>\n"
+	case specBear && commBull:
+		return "<i>  ⚠️ KONFLIK: Smart money bearish tapi dealer/hedger bullish — sinyal campur</i>\n"
+
+	// Commercial neutral
+	case specBull && commNeutral:
+		return "<i>  🟡 Smart money bullish, hedger masih netral — belum full konfirmasi</i>\n"
+	case specBear && commNeutral:
+		return "<i>  🟡 Smart money bearish, hedger masih netral — belum full konfirmasi</i>\n"
+
+	// Both neutral
+	default:
+		return "<i>  ⚪ Kedua sisi netral — tidak ada sinyal terarah saat ini</i>\n"
 	}
 }
 
