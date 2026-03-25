@@ -271,6 +271,16 @@ func runWeightRegression(X [][]float64, y []float64, signals []domain.PersistedS
 // normalizeCoefficients converts raw OLS coefficients to percentage weights.
 // Uses absolute values of coefficients (magnitude = importance) and normalizes to sum to 100.
 func normalizeCoefficients(coefficients []float64) map[string]float64 {
+	// Guard against mismatched coefficient count
+	if len(coefficients) < len(factorNames) {
+		w := 100.0 / float64(len(factorNames))
+		weights := make(map[string]float64, len(factorNames))
+		for _, name := range factorNames {
+			weights[name] = math.Round(w*100) / 100
+		}
+		return weights
+	}
+
 	absSum := 0.0
 	for _, c := range coefficients {
 		absSum += math.Abs(c)

@@ -34,7 +34,7 @@ type GARCHResult struct {
 	CurrentVol     float64 `json:"current_vol"`      // √(CurrentVar) — current volatility estimate
 	ForecastVar1   float64 `json:"forecast_var_1"`   // 1-step ahead forecast σ²(t+1)
 	ForecastVol1   float64 `json:"forecast_vol_1"`   // √(ForecastVar1)
-	ForecastVar5   float64 `json:"forecast_var_5"`   // 5-step ahead forecast (cumulative)
+	ForecastVar5   float64 `json:"forecast_var_5"`   // 5-step ahead forecast σ²(t+5)
 	ForecastVol5   float64 `json:"forecast_vol_5"`   // √(ForecastVar5)
 	VolRatio       float64 `json:"vol_ratio"`        // CurrentVol / LongRunVol — >1 = above average
 	VolForecast    string  `json:"vol_forecast"`     // "INCREASING", "DECREASING", "STABLE"
@@ -183,12 +183,10 @@ func estimateGARCHFromReturns(returns []float64) (*GARCHResult, error) {
 	longRunVar := omega / (1 - alpha - beta)
 	persistence := alpha + beta
 
-	// 5-step cumulative variance forecast
-	forecastVar5 := 0.0
-	stepVar := forecastVar1
-	for h := 1; h <= 5; h++ {
-		forecastVar5 += stepVar
-		stepVar = omega + persistence*stepVar
+	// 5-step ahead variance forecast (variance at step 5, not cumulative)
+	forecastVar5 := forecastVar1
+	for h := 2; h <= 5; h++ {
+		forecastVar5 = omega + persistence*forecastVar5
 	}
 
 	currentVol := math.Sqrt(currentVar)

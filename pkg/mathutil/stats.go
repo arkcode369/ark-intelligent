@@ -309,6 +309,9 @@ func MaxDrawdown(returns []float64) (maxDD float64, peakIdx, troughIdx int) {
 	equity[0] = 1.0
 	for i, r := range returns {
 		equity[i+1] = equity[i] * (1 + r/100)
+		if equity[i+1] <= 0 {
+			equity[i+1] = 1e-18 // Floor to avoid div-by-zero downstream
+		}
 	}
 
 	peak := equity[0]

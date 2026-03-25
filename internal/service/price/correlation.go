@@ -46,7 +46,7 @@ func (ce *CorrelationEngine) BuildMatrix(ctx context.Context, period int) (*doma
 			end = len(records) - 1
 		}
 		for i := end; i >= 1; i-- {
-			if records[i].Close > 0 {
+			if records[i].Close > 0 && records[i-1].Close > 0 {
 				ret := (records[i-1].Close - records[i].Close) / records[i].Close * 100
 				returns = append(returns, ret)
 			}

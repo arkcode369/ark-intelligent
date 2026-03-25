@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/ports"
@@ -49,13 +50,9 @@ func BackfillRegimeLabels(ctx context.Context, signalRepo ports.SignalRepository
 	}
 
 	// Sort ascending by date.
-	for i := 0; i < len(snapshots); i++ {
-		for j := i + 1; j < len(snapshots); j++ {
-			if snapshots[j].date.Before(snapshots[i].date) {
-				snapshots[i], snapshots[j] = snapshots[j], snapshots[i]
-			}
-		}
-	}
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].date.Before(snapshots[j].date)
+	})
 
 	allSignals, err := signalRepo.GetAllSignals(ctx)
 	if err != nil {
@@ -95,16 +92,17 @@ func BackfillRegimeLabels(ctx context.Context, signalRepo ports.SignalRepository
 }
 
 // findClosestRegime returns the regime name from the snapshot whose date is
-// closest to the target. Returns "" if no snapshot is within 30 days.
+// closest to (but not after) the target, to avoid look-ahead bias.
+// Returns "" if no snapshot is within 30 days before the target.
 func findClosestRegime(snapshots []regimeSnapshot, target time.Time) string {
 	bestRegime := ""
 	bestDist := time.Duration(math.MaxInt64)
 
 	for _, s := range snapshots {
-		dist := target.Sub(s.date)
-		if dist < 0 {
-			dist = -dist
+		if s.date.After(target) {
+			continue // Skip future snapshots to prevent look-ahead bias
 		}
+		dist := target.Sub(s.date)
 		if dist < bestDist {
 			bestDist = dist
 			bestRegime = s.regime

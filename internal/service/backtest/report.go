@@ -3,6 +3,7 @@ package backtest
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
@@ -117,7 +118,10 @@ func buildWeeklyReport(recent, all []domain.PersistedSignal, now time.Time) *dom
 
 // computeStreaks calculates the current and best win streaks from all-time signals (newest-first).
 func computeStreaks(signals []domain.PersistedSignal) (best, current int) {
-	// signals are already newest-first
+	// Sort newest-first by DetectedAt to ensure correct streak ordering
+	sort.Slice(signals, func(i, j int) bool {
+		return signals[i].DetectedAt.After(signals[j].DetectedAt)
+	})
 	streak := 0
 	currentSet := false
 	for _, s := range signals {

@@ -250,14 +250,11 @@ func (a *ExcursionAnalyzer) analyzeSignal(ctx context.Context, sig domain.Persis
 		lowMove := (dp.Low - entry) / entry * 100
 		closeMove := (dp.Close - entry) / entry * 100
 
-		// For inverse pairs, flip signs
-		if inverse {
-			highMove, lowMove = -lowMove, -highMove
-			closeMove = -closeMove
-		}
-
-		// For bearish signals, favorable = price going down
-		if !bullish {
+		// Flip perspective when needed: inverse XOR bearish.
+		// Both inverse and bearish individually reverse the sign convention.
+		// If both apply, they cancel out, so only flip once (XOR).
+		needsFlip := inverse != (!bullish)
+		if needsFlip {
 			highMove, lowMove = -lowMove, -highMove
 			closeMove = -closeMove
 		}

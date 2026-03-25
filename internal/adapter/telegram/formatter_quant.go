@@ -3,6 +3,7 @@ package telegram
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
@@ -449,6 +450,8 @@ func (f *Formatter) FormatHMMRegime(currency string, h *pricesvc.HMMResult) stri
 				b.WriteString("○")
 			case pricesvc.HMMCrisis:
 				b.WriteString("✕")
+			default:
+				b.WriteString("?")
 			}
 		}
 		b.WriteString("</code>\n")
@@ -559,9 +562,10 @@ func (f *Formatter) FormatWFOptimization(r *backtestsvc.WFOResult) string {
 	b.WriteString("🔄 <b>WALK-FORWARD OPTIMIZATION</b>\n")
 	b.WriteString(fmt.Sprintf("<code>Windows: %d  Train: %dW  Test: %dW</code>\n\n", r.ValidWindows, 26, 4))
 
-	// Aggregate optimal weights
+	// Aggregate optimal weights — iterate dynamically from the map
 	b.WriteString("<b>📊 Optimized Weights (avg across windows)</b>\n")
-	for _, factor := range []string{"COT", "Stress", "FRED", "Price"} {
+	aggFactors := sortedMapKeys(r.AggregateWeights)
+	for _, factor := range aggFactors {
 		w := r.AggregateWeights[factor]
 		bar := weightBar(w)
 		b.WriteString(fmt.Sprintf("<code>%-8s %5.1f%% %s</code>\n", factor, w, bar))
@@ -572,7 +576,8 @@ func (f *Formatter) FormatWFOptimization(r *backtestsvc.WFOResult) string {
 		b.WriteString("\n<b>🔀 Per-Regime Weights</b>\n")
 		for regime, weights := range r.RegimeWeights {
 			b.WriteString(fmt.Sprintf("<code>%s:</code>\n", regime))
-			for _, factor := range []string{"COT", "Stress", "FRED", "Price"} {
+			regFactors := sortedMapKeys(weights)
+			for _, factor := range regFactors {
 				w := weights[factor]
 				b.WriteString(fmt.Sprintf("<code>  %-8s %5.1f%%</code>\n", factor, w))
 			}
@@ -620,4 +625,14 @@ func weightBar(pct float64) string {
 		filled = 0
 	}
 	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
+}
+
+// sortedMapKeys returns the keys of a map[string]float64 in sorted order.
+func sortedMapKeys(m map[string]float64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

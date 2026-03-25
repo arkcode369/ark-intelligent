@@ -126,6 +126,7 @@ func computeHurstFromReturns(returns []float64) (*HurstResult, error) {
 	h, _, r2 := simpleLinearRegression(logN, logRS)
 
 	// Clamp H to reasonable range
+	rawH := h
 	if h < 0 {
 		h = 0
 	}
@@ -140,7 +141,11 @@ func computeHurstFromReturns(returns []float64) (*HurstResult, error) {
 	}
 
 	// Classify
-	confidence := math.Abs(h - 0.5) * 200 // 0-100 scale
+	// If raw H was outside [0,1], the fit is unreliable — zero confidence
+	confidence := math.Abs(h-0.5) * 200 // 0-100 scale
+	if rawH < 0 || rawH > 1 {
+		confidence = 0
+	}
 	result.Confidence = roundN(confidence, 2)
 
 	switch {
@@ -192,7 +197,7 @@ func rescaledRange(returns []float64, size int) float64 {
 			d := v - mean
 			ss += d * d
 		}
-		s := math.Sqrt(ss / float64(size))
+		s := math.Sqrt(ss / float64(size-1))
 		if s < 1e-15 {
 			continue // Skip blocks with zero variance
 		}

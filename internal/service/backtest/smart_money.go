@@ -150,11 +150,11 @@ func (a *SmartMoneyAnalyzer) AnalyzeContract(ctx context.Context, contract domai
 				netChanges = append(netChanges, netChg)
 				priceChanges1W = append(priceChanges1W, priceChg)
 				// "Following" smart money means going in their direction
-				sumFollowReturn1W += math.Abs(priceChg) * smDirection * priceDir // positive if aligned
+				sumFollowReturn1W += priceChg * smDirection // positive if aligned
 				countFollow1W++
 			}
 			if horizon.label == "4W" {
-				sumFollowReturn4W += math.Abs(priceChg) * smDirection * priceDir
+				sumFollowReturn4W += priceChg * smDirection
 				countFollow4W++
 			}
 		}
