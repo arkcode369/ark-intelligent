@@ -208,7 +208,11 @@ func (c *CachedInterpreter) AnalyzeFREDOutlook(ctx context.Context, data *fred.M
 		return c.inner.AnalyzeFREDOutlook(ctx, data, lang)
 	}
 
-	version := time.Now().Format("20060102")
+	// BUG #11 FIX: Use WIB date for cache key instead of UTC.
+	// time.Now().Format() returns UTC date — between 00:00–06:59 WIB (= prev day UTC)
+	// the key would use yesterday's date, causing a cache miss or premature expiry
+	// at WIB midnight when the user is already on a new calendar day.
+	version := timeutil.NowWIB().Format("20060102")
 	if lang == "" {
 		lang = "id"
 	}
