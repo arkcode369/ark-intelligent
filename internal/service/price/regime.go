@@ -124,11 +124,16 @@ func approximateADX(prices []domain.PriceRecord) float64 {
 	period := 14
 	// Need at least period+1 bars to compute 'period' DM values
 	if len(prices) < period+1 {
-		// Use whatever we have if at least 3 bars
+		// Use whatever we have if at least 3 bars, but cap period to avoid degenerate results
 		if len(prices) < 3 {
 			return 0
 		}
 		period = len(prices) - 1
+		// With very few bars (period < 5), the ADX approximation is unreliable;
+		// return 0 to avoid degenerate 100.0 outputs.
+		if period < 5 {
+			return 0
+		}
 	}
 
 	// Prices are newest-first; we iterate from oldest to newest for the calculation.

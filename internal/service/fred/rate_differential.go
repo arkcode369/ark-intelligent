@@ -46,7 +46,7 @@ func (e *RateDifferentialEngine) FetchCarryRanking(ctx context.Context) (*domain
 			FallbackSeries: "DFF",
 		})
 		if usRate == 0 {
-			usRate = 4.50 // Hardcoded fallback (updated periodically)
+			usRate = 5.25 // Fallback: approximate current Fed Funds rate; should be fetched from config in production
 		}
 		rates["USD"] = usRate
 	}

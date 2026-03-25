@@ -172,8 +172,9 @@ func extractFeatures(s *domain.PersistedSignal) []float64 {
 	// x2: COT index (0-100 → 0.0-1.0)
 	features[2] = s.COTIndex / 100.0
 
-	// x3: Sentiment score (-1 to 1 → 0.0-1.0)
-	features[3] = (s.SentimentScore + 1) / 2.0
+	// x3: Sentiment score (-100 to +100 → 0.0-1.0)
+	// SentimentScore is in [-100, +100]; normalize to [-1, +1] first, then shift to [0, 1].
+	features[3] = (s.SentimentScore/100.0 + 1) / 2.0
 
 	// x4: Conviction score (0-100 → 0.0-1.0)
 	features[4] = s.ConvictionScore / 100.0

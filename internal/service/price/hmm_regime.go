@@ -3,6 +3,7 @@ package price
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
@@ -164,16 +165,7 @@ func discretizeReturns(returns []float64) []int {
 }
 
 func sortFloat64s(data []float64) {
-	// Simple insertion sort (adequate for our data sizes)
-	for i := 1; i < len(data); i++ {
-		key := data[i]
-		j := i - 1
-		for j >= 0 && data[j] > key {
-			data[j+1] = data[j]
-			j--
-		}
-		data[j+1] = key
-	}
+	sort.Float64s(data)
 }
 
 // --- HMM Initialization ---

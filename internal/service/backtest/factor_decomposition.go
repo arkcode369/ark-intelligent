@@ -236,7 +236,8 @@ func extractCOTScore(s *domain.PersistedSignal) float64 {
 	// COT contribution: COT index deviation from neutral + sentiment
 	score := (s.COTIndex - 50) * 2 // -100 to +100
 	if s.SentimentScore != 0 {
-		score = score*0.6 + s.SentimentScore*100*0.4
+		// SentimentScore is already in [-100, +100]; blend directly without extra *100.
+		score = score*0.6 + s.SentimentScore*0.4
 	}
 	// Adjust by direction
 	if s.Direction == "BEARISH" {
@@ -326,7 +327,8 @@ func stdDev(data []float64, m float64) float64 {
 		d := v - m
 		ss += d * d
 	}
-	return math.Sqrt(ss / float64(len(data)))
+	// Use sample standard deviation (N-1) for unbiased estimation.
+	return math.Sqrt(ss / float64(len(data)-1))
 }
 
 func adjustedRSquared(r2 float64, n, p int) float64 {
@@ -414,6 +416,8 @@ func simpleOLS(X [][]float64, y []float64) ([]float64, float64, []float64) {
 	}
 	// Clamp R² to [0, 1] — negative R² means model is worse than mean
 	if r2 < 0 {
+		// Log warning: negative R² indicates poor model fit
+		fmt.Printf("WARNING: simpleOLS produced negative R² (%.4f), clamping to 0. Model may be worse than mean predictor.\n", r2)
 		r2 = 0
 	}
 

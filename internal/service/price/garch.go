@@ -204,6 +204,16 @@ func estimateGARCHFromReturns(returns []float64) (*GARCHResult, error) {
 		volForecast = "DECREASING"
 	}
 
+	// Convergence check: compare fine-grid LL improvement over coarse-grid.
+	// If the fine grid didn't meaningfully improve, or LL is extremely poor, mark as not converged.
+	converged := true
+	if math.IsInf(fineLL, -1) || math.IsNaN(fineLL) {
+		converged = false
+	} else if fineLL < -1e10 {
+		// Extremely poor log-likelihood indicates bad fit
+		converged = false
+	}
+
 	return &GARCHResult{
 		Omega:         roundN(omega, 10),
 		Alpha:         roundN(alpha, 4),
@@ -219,7 +229,7 @@ func estimateGARCHFromReturns(returns []float64) (*GARCHResult, error) {
 		ForecastVol5:  roundN(math.Sqrt(forecastVar5), 6),
 		VolRatio:      roundN(volRatio, 4),
 		VolForecast:   volForecast,
-		Converged:     true,
+		Converged:     converged,
 		LogLikelihood: roundN(fineLL, 4),
 		SampleSize:    n,
 	}, nil

@@ -307,10 +307,8 @@ func evaluateWithWeights(signals []domain.PersistedSignal, weights map[string]fl
 
 		if agrees && ss.signal.Outcome1W == domain.OutcomeWin {
 			wins++
-		} else if !agrees && ss.signal.Outcome1W == domain.OutcomeLoss {
-			// Model correctly predicted the opposite direction
-			wins++
 		}
+		// Note: disagree + loss is an "avoided loss" — tracked separately, not counted as a win.
 		totalReturn += ss.signal.Return1W
 	}
 
