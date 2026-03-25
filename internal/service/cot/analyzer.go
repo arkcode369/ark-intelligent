@@ -621,33 +621,44 @@ func computeSentiment(a domain.COTAnalysis) float64 {
 }
 
 // classifySignal generates a directional signal from COT index + momentum.
+// classifySignal generates a directional signal from COT index + momentum.
+//
+// For speculators (isCommercial=false):
+//   - High COT index (>75) + positive momentum = STRONG_BULLISH
+//   - Low COT index (<25) + negative momentum = STRONG_BEARISH
+//
+// For commercials (isCommercial=true), the interpretation is CONTRARIAN:
+//   - Commercials at extreme HIGH (>75) = they are fully long = BULLISH (they are smart money at turning points)
+//   - Commercials at extreme LOW (<25)  = they are fully short = BEARISH (they know something is overvalued)
+//   - Momentum confirms: commercial increasing their extreme = stronger signal
 func classifySignal(cotIndex, momentum float64, isCommercial bool) string {
-	threshHigh := 75.0
-	threshLow := 25.0
-	if isCommercial {
-		threshHigh, threshLow = threshLow, threshHigh
+	if !isCommercial {
+		// Speculator: directional signal
+		switch {
+		case cotIndex >= 75 && momentum > 0:
+			return "STRONG_BULLISH"
+		case cotIndex >= 75:
+			return "BULLISH"
+		case cotIndex <= 25 && momentum < 0:
+			return "STRONG_BEARISH"
+		case cotIndex <= 25:
+			return "BEARISH"
+		default:
+			return "NEUTRAL"
+		}
 	}
 
+	// Commercial: contrarian signal
+	// High commercial index = commercials net long = bullish for price (contrarian)
+	// Low commercial index = commercials net short = bearish for price (contrarian)
 	switch {
-	case cotIndex >= threshHigh && momentum > 0:
-		if isCommercial {
-			return "STRONG_BEARISH"
-		}
+	case cotIndex >= 75 && momentum > 0:
 		return "STRONG_BULLISH"
-	case cotIndex >= threshHigh:
-		if isCommercial {
-			return "BEARISH"
-		}
+	case cotIndex >= 75:
 		return "BULLISH"
-	case cotIndex <= threshLow && momentum < 0:
-		if isCommercial {
-			return "STRONG_BULLISH"
-		}
+	case cotIndex <= 25 && momentum < 0:
 		return "STRONG_BEARISH"
-	case cotIndex <= threshLow:
-		if isCommercial {
-			return "BULLISH"
-		}
+	case cotIndex <= 25:
 		return "BEARISH"
 	default:
 		return "NEUTRAL"

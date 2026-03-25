@@ -462,7 +462,13 @@ func (f *Formatter) FormatCOTDetailWithCode(a domain.COTAnalysis, displayCode st
 	b.WriteString(fmt.Sprintf("<b>%s (Smart Money):</b>\n", smartMoneyLabel))
 	b.WriteString(fmt.Sprintf("<code>  Net Position:   %s</code>\n", fmtutil.FmtNumSigned(a.NetPosition, 0)))
 	b.WriteString(fmt.Sprintf("<code>  Net Change:     %s</code>\n", fmtutil.FmtNumSigned(a.NetChange, 0)))
-	b.WriteString(fmt.Sprintf("<code>  L/S Ratio:      %.2f</code>\n", a.LongShortRatio))
+	if a.LongShortRatio >= 999 {
+		b.WriteString("<code>  L/S Ratio:      ∞ (no shorts reported)</code>\n")
+	} else if a.LongShortRatio == 0 {
+		b.WriteString("<code>  L/S Ratio:      N/A (no positions)</code>\n")
+	} else {
+		b.WriteString(fmt.Sprintf("<code>  L/S Ratio:      %.2f</code>\n", a.LongShortRatio))
+	}
 	b.WriteString(fmt.Sprintf("<code>  Net as %% OI:    %.1f%%</code>\n", a.PctOfOI))
 
 	b.WriteString(fmt.Sprintf("\n<b>%s:</b>\n", hedgerLabel))
@@ -1305,7 +1311,7 @@ func (f *Formatter) FormatConvictionBlock(cs cot.ConvictionScore) string {
 	}
 	b.WriteString(fmt.Sprintf("<code>  Kondisi Ekonomi  : </code>%s %s\n", fredIcon, fredDesc))
 
-	b.WriteString(fmt.Sprintf("<i>  Data: COT (35%%) + Ekonomi (30%%) + Harga (30%%) + Kalender (5%%)</i>\n"))
+	b.WriteString("<i>  Data: Harga (30%) + COT (25%) + Ekonomi (20%) + Kalender (15%) + Stres (10%)</i>\n")
 
 	return b.String()
 }
