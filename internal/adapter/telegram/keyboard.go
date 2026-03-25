@@ -147,6 +147,40 @@ func (kb *KeyboardBuilder) OutlookMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{Rows: rows}
 }
 
+// MacroMenu builds the inline keyboard for the /macro command.
+// Provides navigation between summary, detail, glossary, and performance views.
+func (kb *KeyboardBuilder) MacroMenu(isAdmin bool) ports.InlineKeyboard {
+	var rows [][]ports.InlineButton
+
+	// Row 1: Primary navigation
+	rows = append(rows, []ports.InlineButton{
+		{Text: "📊 Data Lengkap", CallbackData: "macro:detail"},
+		{Text: "📖 Panduan Indikator", CallbackData: "macro:explain"},
+	})
+
+	// Row 2: Additional views
+	row2 := []ports.InlineButton{
+		{Text: "📈 Performance", CallbackData: "macro:performance"},
+	}
+	if isAdmin {
+		row2 = append(row2, ports.InlineButton{Text: "🔄 Refresh Data", CallbackData: "macro:refresh"})
+	}
+	rows = append(rows, row2)
+
+	return ports.InlineKeyboard{Rows: rows}
+}
+
+// MacroDetailMenu builds the back-navigation keyboard for macro detail/explain views.
+func (kb *KeyboardBuilder) MacroDetailMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "<< Kembali ke Ringkasan", CallbackData: "macro:summary"},
+			},
+		},
+	}
+}
+
 // crossMarketRow adds quick-access buttons for Gold and Oil if available.
 func (kb *KeyboardBuilder) crossMarketRow(analyses []domain.COTAnalysis) []ports.InlineButton {
 	var row []ports.InlineButton

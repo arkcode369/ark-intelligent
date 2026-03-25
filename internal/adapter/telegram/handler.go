@@ -180,9 +180,10 @@ func NewHandler(
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
 	bot.RegisterCallback("cmd:", h.cbQuickCommand)
+	bot.RegisterCallback("macro:", h.cbMacro)
 	bot.RegisterCallback("imp:", h.cbImpact)
 
-	log.Info().Int("commands", 31).Int("callbacks", 8).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 31).Int("callbacks", 9).Msg("registered commands and callback prefixes")
 	return h
 }
 
@@ -1449,17 +1450,18 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 // P3.2 — /macro — FRED Macro Regime Dashboard
 // ---------------------------------------------------------------------------
 
-// cmdMacro handles the /macro command — fetches FRED data and displays macro regime.
-// Usage: /macro (uses cache) or /macro refresh (force re-fetch from FRED).
-// Usage: /macro matrix or /macro performance — shows regime-asset performance matrix.
+// cmdMacro handles the /macro command — shows plain-language summary with inline navigation.
+// Subcommands: /macro detail, /macro explain, /macro matrix|performance, /macro refresh (admin).
 func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, args string) error {
-	if upper := strings.ToUpper(strings.TrimSpace(args)); upper == "MATRIX" || upper == "PERFORMANCE" {
+	upper := strings.ToUpper(strings.TrimSpace(args))
+
+	// Subcommand routing
+	if upper == "MATRIX" || upper == "PERFORMANCE" {
 		return h.macroRegimePerformance(ctx, chatID)
 	}
 
-	forceRefresh := strings.EqualFold(strings.TrimSpace(args), "refresh")
+	forceRefresh := upper == "REFRESH"
 	if forceRefresh {
-		// Only admin+ can force-refresh (prevents FRED API quota abuse)
 		if !h.requireAdmin(ctx, chatID, userID) {
 			return nil
 		}
@@ -1480,6 +1482,40 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 	}
 
 	regime := fred.ClassifyMacroRegime(data)
+
+	// Route to specific view
+	switch upper {
+	case "DETAIL":
+		return h.macroSendDetail(ctx, chatID, placeholderID, regime, data)
+	case "EXPLAIN":
+		htmlMsg := h.fmt.FormatMacroExplain(regime, data)
+		kb := h.kb.MacroDetailMenu()
+		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
+	}
+
+	// Default: plain-language summary with inline keyboard
+	return h.macroSendSummary(ctx, chatID, placeholderID, userID, regime, data)
+}
+
+// macroSendSummary sends the plain-language macro summary with inline navigation buttons.
+func (h *Handler) macroSendSummary(ctx context.Context, chatID string, msgID int, userID int64, regime fred.MacroRegime, data *fred.MacroData) error {
+	implications := fred.DeriveTradingImplications(regime, data)
+	htmlMsg := h.fmt.FormatMacroSummary(regime, data, implications)
+
+	isAdmin := false
+	if h.middleware != nil {
+		role := h.middleware.GetUserRole(ctx, userID)
+		isAdmin = domain.RoleHierarchy(role) >= domain.RoleHierarchy(domain.RoleAdmin)
+	} else {
+		isAdmin = h.bot.isOwner(userID)
+	}
+
+	kb := h.kb.MacroMenu(isAdmin)
+	return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
+}
+
+// macroSendDetail sends the full technical dashboard with back-navigation.
+func (h *Handler) macroSendDetail(ctx context.Context, chatID string, msgID int, regime fred.MacroRegime, data *fred.MacroData) error {
 	htmlMsg := h.fmt.FormatMacroRegime(regime, data)
 
 	// Append regime-asset performance insight if price data is available.
@@ -1490,7 +1526,51 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 		}
 	}
 
-	return h.bot.EditMessage(ctx, chatID, placeholderID, htmlMsg)
+	kb := h.kb.MacroDetailMenu()
+	return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
+}
+
+// cbMacro handles inline keyboard callbacks for the macro dashboard navigation.
+func (h *Handler) cbMacro(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
+	action := strings.TrimPrefix(data, "macro:")
+
+	// Get cached FRED data (should already be in cache from initial /macro call)
+	macroData, err := fred.GetCachedOrFetch(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("FRED data fetch failed in macro callback")
+		return h.bot.EditMessage(ctx, chatID, msgID, "Failed to load macro data. Ketik /macro untuk coba lagi.")
+	}
+	regime := fred.ClassifyMacroRegime(macroData)
+
+	switch action {
+	case "detail":
+		return h.macroSendDetail(ctx, chatID, msgID, regime, macroData)
+
+	case "explain":
+		htmlMsg := h.fmt.FormatMacroExplain(regime, macroData)
+		kb := h.kb.MacroDetailMenu()
+		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
+
+	case "summary":
+		return h.macroSendSummary(ctx, chatID, msgID, userID, regime, macroData)
+
+	case "performance":
+		return h.macroRegimePerformance(ctx, chatID)
+
+	case "refresh":
+		if !h.requireAdmin(ctx, chatID, userID) {
+			return nil
+		}
+		fred.InvalidateCache()
+		freshData, err := fred.GetCachedOrFetch(ctx)
+		if err != nil {
+			return h.bot.EditMessage(ctx, chatID, msgID, "Failed to refresh macro data.")
+		}
+		freshRegime := fred.ClassifyMacroRegime(freshData)
+		return h.macroSendSummary(ctx, chatID, msgID, userID, freshRegime, freshData)
+	}
+
+	return nil
 }
 
 // buildRegimeAssetInsight computes the regime-asset matrix from stored price

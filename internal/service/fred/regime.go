@@ -1,7 +1,10 @@
 // Package fred classifies macro regimes from FRED economic data.
 package fred
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // MacroRegime holds the classified macro environment and bias.
 type MacroRegime struct {
@@ -24,6 +27,14 @@ type MacroRegime struct {
 	Bias         string // directional bias e.g., "USD BEARISH bias, Gold BULLISH"
 	Description  string // narrative explanation
 	Score        int    // composite risk score 0-100 (higher = more risk-off)
+}
+
+// TradingImplication represents a structured per-asset trading signal derived from macro regime.
+type TradingImplication struct {
+	Asset     string // e.g., "Gold", "USD", "AUD/NZD/CAD", "JPY/CHF", "Equities"
+	Direction string // "BULLISH", "BEARISH", "NEUTRAL", "MIXED"
+	Icon      string // emoji indicator
+	Reason    string // short plain-language reason
 }
 
 // ClassifyMacroRegime derives a macro regime and trading bias from FRED data.
@@ -522,5 +533,94 @@ func deriveBias(data *MacroData, r MacroRegime) (string, string) {
 	default:
 		return "Mixed — selective bias",
 			fmt.Sprintf("Conflicting macro signals. Risk-off pressure: %d/100. Be selective.", r.Score)
+	}
+}
+
+// DeriveTradingImplications returns structured per-asset signals from the macro regime.
+func DeriveTradingImplications(regime MacroRegime, data *MacroData) []TradingImplication {
+	var implications []TradingImplication
+
+	// Gold
+	switch {
+	case regime.Name == "RECESSION" || regime.Name == "STRESS" || regime.Name == "STAGFLATION":
+		implications = append(implications, TradingImplication{"Gold", "BULLISH", "🟢", "Safe haven demand tinggi di kondisi " + regimePlainName(regime.Name)})
+	case regime.Name == "INFLATIONARY" && data.FedFundsRate > 0 && (data.FedFundsRate-data.Breakeven5Y) < 0:
+		implications = append(implications, TradingImplication{"Gold", "BULLISH", "🟢", "Real yield negatif — gold sebagai lindung inflasi"})
+	case regime.Name == "GOLDILOCKS" || regime.Name == "DISINFLATIONARY":
+		if data.YieldSpread > 0.25 && data.NFCI < 0 {
+			implications = append(implications, TradingImplication{"Gold", "BULLISH", "🟢", "Inflasi turun + yield curve normal — ruang untuk naik"})
+		} else {
+			implications = append(implications, TradingImplication{"Gold", "NEUTRAL", "🟡", "Kondisi stabil, gold cenderung sideways"})
+		}
+	default:
+		implications = append(implications, TradingImplication{"Gold", "NEUTRAL", "🟡", "Sinyal macro campur aduk untuk gold"})
+	}
+
+	// USD
+	switch {
+	case regime.Name == "INFLATIONARY" && data.FedFundsRate > 0 && (data.FedFundsRate-data.Breakeven5Y) > 0.5:
+		implications = append(implications, TradingImplication{"USD", "BULLISH", "🟢", "Suku bunga tinggi + inflasi tinggi = USD kuat"})
+	case regime.Name == "RECESSION" || (regime.Name == "DISINFLATIONARY" && data.YieldSpread > 0.25 && data.NFCI < 0):
+		implications = append(implications, TradingImplication{"USD", "BEARISH", "🔴", "Ekspektasi pemotongan suku bunga melemahkan USD"})
+	case regime.Name == "STRESS":
+		implications = append(implications, TradingImplication{"USD", "MIXED", "🟡", "USD bisa menguat (safe haven) atau melemah (resesi AS)"})
+	default:
+		implications = append(implications, TradingImplication{"USD", "NEUTRAL", "🟡", "Belum ada sinyal kuat untuk arah USD"})
+	}
+
+	// Risk FX (AUD, NZD, CAD)
+	switch {
+	case regime.Score < 30 && data.NFCI < 0:
+		implications = append(implications, TradingImplication{"AUD/NZD/CAD", "BULLISH", "🟢", "Risk-on — kondisi finansial longgar, risiko rendah"})
+	case regime.Score >= 60:
+		implications = append(implications, TradingImplication{"AUD/NZD/CAD", "BEARISH", "🔴", "Risk-off — tekanan tinggi, hindari risk currency"})
+	default:
+		implications = append(implications, TradingImplication{"AUD/NZD/CAD", "NEUTRAL", "🟡", "Kondisi campuran — selektif, ikuti data terbaru"})
+	}
+
+	// Safe Haven (JPY, CHF)
+	switch {
+	case regime.Score >= 60 || regime.SahmAlert:
+		implications = append(implications, TradingImplication{"JPY/CHF", "BULLISH", "🟢", "Safe haven diminati saat risiko tinggi"})
+	case regime.Score < 30:
+		implications = append(implications, TradingImplication{"JPY/CHF", "BEARISH", "🔴", "Risk-on — safe haven kurang diminati"})
+	default:
+		implications = append(implications, TradingImplication{"JPY/CHF", "NEUTRAL", "🟡", "Belum ada tekanan signifikan"})
+	}
+
+	// Equities
+	switch {
+	case regime.Name == "GOLDILOCKS" && regime.Score < 30:
+		implications = append(implications, TradingImplication{"Equities", "BULLISH", "🟢", "Goldilocks — pertumbuhan baik, inflasi terjaga"})
+	case regime.Name == "RECESSION" || regime.Name == "STAGFLATION":
+		implications = append(implications, TradingImplication{"Equities", "BEARISH", "🔴", "Pertumbuhan lemah — ekuitas tertekan"})
+	case regime.Name == "STRESS":
+		implications = append(implications, TradingImplication{"Equities", "BEARISH", "🔴", "Stress finansial — volatilitas tinggi"})
+	default:
+		implications = append(implications, TradingImplication{"Equities", "NEUTRAL", "🟡", "Hati-hati, pantau data selanjutnya"})
+	}
+
+	return implications
+}
+
+// regimePlainName converts regime constant to plain Indonesian.
+func regimePlainName(name string) string {
+	switch name {
+	case "RECESSION":
+		return "resesi"
+	case "STRESS":
+		return "stress finansial"
+	case "STAGFLATION":
+		return "stagflasi"
+	case "INFLATIONARY":
+		return "inflasi tinggi"
+	case "DISINFLATIONARY":
+		return "inflasi menurun"
+	case "GOLDILOCKS":
+		return "ekonomi ideal"
+	case "NEUTRAL":
+		return "netral"
+	default:
+		return strings.ToLower(name)
 	}
 }
