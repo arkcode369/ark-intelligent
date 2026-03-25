@@ -3076,6 +3076,32 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData) string {
 		b.WriteString(fmt.Sprintf("<code>[%s]</code>\n", gauge))
 		b.WriteString(fmt.Sprintf("<code>Score : %.0f / 100  %s %s</code>\n", data.CNNFearGreed, emoji, data.CNNFearGreedLabel))
 
+		// Trend comparison — show how sentiment has changed
+		b.WriteString("<code>Trend :</code>")
+		if data.CNNPrev1Week > 0 {
+			delta1w := data.CNNFearGreed - data.CNNPrev1Week
+			b.WriteString(fmt.Sprintf(" <code>1W: %+.0f</code>", delta1w))
+		}
+		if data.CNNPrev1Month > 0 {
+			delta1m := data.CNNFearGreed - data.CNNPrev1Month
+			b.WriteString(fmt.Sprintf(" <code>| 1M: %+.0f</code>", delta1m))
+		}
+		if data.CNNPrev1Year > 0 {
+			delta1y := data.CNNFearGreed - data.CNNPrev1Year
+			b.WriteString(fmt.Sprintf(" <code>| 1Y: %+.0f</code>", delta1y))
+		}
+		b.WriteString("\n")
+
+		// Velocity alert — rapid shift in sentiment
+		if data.CNNPrev1Month > 0 {
+			monthDelta := data.CNNFearGreed - data.CNNPrev1Month
+			if monthDelta < -30 {
+				b.WriteString("⚠️ <i>Penurunan tajam dari sebulan lalu — pasar bergeser ke fear cepat</i>\n")
+			} else if monthDelta > 30 {
+				b.WriteString("⚠️ <i>Lonjakan tajam dari sebulan lalu — euforia meningkat cepat</i>\n")
+			}
+		}
+
 		// Contrarian signal
 		if data.CNNFearGreed <= 25 {
 			b.WriteString("<code>Signal: </code>🟢 <b>Contrarian BUY</b> — Extreme fear often precedes rallies\n")
@@ -3089,6 +3115,9 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData) string {
 	// --- AAII Investor Sentiment Survey ---
 	b.WriteString("\n<b>AAII Investor Sentiment Survey</b>\n")
 	if data.AAIIAvailable {
+		if data.AAIIWeekDate != "" {
+			b.WriteString(fmt.Sprintf("<i>Week ending %s</i>\n", data.AAIIWeekDate))
+		}
 		b.WriteString(fmt.Sprintf("<code>Bullish : %5.1f%%</code>  %s\n", data.AAIIBullish, sentimentBar(data.AAIIBullish, "🟢")))
 		b.WriteString(fmt.Sprintf("<code>Neutral : %5.1f%%</code>  %s\n", data.AAIINeutral, sentimentBar(data.AAIINeutral, "⚪")))
 		b.WriteString(fmt.Sprintf("<code>Bearish : %5.1f%%</code>  %s\n", data.AAIIBearish, sentimentBar(data.AAIIBearish, "🔴")))
@@ -3109,7 +3138,7 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData) string {
 			b.WriteString("<code>Note   : Bearish reading well above historical avg (~31%%)</code>\n")
 		}
 	} else {
-		b.WriteString("<code>Data unavailable — AAII updates weekly (Thursday)</code>\n")
+		b.WriteString("<code>Data unavailable — set FIRECRAWL_API_KEY to enable</code>\n")
 	}
 
 	// --- Composite reading ---

@@ -224,7 +224,7 @@ func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, arg
 <b>🏛 Macro &amp; Impact</b>
 /macro — FRED regime + asset performance matrix
 /impact — Event impact DB · <code>/impact NFP</code>
-/sentiment — Retail sentiment survey (Forex Factory)
+/sentiment — Sentiment surveys (CNN Fear &amp; Greed + AAII)
 /seasonal — Seasonal pattern analysis · <code>/seasonal EUR</code>
 
 <b>🔬 Quantitative</b>

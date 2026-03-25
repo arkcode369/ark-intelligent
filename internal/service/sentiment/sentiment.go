@@ -2,18 +2,20 @@
 //
 // Currently supported:
 //   - CNN Fear & Greed Index (daily, 0-100 scale)
-//   - AAII Investor Sentiment Survey (weekly, bull/bear/neutral %)
+//   - AAII Investor Sentiment Survey (weekly, bull/bear/neutral % via Firecrawl)
 //
-// Neither source offers a stable, documented API, so this package uses
-// lightweight HTTP scraping with graceful degradation: if a source is
-// unreachable or changes format, the corresponding Available flag is false
-// and the rest of the system continues to work.
+// CNN uses a public JSON endpoint. AAII is behind Imperva bot protection and
+// requires Firecrawl API to scrape. If FIRECRAWL_API_KEY is not set, AAII is
+// skipped gracefully. Each source has an Available flag for callers to check.
 package sentiment
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -29,11 +31,16 @@ type SentimentData struct {
 	AAIIBearish   float64 // % bearish
 	AAIINeutral   float64 // % neutral
 	AAIIBullBear  float64 // Bull/Bear ratio (>1 = bullish sentiment)
+	AAIIWeekDate  string  // Survey week ending date (e.g. "3/18/2026")
 	AAIIAvailable bool
 
 	// CNN Fear & Greed Index
 	CNNFearGreed      float64 // 0-100 (0=Extreme Fear, 100=Extreme Greed)
 	CNNFearGreedLabel string  // "Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed"
+	CNNPrevClose      float64 // Previous trading day close score
+	CNNPrev1Week      float64 // Score 1 week ago
+	CNNPrev1Month     float64 // Score 1 month ago
+	CNNPrev1Year      float64 // Score 1 year ago
 	CNNAvailable      bool
 
 	FetchedAt time.Time
@@ -49,7 +56,7 @@ func FetchSentiment(ctx context.Context) (*SentimentData, error) {
 	// Fetch CNN Fear & Greed
 	fetchCNNFearGreed(ctx, client, data)
 
-	// Fetch AAII Sentiment
+	// Fetch AAII Sentiment (via Firecrawl if API key available)
 	fetchAAIISentiment(ctx, client, data)
 
 	return data, nil
@@ -65,11 +72,11 @@ const cnnFearGreedURL = "https://production.dataviz.cnn.io/index/fearandgreed/gr
 // cnnResponse models the relevant portion of the CNN Fear & Greed JSON response.
 type cnnResponse struct {
 	FearAndGreed struct {
-		Score       float64 `json:"score"`
-		Rating      string  `json:"rating"`
-		Timestamp   string  `json:"timestamp"`
-		PreviousClose float64 `json:"previous_close"`
-		Previous1Week float64 `json:"previous_1_week"`
+		Score          float64 `json:"score"`
+		Rating         string  `json:"rating"`
+		Timestamp      string  `json:"timestamp"`
+		PreviousClose  float64 `json:"previous_close"`
+		Previous1Week  float64 `json:"previous_1_week"`
 		Previous1Month float64 `json:"previous_1_month"`
 		Previous1Year  float64 `json:"previous_1_year"`
 	} `json:"fear_and_greed"`
@@ -102,13 +109,20 @@ func fetchCNNFearGreed(ctx context.Context, client *http.Client, data *Sentiment
 		return
 	}
 
-	data.CNNFearGreed = result.FearAndGreed.Score
-	data.CNNFearGreedLabel = normalizeFearGreedLabel(result.FearAndGreed.Rating)
+	fg := result.FearAndGreed
+	data.CNNFearGreed = fg.Score
+	data.CNNFearGreedLabel = normalizeFearGreedLabel(fg.Rating)
+	data.CNNPrevClose = fg.PreviousClose
+	data.CNNPrev1Week = fg.Previous1Week
+	data.CNNPrev1Month = fg.Previous1Month
+	data.CNNPrev1Year = fg.Previous1Year
 	data.CNNAvailable = true
 
 	log.Debug().
 		Float64("score", data.CNNFearGreed).
 		Str("label", data.CNNFearGreedLabel).
+		Float64("prev_week", data.CNNPrev1Week).
+		Float64("prev_month", data.CNNPrev1Month).
 		Msg("CNN F&G fetched")
 }
 
@@ -134,12 +148,126 @@ func normalizeFearGreedLabel(rating string) string {
 }
 
 // ---------------------------------------------------------------------------
-// AAII Investor Sentiment Survey
+// AAII Investor Sentiment Survey (via Firecrawl)
 // ---------------------------------------------------------------------------
 
-func fetchAAIISentiment(_ context.Context, _ *http.Client, data *SentimentData) {
-	// AAII is behind Imperva bot protection and cannot be scraped with
-	// simple HTTP requests. Browser automation would be required.
-	log.Debug().Msg("AAII: skipping — site is behind Imperva bot protection and requires browser automation")
-	data.AAIIAvailable = false
+// firecrawlScrapeURL is the Firecrawl v1 scrape endpoint.
+const firecrawlScrapeURL = "https://api.firecrawl.dev/v1/scrape"
+
+// aaiiFCRequest is the Firecrawl scrape request body for AAII.
+type aaiiFCRequest struct {
+	URL         string       `json:"url"`
+	Formats     []string     `json:"formats"`
+	WaitFor     int          `json:"waitFor"`
+	JSONOptions *fcJSONOpts  `json:"jsonOptions,omitempty"`
+}
+
+type fcJSONOpts struct {
+	Prompt string          `json:"prompt"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+// aaiiFCResponse models the Firecrawl scrape response for AAII data.
+type aaiiFCResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		JSON struct {
+			LatestWeek  string  `json:"latest_week"`
+			BullishPct  float64 `json:"bullish_pct"`
+			NeutralPct  float64 `json:"neutral_pct"`
+			BearishPct  float64 `json:"bearish_pct"`
+		} `json:"json"`
+	} `json:"data"`
+}
+
+// aaiiFCSchema is the JSON schema for Firecrawl structured extraction.
+var aaiiFCSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"latest_week":  {"type": "string"},
+		"bullish_pct":  {"type": "number"},
+		"neutral_pct":  {"type": "number"},
+		"bearish_pct":  {"type": "number"}
+	}
+}`)
+
+func fetchAAIISentiment(ctx context.Context, client *http.Client, data *SentimentData) {
+	apiKey := os.Getenv("FIRECRAWL_API_KEY")
+	if apiKey == "" {
+		log.Debug().Msg("AAII: skipping — FIRECRAWL_API_KEY not set")
+		data.AAIIAvailable = false
+		return
+	}
+
+	reqBody := aaiiFCRequest{
+		URL:     "https://www.aaii.com/sentimentsurvey",
+		Formats: []string{"json"},
+		WaitFor: 5000,
+		JSONOptions: &fcJSONOpts{
+			Prompt: "Extract the latest AAII sentiment survey data: latest week ending date, bullish %, neutral %, and bearish %.",
+			Schema: aaiiFCSchema,
+		},
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		log.Warn().Err(err).Msg("AAII: failed to marshal Firecrawl request")
+		data.AAIIAvailable = false
+		return
+	}
+
+	// Use a longer timeout for Firecrawl (it needs to render the page)
+	fcClient := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", firecrawlScrapeURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		log.Warn().Err(err).Msg("AAII: failed to build Firecrawl request")
+		data.AAIIAvailable = false
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+
+	resp, err := fcClient.Do(req)
+	if err != nil {
+		log.Warn().Err(err).Msg("AAII: Firecrawl request failed")
+		data.AAIIAvailable = false
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Warn().Int("status", resp.StatusCode).Msg("AAII: Firecrawl non-2xx response")
+		data.AAIIAvailable = false
+		return
+	}
+
+	var result aaiiFCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Warn().Err(err).Msg("AAII: Firecrawl decode failed")
+		data.AAIIAvailable = false
+		return
+	}
+
+	if !result.Success || result.Data.JSON.BullishPct == 0 {
+		log.Warn().Msg("AAII: Firecrawl returned empty or failed result")
+		data.AAIIAvailable = false
+		return
+	}
+
+	j := result.Data.JSON
+	data.AAIIBullish = j.BullishPct
+	data.AAIINeutral = j.NeutralPct
+	data.AAIIBearish = j.BearishPct
+	data.AAIIWeekDate = j.LatestWeek
+	if j.BearishPct > 0 {
+		data.AAIIBullBear = j.BullishPct / j.BearishPct
+	}
+	data.AAIIAvailable = true
+
+	log.Debug().
+		Float64("bullish", data.AAIIBullish).
+		Float64("bearish", data.AAIIBearish).
+		Float64("neutral", data.AAIINeutral).
+		Str("week", data.AAIIWeekDate).
+		Msg("AAII fetched via Firecrawl")
 }
