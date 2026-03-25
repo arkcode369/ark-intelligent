@@ -108,6 +108,40 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 		r.Inflation += fmt.Sprintf(" | CPI: %.1f%%%s", data.CPI, cpiArrow)
 	}
 
+	// Wage Growth cross-check — sticky inflation indicator
+	if data.WageGrowth > 0 {
+		wageArrow := ""
+		if data.WageGrowthTrend.Direction != "" {
+			wageArrow = " " + data.WageGrowthTrend.Arrow()
+		}
+		r.Inflation += fmt.Sprintf(" | Wage: %.1f%%%s", data.WageGrowth, wageArrow)
+
+		// Wage-price spiral override: block DISINFLATIONARY if wages still hot
+		if data.WageGrowth > 5.0 && data.CorePCE > 3.0 {
+			riskScore += 10 // wage-price spiral risk
+		}
+		if data.WageGrowth > 5.0 && r.Name == "DISINFLATIONARY" {
+			r.Name = "NEUTRAL" // wages too hot for disinflationary classification
+		}
+	}
+
+	// 5Y5Y Forward Inflation — inflation expectations anchoring
+	if data.ForwardInflation > 0 {
+		switch {
+		case data.ForwardInflation > 2.8:
+			r.Inflation += fmt.Sprintf(" | 5Y5Y: %.2f%% ⚠️ (De-anchoring)", data.ForwardInflation)
+			riskScore += 10
+			// Block DISINFLATIONARY if market expects inflation return
+			if r.Name == "DISINFLATIONARY" && data.ForwardInflation > 2.5 {
+				r.Name = "NEUTRAL"
+			}
+		case data.ForwardInflation < 2.0:
+			r.Inflation += fmt.Sprintf(" | 5Y5Y: %.2f%% ⚠️ (Deflation risk)", data.ForwardInflation)
+		default:
+			r.Inflation += fmt.Sprintf(" | 5Y5Y: %.2f%% ✅ (Anchored)", data.ForwardInflation)
+		}
+	}
+
 	// M2 YoY growth label
 	if data.M2Growth != 0 {
 		m2Arrow := data.M2GrowthTrend.Arrow()
@@ -165,6 +199,24 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 		}
 	}
 
+	// VIX — real-time volatility/fear gauge
+	if data.VIX > 0 {
+		vixArrow := ""
+		if data.VIXTrend.Direction != "" {
+			vixArrow = " " + data.VIXTrend.Arrow()
+		}
+		switch {
+		case data.VIX > 30:
+			r.FinStress += fmt.Sprintf(" | VIX: %.1f%s 🔴 (Fear)", data.VIX, vixArrow)
+			riskScore += 15
+		case data.VIX > 20:
+			r.FinStress += fmt.Sprintf(" | VIX: %.1f%s ⚠️ (Elevated)", data.VIX, vixArrow)
+			riskScore += 5
+		default:
+			r.FinStress += fmt.Sprintf(" | VIX: %.1f%s ✅ (Calm)", data.VIX, vixArrow)
+		}
+	}
+
 	// --- 5. Labor Market (Initial Claims + Unemployment Rate + Sahm Rule) ---
 	claimsArrow := ""
 	if data.ClaimsTrend.Direction != "" {
@@ -215,6 +267,24 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 		r.SahmLabel = "N/A"
 	}
 
+	// Nonfarm Payrolls — actual job creation
+	if data.NFP > 0 {
+		nfpArrow := ""
+		if data.NFPTrend.Direction != "" {
+			nfpArrow = " " + data.NFPTrend.Arrow()
+		}
+		switch {
+		case data.NFPChange < 0:
+			r.Labor += fmt.Sprintf(" | NFP: %.0fK chg%s 🔴 (Job Losses!)", data.NFPChange, nfpArrow)
+			riskScore += 20
+		case data.NFPChange < 100:
+			r.Labor += fmt.Sprintf(" | NFP: +%.0fK chg%s ⚠️ (Slowdown)", data.NFPChange, nfpArrow)
+			riskScore += 5
+		default:
+			r.Labor += fmt.Sprintf(" | NFP: +%.0fK chg%s ✅", data.NFPChange, nfpArrow)
+		}
+	}
+
 	// --- 6. Monetary Policy (Fed Funds Rate + Real Rate + SOFR/IORB) ---
 	realRate := data.FedFundsRate - data.Breakeven5Y
 	switch {
@@ -250,7 +320,7 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 		r.SOFRLabel = "N/A"
 	}
 
-	// --- 7. Growth (GDP) ---
+	// --- 7. Growth (GDP + ISM + Consumer Sentiment) ---
 	if data.GDPGrowth != 0 {
 		switch {
 		case data.GDPGrowth > 3.0:
@@ -266,6 +336,49 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 		}
 	} else {
 		r.Growth = "N/A"
+	}
+
+	// ISM New Orders — leading manufacturing indicator
+	if data.ISMNewOrders > 0 {
+		ismArrow := ""
+		if data.ISMNewOrdersTrend.Direction != "" {
+			ismArrow = " " + data.ISMNewOrdersTrend.Arrow()
+		}
+		switch {
+		case data.ISMNewOrders < 45:
+			r.Growth += fmt.Sprintf(" | ISM Orders: %.1f%s 🔴 (Deep Contraction)", data.ISMNewOrders, ismArrow)
+			riskScore += 15
+		case data.ISMNewOrders < 50:
+			r.Growth += fmt.Sprintf(" | ISM Orders: %.1f%s ⚠️ (Contraction)", data.ISMNewOrders, ismArrow)
+			riskScore += 10
+		case data.ISMNewOrders < 55:
+			r.Growth += fmt.Sprintf(" | ISM Orders: %.1f%s (Expansion)", data.ISMNewOrders, ismArrow)
+		default:
+			r.Growth += fmt.Sprintf(" | ISM Orders: %.1f%s ✅ (Strong)", data.ISMNewOrders, ismArrow)
+		}
+	}
+
+	// Consumer Sentiment — monthly leading growth proxy
+	if data.ConsumerSentiment > 0 {
+		csArrow := ""
+		if data.ConsumerSentimentTrend.Direction != "" {
+			csArrow = " " + data.ConsumerSentimentTrend.Arrow()
+		}
+		switch {
+		case data.ConsumerSentiment < 60:
+			r.Growth += fmt.Sprintf(" | Consumer: %.1f%s 🔴 (Pessimistic)", data.ConsumerSentiment, csArrow)
+			riskScore += 10
+		case data.ConsumerSentiment < 80:
+			r.Growth += fmt.Sprintf(" | Consumer: %.1f%s ⚠️", data.ConsumerSentiment, csArrow)
+		default:
+			r.Growth += fmt.Sprintf(" | Consumer: %.1f%s ✅ (Confident)", data.ConsumerSentiment, csArrow)
+		}
+
+		// GDP override: if GDP still positive but consumer sentiment crashing, warn
+		if data.GDPGrowth > 1.5 && data.ConsumerSentiment < 60 {
+			// Consumer leading indicator suggests GDP will weaken
+			riskScore += 5
+		}
 	}
 
 	// --- 8. USD Strength ---
@@ -330,7 +443,7 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 	// --- Regime Override Rules ---
 	if r.SahmAlert {
 		r.Name = "RECESSION"
-	} else if data.NFCI > 0.7 {
+	} else if data.NFCI > 0.7 || data.VIX > 35 {
 		r.Name = "STRESS"
 	} else if data.CorePCE > 3.5 && data.GDPGrowth < 1.0 && data.GDPGrowth != 0 {
 		r.Name = "STAGFLATION"
@@ -357,7 +470,8 @@ func deriveBias(data *MacroData, r MacroRegime) (string, string) {
 	disinflationary := data.CorePCE > 0 && data.CorePCE < 3.0
 	steepening := data.YieldSpread > 0.25
 	looseConditions := data.NFCI < 0
-	strongLabor := data.InitialClaims > 0 && data.InitialClaims < 250_000
+	vixElevated := data.VIX > 25
+	strongLabor := data.InitialClaims > 0 && data.InitialClaims < 250_000 && (data.NFPChange == 0 || data.NFPChange > 100)
 	restrictivePolicy := data.FedFundsRate > 0 && (data.FedFundsRate-data.Breakeven5Y) > 0.5
 	growthPositive := data.GDPGrowth > 1.5
 
@@ -371,6 +485,10 @@ func deriveBias(data *MacroData, r MacroRegime) (string, string) {
 			"GDP contracting — risk-off dominates. Monitor Fed pivot signals for reversal."
 
 	case "STRESS":
+		if vixElevated {
+			return "Safe-haven BID (JPY, CHF, Gold) — VIX elevated",
+				fmt.Sprintf("Financial stress + VIX at %.1f — defensive positioning strongly favored.", data.VIX)
+		}
 		return "Safe-haven BID (JPY, CHF, Gold)",
 			"Financial stress elevated — defensive positioning favored. Risk-off flow into safe havens."
 

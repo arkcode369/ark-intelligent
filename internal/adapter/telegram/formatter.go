@@ -1132,10 +1132,12 @@ func (f *Formatter) FormatRanking(analyses []domain.COTAnalysis, date time.Time)
 
 // convictionRankEntry holds a ranking entry with conviction score for FormatRankingWithConviction.
 type convictionRankEntry struct {
-	Currency   string
-	Score      float64
-	COTIndex   float64
-	Conviction cot.ConvictionScore
+	Currency        string
+	Score           float64
+	COTIndex        float64
+	Conviction      cot.ConvictionScore
+	ThinMarketAlert bool
+	ThinMarketDesc  string
 }
 
 // FormatRankingWithConviction formats the weekly currency strength ranking with unified
@@ -1170,10 +1172,12 @@ func (f *Formatter) FormatRankingWithConviction(
 		}
 		cs := convMap[a.Contract.Currency]
 		entries = append(entries, convictionRankEntry{
-			Currency:   a.Contract.Currency,
-			Score:      a.SentimentScore,
-			COTIndex:   a.COTIndex,
-			Conviction: cs,
+			Currency:        a.Contract.Currency,
+			Score:           a.SentimentScore,
+			COTIndex:        a.COTIndex,
+			Conviction:      cs,
+			ThinMarketAlert: a.ThinMarketAlert,
+			ThinMarketDesc:  a.ThinMarketDesc,
 		})
 	}
 
@@ -1212,8 +1216,27 @@ func (f *Formatter) FormatRankingWithConviction(
 			convLabel = e.Conviction.Direction
 		}
 
-		b.WriteString(fmt.Sprintf("%s %s <b>%s</b> | Sent: %s%.0f | Conv: <b>%d/100</b> %s\n",
-			medal, colorDot, e.Currency, sentSign, e.Score, convScore, convLabel))
+		// Thin market warning flag
+		thinFlag := ""
+		if e.ThinMarketAlert {
+			thinFlag = " ⚠️THIN"
+		}
+
+		// Data quality: show sources count
+		srcLabel := ""
+		if e.Conviction.SourcesAvailable > 0 && e.Conviction.SourcesAvailable < 4 {
+			srcLabel = fmt.Sprintf(" (%d/4)", e.Conviction.SourcesAvailable)
+		}
+
+		b.WriteString(fmt.Sprintf("%s %s <b>%s</b>%s | Sent: %s%.0f | Conv: <b>%d/100</b>%s %s\n",
+			medal, colorDot, e.Currency, thinFlag, sentSign, e.Score, convScore, srcLabel, convLabel))
+
+		// Component breakdown for top 3 currencies
+		if i < 3 && e.Conviction.Version == 3 {
+			b.WriteString(fmt.Sprintf("   <i>COT:%+.0f Macro:%+.0f Price:%+.0f Cal:%+.0f</i>\n",
+				e.Conviction.COTComponent, e.Conviction.MacroComponent,
+				e.Conviction.PriceComponent, e.Conviction.CalendarComponent))
+		}
 	}
 
 	// Best pairs based on conviction spread

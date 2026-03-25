@@ -28,14 +28,13 @@ func TestConfluenceScoreV2_NilMacroData(t *testing.T) {
 }
 
 func TestConfluenceScoreV2_WithMacroData(t *testing.T) {
-	// With macro data: weights are 35/20/15/30 (COT/surprise/stress/FRED).
+	// With macro data: weights are 35/20/45 (COT/surprise/macro).
 	macro := &fred.MacroData{
-		YieldSpread:   0.5,      // positive → +30
-		CorePCE:       2.0,      // < 2.5 → +30
-		NFCI:          -0.5,     // negative → +20
-		InitialClaims: 200_000,  // < 250k → +20
-		// fredRaw = 30+30+20+20 = 100 → fredScore = 100-50 = 50
-		// stressScore = -(-0.5)*50 = 25
+		YieldSpread:   0.5,      // > 0 → +10
+		CorePCE:       2.0,      // < 2.5 → +25
+		NFCI:          -0.5,     // nfciScore = Clamp(20, -25, 25) = 20
+		InitialClaims: 200_000,  // < 220k → +15
+		// macroScore = 10+25+20+15 = 70
 	}
 	a := domain.COTAnalysis{
 		Contract:       baseContract("TFF"),
@@ -43,10 +42,10 @@ func TestConfluenceScoreV2_WithMacroData(t *testing.T) {
 	}
 	score := ConfluenceScoreV2(a, macro, 1.0) // surprise = 1 sigma → 20
 
-	// cotScore = 60, surpriseScore = 20, stressScore = 25, fredScore = 50
-	// total = 60*0.35 + 20*0.20 + 25*0.15 + 50*0.30 = 21 + 4 + 3.75 + 15 = 43.75
-	if math.Abs(score-43.75) > 1.0 {
-		t.Errorf("expected ~43.75, got %.2f", score)
+	// cotScore = 60, surpriseScore = 20, macroScore = 70
+	// total = 60*0.35 + 20*0.20 + 70*0.45 = 21 + 4 + 31.5 = 56.5
+	if math.Abs(score-56.5) > 1.0 {
+		t.Errorf("expected ~56.50, got %.2f", score)
 	}
 }
 

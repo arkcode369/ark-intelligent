@@ -16,6 +16,9 @@ const (
 	AlertSahmClear      AlertType = "SAHM_CLEAR"        // Sahm Rule drops below 0.3
 	AlertFedBalExpand   AlertType = "FED_BAL_EXPAND"    // Fed balance sheet expanding (QE signal)
 	AlertFedBalContract AlertType = "FED_BAL_CONTRACT"  // Fed balance sheet contracting (QT)
+	AlertVIXSpike       AlertType = "VIX_SPIKE"        // VIX crosses above 30
+	AlertVIXCalm        AlertType = "VIX_CALM"         // VIX drops below 15
+	AlertNFPNegative    AlertType = "NFP_NEGATIVE"     // NFP MoM change turns negative
 )
 
 // MacroAlert represents a single triggered macro regime change event.
@@ -183,6 +186,54 @@ func CheckAlerts(current, previous *MacroData) []MacroAlert {
 				Severity: "MEDIUM",
 				Value:    current.FedBalSheet,
 				Previous: previous.FedBalSheet,
+			})
+		}
+	}
+
+	// --- 6. VIX spike / calm ---
+	if current.VIX > 0 && previous.VIX > 0 {
+		if previous.VIX < 30 && current.VIX >= 30 {
+			alerts = append(alerts, MacroAlert{
+				Type:  AlertVIXSpike,
+				Title: "🔴 VIX SPIKE — Risk-Off Mode",
+				Description: fmt.Sprintf(
+					"VIX crossed 30: %.1f (was %.1f). "+
+						"Market fear elevated — JPY/CHF/Gold favored, risk FX under pressure. "+
+						"Historically, VIX >30 correlates with USDJPY downside.",
+					current.VIX, previous.VIX),
+				Severity: "HIGH",
+				Value:    current.VIX,
+				Previous: previous.VIX,
+			})
+		} else if previous.VIX >= 15 && current.VIX < 15 {
+			alerts = append(alerts, MacroAlert{
+				Type:  AlertVIXCalm,
+				Title: "🟢 VIX CALM — Risk Appetite Returning",
+				Description: fmt.Sprintf(
+					"VIX dropped below 15: %.1f (was %.1f). "+
+						"Low volatility environment — risk-on FX (AUD, NZD, CAD) may benefit.",
+					current.VIX, previous.VIX),
+				Severity: "MEDIUM",
+				Value:    current.VIX,
+				Previous: previous.VIX,
+			})
+		}
+	}
+
+	// --- 7. NFP negative ---
+	if current.NFPChange != 0 && previous.NFPChange != 0 {
+		if previous.NFPChange > 0 && current.NFPChange < 0 {
+			alerts = append(alerts, MacroAlert{
+				Type:  AlertNFPNegative,
+				Title: "🚨 NFP NEGATIVE — Job Losses!",
+				Description: fmt.Sprintf(
+					"Nonfarm Payrolls turned negative: %.0fK (was +%.0fK). "+
+						"Actual job losses are extremely rare and signal severe economic deterioration. "+
+						"Fed dovish pivot likely — USD bearish, Gold bullish.",
+					current.NFPChange, previous.NFPChange),
+				Severity: "HIGH",
+				Value:    current.NFPChange,
+				Previous: previous.NFPChange,
 			})
 		}
 	}

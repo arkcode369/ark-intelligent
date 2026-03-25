@@ -42,7 +42,7 @@ func DetectPriceCOTDivergences(
 
 		if trend == "UP" && cotDir == "BEARISH" {
 			severity := "MEDIUM"
-			if analysis.COTIndex < 25 {
+			if analysis.COTIndex < cotExtremeLow {
 				severity = "HIGH"
 			}
 			div = &PriceCOTDivergence{
@@ -57,7 +57,7 @@ func DetectPriceCOTDivergences(
 			}
 		} else if trend == "DOWN" && cotDir == "BULLISH" {
 			severity := "MEDIUM"
-			if analysis.COTIndex > 75 {
+			if analysis.COTIndex > cotExtremeHigh {
 				severity = "HIGH"
 			}
 			div = &PriceCOTDivergence{
@@ -80,10 +80,19 @@ func DetectPriceCOTDivergences(
 	return divergences
 }
 
+// COT threshold constants — mirrors cot package thresholds.
+// Defined locally to avoid circular import (price → cot).
+const (
+	cotDirBullish  = 60
+	cotDirBearish  = 40
+	cotExtremeHigh = 75
+	cotExtremeLow  = 25
+)
+
 func cotDirection(cotIndex float64) string {
-	if cotIndex > 60 {
+	if cotIndex > cotDirBullish {
 		return "BULLISH"
-	} else if cotIndex < 40 {
+	} else if cotIndex < cotDirBearish {
 		return "BEARISH"
 	}
 	return "NEUTRAL"

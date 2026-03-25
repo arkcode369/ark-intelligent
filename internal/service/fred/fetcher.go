@@ -108,6 +108,30 @@ type MacroData struct {
 	// USD strength
 	DXY float64 // DTWEXBGS — Nominal Broad U.S. Dollar Index
 
+	// VIX — real-time risk sentiment
+	VIX      float64     // VIXCLS — CBOE Volatility Index
+	VIXTrend SeriesTrend // trend: VIX rising or falling?
+
+	// Wage growth — sticky inflation indicator
+	WageGrowth     float64     // AHETPI — Average Hourly Earnings YoY%
+	WageGrowthTrend SeriesTrend
+
+	// Forward inflation expectations
+	ForwardInflation float64 // T5YIFR — 5Y5Y Forward Inflation Expectation Rate
+
+	// ISM New Orders — leading growth indicator
+	ISMNewOrders     float64     // NAPMNOI — ISM Manufacturing New Orders Index
+	ISMNewOrdersTrend SeriesTrend
+
+	// Nonfarm Payrolls — labor breadth
+	NFP       float64     // PAYEMS — Nonfarm Payrolls (level, thousands)
+	NFPChange float64     // MoM change (thousands)
+	NFPTrend  SeriesTrend
+
+	// Consumer Sentiment — leading growth proxy
+	ConsumerSentiment     float64     // UMCSENT — UMich Consumer Sentiment
+	ConsumerSentimentTrend SeriesTrend
+
 	// Sentiment surveys (populated separately via sentiment package)
 	CNNFearGreed float64 // 0-100 (0=Extreme Fear, 100=Extreme Greed)
 	AAIIBullBear float64 // Bull/Bear ratio (>1 = bullish sentiment)
@@ -176,6 +200,54 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 		if len(obs) > 0 {
 			*t.target = obs[0]
 		}
+	}
+
+	// --- New series: VIX (daily) ---
+	if obs := fetchSeries(ctx, client, "VIXCLS", apiKey, 5); len(obs) >= 1 {
+		data.VIX = obs[0]
+		if len(obs) >= 2 {
+			data.VIXTrend = computeTrend(obs[0], obs[1], 1.0) // 1pt threshold for VIX
+		}
+	}
+
+	// --- New series: Forward Inflation (daily) ---
+	if obs := fetchSeries(ctx, client, "T5YIFR", apiKey, 5); len(obs) >= 1 {
+		data.ForwardInflation = obs[0]
+	}
+
+	// --- New series: ISM New Orders (monthly) ---
+	if obs := fetchSeries(ctx, client, "NAPMNOI", apiKey, 3); len(obs) >= 1 {
+		data.ISMNewOrders = obs[0]
+		if len(obs) >= 2 {
+			data.ISMNewOrdersTrend = computeTrend(obs[0], obs[1], 0.5)
+		}
+	}
+
+	// --- New series: Consumer Sentiment (monthly) ---
+	if obs := fetchSeries(ctx, client, "UMCSENT", apiKey, 3); len(obs) >= 1 {
+		data.ConsumerSentiment = obs[0]
+		if len(obs) >= 2 {
+			data.ConsumerSentimentTrend = computeTrend(obs[0], obs[1], 1.0)
+		}
+	}
+
+	// --- New series: Average Hourly Earnings (monthly, YoY%) ---
+	if obs := fetchSeries(ctx, client, "AHETPI", apiKey, 14); len(obs) >= 13 {
+		if obs[12] != 0 {
+			data.WageGrowth = (obs[0] - obs[12]) / obs[12] * 100
+		}
+		data.WageGrowthTrend = computeTrend(obs[0], obs[1], 0.02)
+	} else if len(obs) >= 1 {
+		data.WageGrowth = obs[0]
+	}
+
+	// --- New series: Nonfarm Payrolls (monthly, compute MoM change) ---
+	if obs := fetchSeries(ctx, client, "PAYEMS", apiKey, 3); len(obs) >= 2 {
+		data.NFP = obs[0]
+		data.NFPChange = obs[0] - obs[1] // MoM change in thousands
+		data.NFPTrend = computeTrend(obs[0], obs[1], 50) // 50K threshold
+	} else if len(obs) >= 1 {
+		data.NFP = obs[0]
 	}
 
 	// --- Trend series (need latest + previous) ---
@@ -280,6 +352,13 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	sanitizeFloat(&data.FedBalSheet)
 	sanitizeFloat(&data.DXY)
 	sanitizeFloat(&data.TedSpread)
+	sanitizeFloat(&data.VIX)
+	sanitizeFloat(&data.WageGrowth)
+	sanitizeFloat(&data.ForwardInflation)
+	sanitizeFloat(&data.ISMNewOrders)
+	sanitizeFloat(&data.NFP)
+	sanitizeFloat(&data.NFPChange)
+	sanitizeFloat(&data.ConsumerSentiment)
 
 	return data, nil
 }

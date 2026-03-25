@@ -10,76 +10,98 @@ import (
 	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 )
 
+// computeMacroComponentScore computes a unified macro conditions score from FRED data.
+// Combines yield curve, inflation target, financial conditions (NFCI continuous),
+// labor market, and GDP into a single -100..+100 score.
+// This replaces the separate "stress" and "FRED" components to eliminate NFCI triple-counting.
+func computeMacroComponentScore(macroData *fred.MacroData) float64 {
+	if macroData == nil {
+		return 0
+	}
+
+	raw := 0.0
+
+	// Yield curve: positive spread = healthy economy
+	switch {
+	case macroData.YieldSpread > 0.5:
+		raw += 25
+	case macroData.YieldSpread > 0:
+		raw += 10
+	case macroData.YieldSpread > -0.5:
+		raw -= 10
+	default:
+		raw -= 25 // deep inversion
+	}
+
+	// Inflation proximity to target (Core PCE)
+	if macroData.CorePCE > 0 {
+		switch {
+		case macroData.CorePCE < 2.5:
+			raw += 25 // on/below target
+		case macroData.CorePCE < 3.5:
+			raw += 5 // slightly elevated
+		default:
+			raw -= 20 // high inflation
+		}
+	}
+
+	// Financial conditions (NFCI) — continuous scoring, single entry point
+	// NFCI: negative = loose (good), positive = tight (bad)
+	nfciScore := mathutil.Clamp(-macroData.NFCI*40, -25, 25)
+	raw += nfciScore
+
+	// Labor market
+	if macroData.InitialClaims > 0 {
+		switch {
+		case macroData.InitialClaims < 220_000:
+			raw += 15
+		case macroData.InitialClaims < 280_000:
+			raw += 5
+		default:
+			raw -= 15
+		}
+	}
+
+	// GDP growth factor
+	if macroData.GDPGrowth != 0 {
+		switch {
+		case macroData.GDPGrowth > 3.0:
+			raw += 10
+		case macroData.GDPGrowth > 1.5:
+			raw += 5
+		case macroData.GDPGrowth > 0:
+			// neutral
+		default:
+			raw -= 15
+		}
+	}
+
+	return mathutil.Clamp(raw, -100, 100)
+}
+
 // ConfluenceScoreV2 computes the institutional-grade confluence score for a currency.
 //
-// Components:
+// Components (4-factor):
 //   - COT positioning   (35%) — based on SentimentScore (-100..+100)
-//   - Calendar surprise (20%) — based on recent sigma surprise for this currency
-//   - Financial stress  (15%) — based on FRED NFCI (negative = loose = bullish risk)
-//   - FRED regime       (30%) — composite from yield curve, PCE, NFCI, initial claims
+//   - Calendar surprise  (20%) — based on recent sigma surprise for this currency
+//   - Macro conditions   (45%) — unified FRED score (yield, PCE, NFCI, labor, GDP)
 //
 // Returns a score in [-100, +100]. Positive = bullish bias, negative = bearish bias.
 func ConfluenceScoreV2(
 	analysis domain.COTAnalysis,
 	macroData *fred.MacroData,
-	surpriseSigma float64, // recent sigma surprise for this currency (positive = hawkish)
+	surpriseSigma float64,
 ) float64 {
-	// 1. COT component (35%)
 	cotScore := mathutil.Clamp(analysis.SentimentScore, -100, 100)
-
-	// 2. Calendar surprise component (20%)
-	// Scale: 1 sigma → +20 points; 5 sigma → capped at ±100
 	surpriseScore := mathutil.Clamp(surpriseSigma*20, -100, 100)
+	macroScore := computeMacroComponentScore(macroData)
 
-	// 3. Financial stress component (15%)
-	// NFCI negative = loose = bullish; positive = tight = bearish
-	stressScore := 0.0
 	if macroData != nil {
-		stressScore = mathutil.Clamp(-macroData.NFCI*50, -100, 100)
-	}
-
-	// 4. FRED regime component (30%)
-	// Points: yield curve steepening (+30), disinflationary (+30),
-	// loose conditions (+20), strong labor (+20) → raw 0..100 normalized to -100..+100
-	fredRaw := 0.0
-	if macroData != nil {
-		if macroData.YieldSpread > 0 {
-			fredRaw += 30
-		}
-		if macroData.CorePCE > 0 && macroData.CorePCE < 2.5 {
-			fredRaw += 30
-		}
-		if macroData.NFCI < 0 {
-			fredRaw += 20
-		}
-		if macroData.InitialClaims > 0 && macroData.InitialClaims < 250_000 {
-			fredRaw += 20
-		}
-		// Normalize: 0..100 raw → -100..+100 (50 = neutral)
-		fredScore := mathutil.Clamp(fredRaw-50, -100, 100)
-
-		// GDP growth factor: positive growth → bullish risk bias
-		if macroData.GDPGrowth != 0 {
-			gdpFactor := 0.0
-			switch {
-			case macroData.GDPGrowth > 3.0:
-				gdpFactor = 10
-			case macroData.GDPGrowth > 1.5:
-				gdpFactor = 5
-			case macroData.GDPGrowth > 0:
-				gdpFactor = 0 // low positive growth → neutral (not bearish)
-			case macroData.GDPGrowth < 0:
-				gdpFactor = -15
-			}
-			// Blend GDP into the FRED component (reduce FRED weight slightly, add GDP)
-			fredScore += gdpFactor * 0.3
-		}
-
-		total := cotScore*0.35 + surpriseScore*0.20 + stressScore*0.15 + fredScore*0.30
+		total := cotScore*0.35 + surpriseScore*0.20 + macroScore*0.45
 		return mathutil.Clamp(total, -100, 100)
 	}
 
-	// Without FRED data: weight COT (60%) + surprise (40%), stress is unavailable
+	// Without FRED data: weight COT (60%) + surprise (40%)
 	total := cotScore*0.60 + surpriseScore*0.40
 	return mathutil.Clamp(total, -100, 100)
 }
@@ -161,7 +183,14 @@ type ConvictionScore struct {
 	FREDRegime   string  // e.g. "DISINFLATIONARY"
 	CalendarBias string  // e.g. "ECB hawkish"
 	Label        string  // e.g. "HIGH CONVICTION LONG"
-	Version      int     // 2 or 3 (which formula was used)
+	Version      int     // 2 or 3 (formula version)
+
+	// Component breakdown (V3 only)
+	COTComponent      float64 // -100..+100 (weighted)
+	CalendarComponent float64 // -100..+100 (weighted)
+	MacroComponent    float64 // -100..+100 (weighted)
+	PriceComponent    float64 // -100..+100 (weighted)
+	SourcesAvailable  int     // how many of 4 sources contributed (1-4)
 }
 
 // ComputeConvictionScore generates a unified 0-100 conviction score from all 3 data sources:
@@ -197,14 +226,13 @@ func ComputeConvictionScore(
 // V3 — 5-component Confluence Score with Price Data
 // ---------------------------------------------------------------------------
 
-// ConfluenceScoreV3 computes a 5-component institutional-grade confluence score.
+// ConfluenceScoreV3 computes a 4-component institutional-grade confluence score.
 //
 // Components:
-//   - COT positioning   (25%) — based on SentimentScore (-100..+100)
-//   - Calendar surprise  (15%) — based on recent sigma surprise
-//   - Financial stress   (10%) — based on FRED NFCI
-//   - FRED regime        (20%) — composite macro conditions
-//   - Price momentum     (30%) — MA alignment, trend, price-COT concordance
+//   - COT positioning    (30%) — based on SentimentScore (-100..+100)
+//   - Calendar surprise   (15%) — based on recent sigma surprise
+//   - Macro conditions    (25%) — unified FRED score (replaces separate stress + FRED)
+//   - Price momentum      (30%) — volatility-normalized MA alignment + momentum + concordance
 //
 // Returns a score in [-100, +100]. Positive = bullish bias, negative = bearish bias.
 func ConfluenceScoreV3(
@@ -213,53 +241,11 @@ func ConfluenceScoreV3(
 	surpriseSigma float64,
 	priceContext *domain.PriceContext,
 ) float64 {
-	// 1. COT component (25%)
 	cotScore := mathutil.Clamp(analysis.SentimentScore, -100, 100)
-
-	// 2. Calendar surprise component (15%)
 	surpriseScore := mathutil.Clamp(surpriseSigma*20, -100, 100)
+	macroScore := computeMacroComponentScore(macroData)
 
-	// 3. Financial stress component (10%)
-	stressScore := 0.0
-	if macroData != nil {
-		stressScore = mathutil.Clamp(-macroData.NFCI*50, -100, 100)
-	}
-
-	// 4. FRED regime component (20%) — same logic as V2
-	fredScore := 0.0
-	if macroData != nil {
-		fredRaw := 0.0
-		if macroData.YieldSpread > 0 {
-			fredRaw += 30
-		}
-		if macroData.CorePCE > 0 && macroData.CorePCE < 2.5 {
-			fredRaw += 30
-		}
-		if macroData.NFCI < 0 {
-			fredRaw += 20
-		}
-		if macroData.InitialClaims > 0 && macroData.InitialClaims < 250_000 {
-			fredRaw += 20
-		}
-		fredScore = mathutil.Clamp(fredRaw-50, -100, 100)
-
-		if macroData.GDPGrowth != 0 {
-			gdpFactor := 0.0
-			switch {
-			case macroData.GDPGrowth > 3.0:
-				gdpFactor = 10
-			case macroData.GDPGrowth > 1.5:
-				gdpFactor = 5
-			case macroData.GDPGrowth > 0:
-				gdpFactor = 0
-			case macroData.GDPGrowth < 0:
-				gdpFactor = -15
-			}
-			fredScore += gdpFactor * 0.3
-		}
-	}
-
-	// 5. Price momentum component (30%)
+	// Price momentum component (30%)
 	priceScore := 0.0
 	if priceContext != nil {
 		// MA alignment: above both MAs = bullish, below both = bearish
@@ -275,23 +261,33 @@ func ConfluenceScoreV3(
 			maScore -= 25
 		}
 
-		// Momentum from weekly/monthly changes
-		momentumScore := mathutil.Clamp(priceContext.WeeklyChgPct*10, -25, 25) +
-			mathutil.Clamp(priceContext.MonthlyChgPct*5, -25, 25)
+		// Momentum from weekly/monthly changes — volatility-normalized if ATR available
+		weeklyMom := priceContext.WeeklyChgPct
+		monthlyMom := priceContext.MonthlyChgPct
+		if priceContext.NormalizedATR > 0 {
+			// Z-score style: normalize by ATR percentage
+			weeklyMom = weeklyMom / priceContext.NormalizedATR * 2
+			monthlyMom = monthlyMom / priceContext.NormalizedATR * 2
+		} else {
+			// Fallback: raw scaling
+			weeklyMom = weeklyMom * 10
+			monthlyMom = monthlyMom * 5
+		}
+
+		momentumScore := mathutil.Clamp(weeklyMom, -25, 25) +
+			mathutil.Clamp(monthlyMom, -25, 25)
 
 		priceScore = mathutil.Clamp(maScore+momentumScore, -100, 100)
 
-		// Price-COT concordance bonus: if price and COT agree, boost; if they disagree, dampen
+		// Price-COT concordance: agreement boosts, disagreement dampens
 		cotBullish := analysis.SentimentScore > 20
 		cotBearish := analysis.SentimentScore < -20
 		priceBullish := priceContext.Trend4W == "UP"
 		priceBearish := priceContext.Trend4W == "DOWN"
 
 		if (cotBullish && priceBullish) || (cotBearish && priceBearish) {
-			// Agreement bonus — boost price component by 20%
 			priceScore *= 1.2
 		} else if (cotBullish && priceBearish) || (cotBearish && priceBullish) {
-			// Disagreement — dampen price component by 30%
 			priceScore *= 0.7
 		}
 		priceScore = mathutil.Clamp(priceScore, -100, 100)
@@ -299,16 +295,16 @@ func ConfluenceScoreV3(
 
 	// Weighted combination
 	if priceContext != nil && macroData != nil {
-		// Full 5-component
-		total := cotScore*0.25 + surpriseScore*0.15 + stressScore*0.10 + fredScore*0.20 + priceScore*0.30
+		total := cotScore*0.30 + surpriseScore*0.15 + macroScore*0.25 + priceScore*0.30
 		return mathutil.Clamp(total, -100, 100)
 	} else if priceContext != nil {
-		// No FRED: COT 35% + Surprise 20% + Price 45%
-		total := cotScore*0.35 + surpriseScore*0.20 + priceScore*0.45
+		// No FRED: COT 40% + Surprise 15% + Price 45%
+		total := cotScore*0.40 + surpriseScore*0.15 + priceScore*0.45
 		return mathutil.Clamp(total, -100, 100)
 	} else if macroData != nil {
-		// No price: fall back to V2 weights
-		return ConfluenceScoreV2(analysis, macroData, surpriseSigma)
+		// No price: COT 35% + Surprise 20% + Macro 45%
+		total := cotScore*0.35 + surpriseScore*0.20 + macroScore*0.45
+		return mathutil.Clamp(total, -100, 100)
 	}
 
 	// Neither: COT 60% + Surprise 40%
@@ -317,7 +313,7 @@ func ConfluenceScoreV3(
 }
 
 // ComputeConvictionScoreV3 generates a unified 0-100 conviction score using
-// the 5-component V3 formula that includes price momentum data.
+// the 4-component V3 formula. Regime multiplier is scaled by regime intensity.
 func ComputeConvictionScoreV3(
 	analysis domain.COTAnalysis,
 	regime fred.MacroRegime,
@@ -328,11 +324,58 @@ func ComputeConvictionScoreV3(
 ) ConvictionScore {
 	baseScore := ConfluenceScoreV3(analysis, macroData, surpriseSigma, priceContext)
 
+	// Scale regime multiplier by regime intensity (Score 0-100)
 	multiplier := FREDRegimeMultiplier(analysis.Contract.Currency, regime)
-	adjusted := mathutil.Clamp(baseScore+multiplier, -100, 100)
+	regimeIntensity := float64(regime.Score) / 100.0
+	scaledMultiplier := multiplier * regimeIntensity
+	adjusted := mathutil.Clamp(baseScore+scaledMultiplier, -100, 100)
 	conviction := (adjusted + 100) / 2
 
-	return buildConvictionResult(analysis, conviction, regime.Name, calendarNote, 3)
+	cs := buildConvictionResult(analysis, conviction, regime.Name, calendarNote, 3)
+
+	// Populate component breakdown
+	cs.COTComponent = mathutil.Clamp(analysis.SentimentScore, -100, 100)
+	cs.CalendarComponent = mathutil.Clamp(surpriseSigma*20, -100, 100)
+	cs.MacroComponent = computeMacroComponentScore(macroData)
+	if priceContext != nil {
+		// Recompute price component for breakdown (same logic as V3)
+		maScore := 0.0
+		if priceContext.AboveMA4W {
+			maScore += 25
+		} else {
+			maScore -= 25
+		}
+		if priceContext.AboveMA13W {
+			maScore += 25
+		} else {
+			maScore -= 25
+		}
+		weeklyMom := priceContext.WeeklyChgPct
+		monthlyMom := priceContext.MonthlyChgPct
+		if priceContext.NormalizedATR > 0 {
+			weeklyMom = weeklyMom / priceContext.NormalizedATR * 2
+			monthlyMom = monthlyMom / priceContext.NormalizedATR * 2
+		} else {
+			weeklyMom = weeklyMom * 10
+			monthlyMom = monthlyMom * 5
+		}
+		momentumScore := mathutil.Clamp(weeklyMom, -25, 25) + mathutil.Clamp(monthlyMom, -25, 25)
+		cs.PriceComponent = mathutil.Clamp(maScore+momentumScore, -100, 100)
+	}
+
+	// Count available sources
+	cs.SourcesAvailable = 1 // COT always available
+	if surpriseSigma != 0 {
+		cs.SourcesAvailable++
+	}
+	if macroData != nil {
+		cs.SourcesAvailable++
+	}
+	if priceContext != nil {
+		cs.SourcesAvailable++
+	}
+
+	return cs
 }
 
 // ConfluenceWeights defines custom factor weights for the confluence score.
@@ -345,22 +388,19 @@ type ConfluenceWeights struct {
 	Price    float64 // Price momentum weight
 }
 
-// DefaultWeightsV3 returns the hardcoded V3 weights.
+// DefaultWeightsV3 returns the V3 weights. Stress is merged into FRED (Macro).
 func DefaultWeightsV3() ConfluenceWeights {
 	return ConfluenceWeights{
-		COT:      0.25,
+		COT:      0.30,
 		Calendar: 0.15,
-		Stress:   0.10,
-		FRED:     0.20,
+		Stress:   0.00, // merged into FRED/Macro
+		FRED:     0.25, // unified macro component
 		Price:    0.30,
 	}
 }
 
-// ConfluenceScoreWithWeights computes a 5-component confluence score using
-// custom weights instead of hardcoded values. This allows the system to use
-// data-driven weights when available and fall back to hardcoded weights when not.
-//
-// The component scoring logic is identical to V3; only the weighting changes.
+// ConfluenceScoreWithWeights computes a 4-component confluence score using
+// custom weights instead of hardcoded values.
 func ConfluenceScoreWithWeights(
 	analysis domain.COTAnalysis,
 	macroData *fred.MacroData,
@@ -368,53 +408,11 @@ func ConfluenceScoreWithWeights(
 	priceContext *domain.PriceContext,
 	weights ConfluenceWeights,
 ) float64 {
-	// 1. COT component
 	cotScore := mathutil.Clamp(analysis.SentimentScore, -100, 100)
-
-	// 2. Calendar surprise component
 	surpriseScore := mathutil.Clamp(surpriseSigma*20, -100, 100)
+	macroScore := computeMacroComponentScore(macroData)
 
-	// 3. Financial stress component
-	stressScore := 0.0
-	if macroData != nil {
-		stressScore = mathutil.Clamp(-macroData.NFCI*50, -100, 100)
-	}
-
-	// 4. FRED regime component
-	fredScore := 0.0
-	if macroData != nil {
-		fredRaw := 0.0
-		if macroData.YieldSpread > 0 {
-			fredRaw += 30
-		}
-		if macroData.CorePCE > 0 && macroData.CorePCE < 2.5 {
-			fredRaw += 30
-		}
-		if macroData.NFCI < 0 {
-			fredRaw += 20
-		}
-		if macroData.InitialClaims > 0 && macroData.InitialClaims < 250_000 {
-			fredRaw += 20
-		}
-		fredScore = mathutil.Clamp(fredRaw-50, -100, 100)
-
-		if macroData.GDPGrowth != 0 {
-			gdpFactor := 0.0
-			switch {
-			case macroData.GDPGrowth > 3.0:
-				gdpFactor = 10
-			case macroData.GDPGrowth > 1.5:
-				gdpFactor = 5
-			case macroData.GDPGrowth > 0:
-				gdpFactor = 0
-			case macroData.GDPGrowth < 0:
-				gdpFactor = -15
-			}
-			fredScore += gdpFactor * 0.3
-		}
-	}
-
-	// 5. Price momentum component
+	// Price momentum component
 	priceScore := 0.0
 	if priceContext != nil {
 		maScore := 0.0
@@ -428,8 +426,16 @@ func ConfluenceScoreWithWeights(
 		} else {
 			maScore -= 25
 		}
-		momentumScore := mathutil.Clamp(priceContext.WeeklyChgPct*10, -25, 25) +
-			mathutil.Clamp(priceContext.MonthlyChgPct*5, -25, 25)
+		weeklyMom := priceContext.WeeklyChgPct
+		monthlyMom := priceContext.MonthlyChgPct
+		if priceContext.NormalizedATR > 0 {
+			weeklyMom = weeklyMom / priceContext.NormalizedATR * 2
+			monthlyMom = monthlyMom / priceContext.NormalizedATR * 2
+		} else {
+			weeklyMom = weeklyMom * 10
+			monthlyMom = monthlyMom * 5
+		}
+		momentumScore := mathutil.Clamp(weeklyMom, -25, 25) + mathutil.Clamp(monthlyMom, -25, 25)
 		priceScore = mathutil.Clamp(maScore+momentumScore, -100, 100)
 
 		cotBullish := analysis.SentimentScore > 20
@@ -444,27 +450,26 @@ func ConfluenceScoreWithWeights(
 		priceScore = mathutil.Clamp(priceScore, -100, 100)
 	}
 
-	// Weighted combination using custom weights
+	// Merge Stress weight into Macro (since they're now unified)
+	macroWeight := weights.FRED + weights.Stress
+
 	if priceContext != nil && macroData != nil {
-		total := cotScore*weights.COT + surpriseScore*weights.Calendar + stressScore*weights.Stress + fredScore*weights.FRED + priceScore*weights.Price
+		total := cotScore*weights.COT + surpriseScore*weights.Calendar + macroScore*macroWeight + priceScore*weights.Price
 		return mathutil.Clamp(total, -100, 100)
 	} else if priceContext != nil {
-		// No FRED: redistribute FRED+Stress weights proportionally to COT, Calendar, Price.
 		sum := weights.COT + weights.Calendar + weights.Price
 		if sum > 0 {
 			total := cotScore*(weights.COT/sum) + surpriseScore*(weights.Calendar/sum) + priceScore*(weights.Price/sum)
 			return mathutil.Clamp(total, -100, 100)
 		}
 	} else if macroData != nil {
-		// No price: redistribute Price weight proportionally to COT, Calendar, Stress, FRED.
-		sum := weights.COT + weights.Calendar + weights.Stress + weights.FRED
+		sum := weights.COT + weights.Calendar + macroWeight
 		if sum > 0 {
-			total := cotScore*(weights.COT/sum) + surpriseScore*(weights.Calendar/sum) + stressScore*(weights.Stress/sum) + fredScore*(weights.FRED/sum)
+			total := cotScore*(weights.COT/sum) + surpriseScore*(weights.Calendar/sum) + macroScore*(macroWeight/sum)
 			return mathutil.Clamp(total, -100, 100)
 		}
 	}
 
-	// Neither: COT + Calendar only.
 	sum := weights.COT + weights.Calendar
 	if sum > 0 {
 		total := cotScore*(weights.COT/sum) + surpriseScore*(weights.Calendar/sum)

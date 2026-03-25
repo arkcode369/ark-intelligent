@@ -603,19 +603,18 @@ func computeSentiment(a domain.COTAnalysis) float64 {
 	commScore := (50 - a.COTIndexComm) * 2
 	score += commScore * 0.30
 
-	// Momentum contribution (20% weight)
-	if a.SpecMomentum4W > 0 {
-		score += 20
-	} else if a.SpecMomentum4W < 0 {
-		score -= 20
+	// Momentum contribution (20% weight) — continuous scaling
+	// Scale factor: 5000 contracts momentum → ±20 points (full weight)
+	momScale := 5000.0
+	if momScale > 0 {
+		momContrib := mathutil.Clamp(a.SpecMomentum4W/momScale*20, -20, 20)
+		score += momContrib
 	}
 
-	// Crowding penalty (10% weight)
-	if a.CrowdingIndex > 70 {
-		score -= 10
-	} else if a.CrowdingIndex < 30 {
-		score += 10
-	}
+	// Crowding penalty (10% weight) — proportional to crowding degree
+	// CrowdingIndex 50 = neutral, >50 = crowded (penalty), <50 = uncrowded (bonus)
+	crowdingContrib := mathutil.Clamp((50-a.CrowdingIndex)*0.2, -10, 10)
+	score += crowdingContrib
 
 	return mathutil.Clamp(score, -100, 100)
 }

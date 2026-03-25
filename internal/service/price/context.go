@@ -10,6 +10,13 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 )
 
+// COT threshold constants — mirrors cot.COTBullishThreshold / cot.COTBearishThreshold.
+// Defined locally to avoid circular import (price → cot → domain, price → domain).
+const (
+	cotBullishThreshold = 60
+	cotBearishThreshold = 40
+)
+
 // ContextBuilder computes price context from stored price records.
 type ContextBuilder struct {
 	priceRepo ports.PriceRepository
@@ -154,18 +161,31 @@ func ComputeCurrencyStrengthIndex(
 			Currency:     pc.Currency,
 		}
 
-		// Price score: combination of weekly momentum + MA alignment
-		cs.PriceScore = pc.WeeklyChgPct*0.4 + pc.MonthlyChgPct*0.3
+		// Price score: unified formula (same as V3 confluence)
+		// MA alignment: ±25 per MA
+		maScore := 0.0
 		if pc.AboveMA4W {
-			cs.PriceScore += 15
+			maScore += 25
 		} else {
-			cs.PriceScore -= 15
+			maScore -= 25
 		}
 		if pc.AboveMA13W {
-			cs.PriceScore += 15
+			maScore += 25
 		} else {
-			cs.PriceScore -= 15
+			maScore -= 25
 		}
+		// Momentum: volatility-normalized if ATR available
+		weeklyMom := pc.WeeklyChgPct
+		monthlyMom := pc.MonthlyChgPct
+		if pc.NormalizedATR > 0 {
+			weeklyMom = weeklyMom / pc.NormalizedATR * 2
+			monthlyMom = monthlyMom / pc.NormalizedATR * 2
+		} else {
+			weeklyMom = weeklyMom * 10
+			monthlyMom = monthlyMom * 5
+		}
+		momentumScore := clampF(weeklyMom, -25, 25) + clampF(monthlyMom, -25, 25)
+		cs.PriceScore = clampF(maScore+momentumScore, -100, 100)
 
 		// COT score: use COTIndex (0-100) centered at 50
 		cs.COTScore = analysis.COTIndex - 50
@@ -175,9 +195,9 @@ func ComputeCurrencyStrengthIndex(
 
 		// Divergence detection
 		priceBullish := pc.Trend4W == "UP"
-		cotBullish := analysis.COTIndex > 60
+		cotBullish := analysis.COTIndex > cotBullishThreshold
 		priceBearish := pc.Trend4W == "DOWN"
-		cotBearish := analysis.COTIndex < 40
+		cotBearish := analysis.COTIndex < cotBearishThreshold
 
 		if priceBullish && cotBearish {
 			cs.Divergence = true
@@ -242,4 +262,14 @@ func computeTrend(records []domain.PriceRecord) string {
 func roundN(v float64, n int) float64 {
 	pow := math.Pow(10, float64(n))
 	return math.Round(v*pow) / pow
+}
+
+func clampF(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
