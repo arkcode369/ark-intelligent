@@ -167,8 +167,15 @@ func (r *ImpactRepo) GetEventImpactSummary(_ context.Context, eventTitle string)
 		pctChanges  []float64
 	}
 
-	// Priority: use shortest horizon available (15m > 30m > 1h > 4h > 1w)
-	horizonPriority := map[string]int{"15m": 0, "30m": 1, "1h": 2, "4h": 3, "1w": 4}
+	// Priority: use shortest horizon available (15m > 30m > 1h > 4h > 1w).
+	// Unknown horizons get worst priority (999) to prevent data corruption.
+	knownHorizons := map[string]int{"15m": 0, "30m": 1, "1h": 2, "4h": 3, "1w": 4}
+	horizonPri := func(h string) int {
+		if p, ok := knownHorizons[h]; ok {
+			return p
+		}
+		return 999
+	}
 
 	// First pass: find best (shortest) horizon available per currency+sigma
 	type impKey struct {
@@ -179,7 +186,7 @@ func (r *ImpactRepo) GetEventImpactSummary(_ context.Context, eventTitle string)
 	bestHorizon := make(map[impKey]string)
 	for _, imp := range allImpacts {
 		k := impKey{imp.Currency, imp.SigmaLevel, imp.Timestamp.Format("20060102")}
-		if existing, ok := bestHorizon[k]; !ok || horizonPriority[imp.TimeHorizon] < horizonPriority[existing] {
+		if existing, ok := bestHorizon[k]; !ok || horizonPri(imp.TimeHorizon) < horizonPri(existing) {
 			bestHorizon[k] = imp.TimeHorizon
 		}
 	}

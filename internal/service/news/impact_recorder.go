@@ -193,13 +193,8 @@ func (r *ImpactRecorder) saveImpactRecord(
 		pctChange = -pctChange
 	}
 
-	// Compute pip change (assumes 4-decimal forex; for JPY pairs, use 2-decimal)
-	pipMultiplier := 10000.0
-	if ev.Currency == "JPY" {
-		pipMultiplier = 100.0
-	} else if ev.Currency == "XAU" || ev.Currency == "OIL" || ev.Currency == "BOND" {
-		pipMultiplier = 1.0 // Use raw price change for commodities
-	}
+	// Compute pip change using shared multiplier (consistent with bootstrap).
+	pipMultiplier := pipMultiplierForCurrency(ev.Currency)
 
 	priceChange := (afterPrice - beforePrice) * pipMultiplier
 	if inverse {

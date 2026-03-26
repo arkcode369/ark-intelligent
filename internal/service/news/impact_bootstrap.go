@@ -3,12 +3,14 @@ package news
 import (
 	"context"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/adapter/storage"
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
+	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 )
 
 var bootstrapLog = logger.Component("impact-bootstrap")
@@ -16,8 +18,8 @@ var bootstrapLog = logger.Component("impact-bootstrap")
 // ImpactBootstrapper backfills calendar impact data from MQL5 historical
 // events combined with stored weekly price data.  It scrapes up to N months
 // of history (configurable, default 12), filters for HIGH-impact releases
-// that already have an Actual value, and computes a weekly close-to-close
-// price change around each event date.
+// that already have an Actual value, computes SurpriseScore from Actual vs
+// Forecast (normalized by per-event stddev), and records weekly price impact.
 //
 // When stored price data is insufficient (e.g. fresh bot with empty DB),
 // the bootstrapper falls back to fetching historical weekly prices on-demand
@@ -31,8 +33,6 @@ type ImpactBootstrapper struct {
 }
 
 // NewImpactBootstrapper creates a new ImpactBootstrapper.
-// priceFetcher is optional — if non-nil it is used as a fallback when stored
-// price data is insufficient to compute impact for a given contract.
 func NewImpactBootstrapper(fetcher *MQL5Fetcher, priceRepo ports.PriceRepository, impactRepo *storage.ImpactRepo, priceFetcher ports.PriceFetcher) *ImpactBootstrapper {
 	return &ImpactBootstrapper{
 		fetcher:      fetcher,
@@ -55,9 +55,11 @@ func (ib *ImpactBootstrapper) SetMonths(m int) {
 }
 
 // Bootstrap fetches historical events and backfills impact records.
-// It scrapes MQL5 month by month going back ib.months months,
-// then matches each HIGH-impact event with weekly price data to
-// compute the price reaction. Returns the number of new impact records created.
+//
+// Three-phase approach:
+//  1. Scrape: fetch all months from MQL5, collect HIGH-impact events with actuals
+//  2. Compute: calculate per-event surprise stddev, then normalize each event's sigma
+//  3. Record: match events with weekly price data and save impact records
 func (ib *ImpactBootstrapper) Bootstrap(ctx context.Context) (int, error) {
 	if ib.fetcher == nil || ib.priceRepo == nil || ib.impactRepo == nil {
 		return 0, nil
@@ -65,18 +67,57 @@ func (ib *ImpactBootstrapper) Bootstrap(ctx context.Context) (int, error) {
 
 	bootstrapLog.Info().Int("months", ib.months).Msg("starting impact bootstrap")
 
-	// Pre-fetch price data for all contracts to cover the full backfill window.
-	// Add a few extra weeks as buffer for surrounding-price lookup.
-	priceWeeks := ib.months*5 + 4 // ~5 weeks per month + buffer
+	// --- Phase 1: Scrape all months, collect candidate events ---
+	candidates := ib.scrapeAllMonths(ctx)
+	if len(candidates) == 0 {
+		bootstrapLog.Info().Msg("no candidate events found, nothing to bootstrap")
+		return 0, nil
+	}
+
+	bootstrapLog.Info().Int("candidates", len(candidates)).Msg("candidate events collected")
+
+	// --- Phase 2: Compute SurpriseScore for each event ---
+	ib.computeSurpriseScores(candidates)
+
+	// --- Phase 3: Pre-fetch prices, then process events ---
+	priceWeeks := ib.months*5 + 4
 	ib.ensurePriceHistory(ctx, priceWeeks)
 
-	// Scrape events month by month, newest first.
 	var totalCreated int
+	for i := range candidates {
+		if ctx.Err() != nil {
+			bootstrapLog.Warn().Int("created_so_far", totalCreated).Msg("bootstrap cancelled")
+			break
+		}
+		n, err := ib.processEvent(ctx, &candidates[i])
+		if err != nil {
+			bootstrapLog.Warn().Str("event", candidates[i].ev.Event).Err(err).Msg("failed to process event")
+			continue
+		}
+		totalCreated += n
+	}
+
+	bootstrapLog.Info().Int("impacts_created", totalCreated).Msg("impact bootstrap complete")
+	return totalCreated, nil
+}
+
+// bootstrapCandidate pairs a scraped event with its computed surprise sigma.
+type bootstrapCandidate struct {
+	ev           domain.NewsEvent
+	actualVal    float64
+	forecastVal  float64
+	parsedOK     bool
+	surpriseSigma float64
+}
+
+// scrapeAllMonths fetches events from MQL5 for each month and returns
+// filtered HIGH-impact candidates with parseable Actual/Forecast values.
+func (ib *ImpactBootstrapper) scrapeAllMonths(ctx context.Context) []bootstrapCandidate {
+	var candidates []bootstrapCandidate
 	now := time.Now().In(wibLocation)
 
 	for i := 0; i < ib.months; i++ {
 		if ctx.Err() != nil {
-			bootstrapLog.Warn().Int("created_so_far", totalCreated).Msg("bootstrap cancelled")
 			break
 		}
 
@@ -92,28 +133,109 @@ func (ib *ImpactBootstrapper) Bootstrap(ctx context.Context) (int, error) {
 		events, err := ib.fetcher.ScrapeRange(ctx, "1", from, to)
 		if err != nil {
 			bootstrapLog.Warn().Err(err).Int("offset", i).Msg("failed to scrape month, continuing")
-			// Brief pause before retrying next month to avoid hammering MQL5.
 			sleepCtx(ctx, 2*time.Second)
 			continue
 		}
 
-		bootstrapLog.Debug().Int("events", len(events)).Int("offset", i).Msg("month scraped")
-
 		for _, ev := range events {
-			n, procErr := ib.processEvent(ctx, ev)
-			if procErr != nil {
-				bootstrapLog.Warn().Str("event", ev.Event).Str("currency", ev.Currency).Err(procErr).Msg("failed to process event")
+			if ev.Impact != "high" || ev.Actual == "" {
 				continue
 			}
-			totalCreated += n
+			if domain.FindPriceMappingByCurrency(ev.Currency) == nil {
+				continue
+			}
+
+			actualVal, okA := ParseNumericValue(ev.Actual)
+			forecastVal, okF := ParseNumericValue(ev.Forecast)
+
+			candidates = append(candidates, bootstrapCandidate{
+				ev:          ev,
+				actualVal:   actualVal,
+				forecastVal: forecastVal,
+				parsedOK:    okA && okF,
+			})
 		}
 
-		// Be respectful to MQL5 — brief pause between months.
 		sleepCtx(ctx, 1*time.Second)
 	}
 
-	bootstrapLog.Info().Int("impacts_created", totalCreated).Msg("impact bootstrap complete")
-	return totalCreated, nil
+	// Sort oldest-first so the surprise history accumulation is chronological.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].ev.TimeWIB.Before(candidates[j].ev.TimeWIB)
+	})
+
+	return candidates
+}
+
+// computeSurpriseScores calculates normalized SurpriseScore for each candidate.
+// Groups events by name, computes raw diffs, then normalizes by per-event stddev.
+func (ib *ImpactBootstrapper) computeSurpriseScores(candidates []bootstrapCandidate) {
+	// First pass: collect all raw surprise diffs per event name.
+	type eventKey string
+	rawDiffs := make(map[eventKey][]float64)
+
+	for i := range candidates {
+		c := &candidates[i]
+		if !c.parsedOK {
+			continue
+		}
+		raw := c.actualVal - c.forecastVal
+		// Adjust sign based on ImpactDirection (same logic as ComputeSurpriseWithDirection).
+		if c.ev.ImpactDirection == 2 && raw > 0 {
+			raw = -raw
+		} else if c.ev.ImpactDirection == 1 && raw < 0 {
+			raw = -raw
+		}
+		key := eventKey(c.ev.Event)
+		rawDiffs[key] = append(rawDiffs[key], raw)
+	}
+
+	// Compute stddev per event name.
+	stddevs := make(map[eventKey]float64)
+	for key, diffs := range rawDiffs {
+		if len(diffs) >= 3 {
+			stddevs[key] = mathutil.StdDevSample(diffs)
+		}
+	}
+
+	// Second pass: normalize each candidate's surprise.
+	for i := range candidates {
+		c := &candidates[i]
+		if !c.parsedOK {
+			// Will be skipped by processEvent; leave sigma at zero.
+			continue
+		}
+
+		raw := c.actualVal - c.forecastVal
+		if c.ev.ImpactDirection == 2 && raw > 0 {
+			raw = -raw
+		} else if c.ev.ImpactDirection == 1 && raw < 0 {
+			raw = -raw
+		}
+
+		key := eventKey(c.ev.Event)
+		sd := stddevs[key]
+		if sd > 0 {
+			c.surpriseSigma = raw / sd
+		} else {
+			c.surpriseSigma = raw // no normalization possible
+		}
+	}
+
+	// Log distribution stats.
+	var withSigma, withoutSigma int
+	for _, c := range candidates {
+		if c.parsedOK {
+			withSigma++
+		} else {
+			withoutSigma++
+		}
+	}
+	bootstrapLog.Info().
+		Int("with_sigma", withSigma).
+		Int("without_sigma", withoutSigma).
+		Int("unique_events", len(rawDiffs)).
+		Msg("surprise scores computed")
 }
 
 // ensurePriceHistory pre-fetches weekly price data for all contracts
@@ -128,10 +250,9 @@ func (ib *ImpactBootstrapper) ensurePriceHistory(ctx context.Context, weeks int)
 			return
 		}
 
-		// Check if we already have enough data.
 		existing, err := ib.priceRepo.GetHistory(ctx, mapping.ContractCode, weeks)
 		if err == nil && len(existing) >= weeks/2 {
-			continue // sufficient data already stored
+			continue
 		}
 
 		bootstrapLog.Debug().
@@ -142,7 +263,7 @@ func (ib *ImpactBootstrapper) ensurePriceHistory(ctx context.Context, weeks int)
 
 		fetched, fetchErr := ib.priceFetcher.FetchWeekly(ctx, mapping, weeks)
 		if fetchErr != nil {
-			bootstrapLog.Warn().Err(fetchErr).Str("contract", mapping.ContractCode).Msg("price fetch failed, will try on-demand")
+			bootstrapLog.Warn().Err(fetchErr).Str("contract", mapping.ContractCode).Msg("price fetch failed")
 			continue
 		}
 		if len(fetched) > 0 {
@@ -151,26 +272,20 @@ func (ib *ImpactBootstrapper) ensurePriceHistory(ctx context.Context, weeks int)
 			}
 		}
 
-		// Brief pause between price API calls.
 		sleepCtx(ctx, 500*time.Millisecond)
 	}
 }
 
-// processEvent handles a single event: filters, checks for duplicates,
-// looks up prices, and saves the impact record.  Returns 1 if a record
-// was created, 0 otherwise.
-func (ib *ImpactBootstrapper) processEvent(ctx context.Context, ev domain.NewsEvent) (int, error) {
-	// Only HIGH impact events.
-	if ev.Impact != "high" {
+// processEvent matches a candidate with weekly price data and saves the impact record.
+func (ib *ImpactBootstrapper) processEvent(ctx context.Context, c *bootstrapCandidate) (int, error) {
+	// Skip events where surprise could not be computed (unparseable Actual/Forecast).
+	// Recording these with sigma=0 would pollute the "-1σ to +1σ" bucket with
+	// unknown-surprise events, misleading the statistical analysis.
+	if !c.parsedOK {
 		return 0, nil
 	}
 
-	// Must have an actual value (already released).
-	if ev.Actual == "" {
-		return 0, nil
-	}
-
-	// Find the currency's price mapping.
+	ev := c.ev
 	mapping := domain.FindPriceMappingByCurrency(ev.Currency)
 	if mapping == nil {
 		return 0, nil
@@ -184,25 +299,19 @@ func (ib *ImpactBootstrapper) processEvent(ctx context.Context, ev domain.NewsEv
 	eventDate := ev.TimeWIB.Truncate(24 * time.Hour)
 	for _, imp := range existing {
 		if imp.TimeHorizon == "1w" && imp.Timestamp.Truncate(24*time.Hour).Equal(eventDate) {
-			// Already have a 1w impact record for this event on this date.
 			return 0, nil
 		}
 	}
 
-	// Get price history — use enough weeks to cover the event's date.
-	weeksNeeded := int(time.Since(ev.TimeWIB).Hours()/168) + 4 // weeks since event + buffer
+	// Get price history.
+	weeksNeeded := int(time.Since(ev.TimeWIB).Hours()/168) + 4
 	if weeksNeeded < 12 {
 		weeksNeeded = 12
 	}
 
 	records, err := ib.priceRepo.GetHistory(ctx, mapping.ContractCode, weeksNeeded)
 	if err != nil || len(records) < 2 {
-		// Fallback: fetch historical prices on-demand if repo is empty.
 		if ib.priceFetcher != nil {
-			bootstrapLog.Debug().
-				Str("contract", mapping.ContractCode).
-				Str("currency", mapping.Currency).
-				Msg("stored price data insufficient, fetching on-demand")
 			fetched, fetchErr := ib.priceFetcher.FetchWeekly(ctx, *mapping, weeksNeeded)
 			if fetchErr != nil || len(fetched) < 2 {
 				return 0, nil
@@ -216,16 +325,14 @@ func (ib *ImpactBootstrapper) processEvent(ctx context.Context, ev domain.NewsEv
 		}
 	}
 
-	// records are newest-first; find the closest bar before and after the event.
 	priceBefore, priceAfter := ib.findSurroundingPrices(records, ev.TimeWIB)
 	if priceBefore == nil || priceAfter == nil || priceBefore.Close == 0 {
 		return 0, nil
 	}
 
-	// Compute sigma bucket from the event's surprise score.
-	sigmaBucket := domain.SigmaToBucket(ev.SurpriseScore)
+	// Use the pre-computed surprise sigma.
+	sigmaBucket := domain.SigmaToBucket(c.surpriseSigma)
 
-	// Compute price change following the same logic as ImpactRecorder.saveImpactRecord.
 	beforePrice := priceBefore.Close
 	afterPrice := priceAfter.Close
 
@@ -234,14 +341,7 @@ func (ib *ImpactBootstrapper) processEvent(ctx context.Context, ev domain.NewsEv
 		pctChange = -pctChange
 	}
 
-	pipMultiplier := 10000.0
-	switch ev.Currency {
-	case "JPY":
-		pipMultiplier = 100.0
-	case "XAU", "OIL", "BOND":
-		pipMultiplier = 1.0
-	}
-
+	pipMultiplier := pipMultiplierForCurrency(ev.Currency)
 	priceChange := (afterPrice - beforePrice) * pipMultiplier
 	if mapping.Inverse {
 		priceChange = -priceChange
@@ -267,30 +367,25 @@ func (ib *ImpactBootstrapper) processEvent(ctx context.Context, ev domain.NewsEv
 		Str("event", ev.Event).
 		Str("currency", ev.Currency).
 		Str("sigma", sigmaBucket).
+		Float64("sigma_val", c.surpriseSigma).
 		Float64("pips", impact.PriceChange).
-		Float64("pct", impact.PctChange).
 		Msg("backfilled impact record")
 
 	return 1, nil
 }
 
 // findSurroundingPrices locates the closest weekly bar before (or on) the
-// event date and the closest weekly bar after the event date from newest-first
-// price records.
+// event date and the closest weekly bar after the event date.
 func (ib *ImpactBootstrapper) findSurroundingPrices(records []domain.PriceRecord, eventTime time.Time) (before *domain.PriceRecord, after *domain.PriceRecord) {
 	eventDate := eventTime.Truncate(24 * time.Hour)
 
 	for i := range records {
 		recDate := records[i].Date.Truncate(24 * time.Hour)
 		if recDate.After(eventDate) {
-			// This record is after the event — candidate for "after".
-			// Keep the closest one (smallest positive delta).
 			if after == nil || recDate.Before(after.Date.Truncate(24*time.Hour)) {
 				after = &records[i]
 			}
 		} else {
-			// This record is on or before the event — candidate for "before".
-			// Keep the closest one (largest date that is <= eventDate).
 			if before == nil || recDate.After(before.Date.Truncate(24*time.Hour)) {
 				before = &records[i]
 			}
@@ -300,8 +395,21 @@ func (ib *ImpactBootstrapper) findSurroundingPrices(records []domain.PriceRecord
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Shared helpers
 // ---------------------------------------------------------------------------
+
+// pipMultiplierForCurrency returns the pip multiplier for a given currency.
+// Shared between bootstrap and recorder to ensure consistent computation.
+func pipMultiplierForCurrency(currency string) float64 {
+	switch currency {
+	case "JPY":
+		return 100.0
+	case "XAU", "XAG", "OIL", "BOND":
+		return 1.0
+	default:
+		return 10000.0
+	}
+}
 
 // monthBounds returns the first and last second of a given month in WIB,
 // formatted as UTC ISO strings for ScrapeRange.

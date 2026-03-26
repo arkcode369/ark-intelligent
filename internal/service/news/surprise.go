@@ -22,7 +22,7 @@ func ComputeSurprise(actual, forecast float64, history []float64) float64 {
 	}
 	stddev := mathutil.StdDevSample(history)
 	if stddev == 0 {
-		return 0
+		return raw // all historical surprises identical; return unnormalized diff
 	}
 	return raw / stddev
 }
@@ -115,7 +115,7 @@ func ComputeSurpriseWithDirection(actual, forecast float64, history []float64, i
 	}
 	stddev := mathutil.StdDevSample(history)
 	if stddev == 0 {
-		return 0
+		return raw // all historical surprises identical; return unnormalized diff
 	}
 	return raw / stddev
 }

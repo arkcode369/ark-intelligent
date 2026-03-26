@@ -2937,7 +2937,8 @@ func truncateStr(s string, maxLen int) string {
 // Event Impact Formatting
 // ---------------------------------------------------------------------------
 
-// FormatEventImpact formats event impact summaries into a clean Telegram HTML message.
+// FormatEventImpact formats event impact summaries into a clean Telegram HTML message
+// with confidence labels, directional summary, and asymmetry analysis.
 func (f *Formatter) FormatEventImpact(eventTitle string, summaries []domain.EventImpactSummary) string {
 	var b strings.Builder
 
@@ -2963,7 +2964,25 @@ func (f *Formatter) FormatEventImpact(eventTitle string, summaries []domain.Even
 
 	for _, ccy := range currencies {
 		items := byCurrency[ccy]
-		b.WriteString(fmt.Sprintf("<b>%s</b>\n", ccy))
+
+		// Compute total data points for confidence.
+		var totalN int
+		for _, item := range items {
+			totalN += item.Occurrences
+		}
+
+		// Confidence label.
+		confidence := "HIGH"
+		confIcon := "\xE2\x9C\x85" // ✅
+		if totalN < 5 {
+			confidence = "LOW"
+			confIcon = "\xE2\x9A\xA0\xEF\xB8\x8F" // ⚠️
+		} else if totalN < 12 {
+			confidence = "MEDIUM"
+			confIcon = "\xF0\x9F\x9F\xA1" // 🟡
+		}
+
+		b.WriteString(fmt.Sprintf("<b>%s</b> %s <i>%s (N=%d)</i>\n", ccy, confIcon, confidence, totalN))
 		b.WriteString("<pre>")
 		b.WriteString(fmt.Sprintf("%-14s %7s %7s %4s\n", "Sigma", "AvgPip", "Median", "N"))
 		b.WriteString(strings.Repeat("\xE2\x94\x80", 36) + "\n")
@@ -2972,11 +2991,60 @@ func (f *Formatter) FormatEventImpact(eventTitle string, summaries []domain.Even
 			b.WriteString(fmt.Sprintf("%-14s %+7.1f %+7.1f %4d\n",
 				item.SigmaBucket, item.AvgPriceImpactPips, item.MedianImpact, item.Occurrences))
 		}
-		b.WriteString("</pre>\n")
+		b.WriteString("</pre>")
+
+		// Directional summary + asymmetry.
+		posAvg, posN, negAvg, negN := impactAsymmetry(items)
+		if posN > 0 || negN > 0 {
+			b.WriteString("<i>")
+			if posN > 0 {
+				b.WriteString(fmt.Sprintf("Beat \xE2\x86\x92 avg %+.1f pips (N=%d)", posAvg, posN))
+			}
+			if posN > 0 && negN > 0 {
+				b.WriteString(" | ")
+			}
+			if negN > 0 {
+				b.WriteString(fmt.Sprintf("Miss \xE2\x86\x92 avg %+.1f pips (N=%d)", negAvg, negN))
+			}
+			b.WriteString("</i>\n")
+
+			// Asymmetry ratio — only show when both sides have meaningful magnitude.
+			if posN > 0 && negN > 0 && math.Abs(posAvg) >= 1.0 && math.Abs(negAvg) >= 1.0 {
+				ratio := math.Abs(negAvg) / math.Abs(posAvg)
+				if ratio > 1.3 {
+					b.WriteString(fmt.Sprintf("\xE2\x9A\xA1 <i>Asymmetric: miss moves %.1fx stronger than beat</i>\n", ratio))
+				} else if ratio < 0.7 {
+					b.WriteString(fmt.Sprintf("\xE2\x9A\xA1 <i>Asymmetric: beat moves %.1fx stronger than miss</i>\n", 1/ratio))
+				}
+			}
+		}
+
+		b.WriteString("\n")
 	}
 
-	b.WriteString("<i>Positive = currency strengthened</i>")
+	b.WriteString("<i>+ = currency strengthened | Surprise = Actual vs Forecast</i>")
 	return b.String()
+}
+
+// impactAsymmetry computes average pips for positive-surprise vs negative-surprise buckets.
+func impactAsymmetry(items []domain.EventImpactSummary) (posAvg float64, posN int, negAvg float64, negN int) {
+	for _, item := range items {
+		switch item.SigmaBucket {
+		case ">+2\u03c3", "+1\u03c3 to +2\u03c3":
+			posAvg += item.AvgPriceImpactPips * float64(item.Occurrences)
+			posN += item.Occurrences
+		case "<-2\u03c3", "-1\u03c3 to -2\u03c3":
+			negAvg += item.AvgPriceImpactPips * float64(item.Occurrences)
+			negN += item.Occurrences
+		}
+	}
+	if posN > 0 {
+		posAvg /= float64(posN)
+	}
+	if negN > 0 {
+		negAvg /= float64(negN)
+	}
+	return
 }
 
 // FormatTrackedEvents formats a list of tracked event names for the /impact help message.
