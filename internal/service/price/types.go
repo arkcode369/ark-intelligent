@@ -26,6 +26,7 @@ type twelveDataValue struct {
 	High     string `json:"high"`
 	Low      string `json:"low"`
 	Close    string `json:"close"`
+	Volume   string `json:"volume"`
 }
 
 // --- Alpha Vantage FX Weekly ---

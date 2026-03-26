@@ -36,59 +36,56 @@ func AggregateFromBase(baseBars []domain.IntradayBar) map[string][]domain.Intrad
 }
 
 // aggregateBars groups 15m bars into larger buckets.
+// Bars are sorted chronologically first so Open = first bar, Close = last bar.
 func aggregateBars(bars []domain.IntradayBar, targetInterval string, minutes int) []domain.IntradayBar {
 	if len(bars) == 0 {
 		return nil
 	}
 
+	// Sort chronologically (oldest first) to ensure correct Open/Close assignment.
+	sorted := make([]domain.IntradayBar, len(bars))
+	copy(sorted, bars)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Timestamp.Before(sorted[j].Timestamp)
+	})
+
 	type bucket struct {
-		open      float64
-		high      float64
-		low       float64
-		closeVal  float64
-		volume    float64
-		ts        time.Time
-		count     int
-		firstTime time.Time
-		lastTime  time.Time
+		open     float64
+		high     float64
+		low      float64
+		closeVal float64
+		volume   float64
+		ts       time.Time
+		count    int
 	}
 
 	buckets := make(map[string]*bucket)
 
-	for _, bar := range bars {
+	for _, bar := range sorted {
 		// Calculate bucket start time
 		bucketStart := alignToBucket(bar.Timestamp, minutes)
 		key := bucketStart.Format("200601021504")
 
 		b, ok := buckets[key]
 		if !ok {
+			// First bar in bucket (chronologically earliest due to sort)
 			b = &bucket{
-				open:      bar.Open,
-				high:      bar.High,
-				low:       bar.Low,
-				ts:        bucketStart,
-				firstTime: bar.Timestamp,
-				lastTime:  bar.Timestamp,
+				open: bar.Open,
+				high: bar.High,
+				low:  bar.Low,
+				ts:   bucketStart,
 			}
 			buckets[key] = b
-		}
-
-		// Track first/last for correct Open/Close
-		if bar.Timestamp.Before(b.firstTime) {
-			b.firstTime = bar.Timestamp
-			b.open = bar.Open
-		}
-		if bar.Timestamp.After(b.lastTime) {
-			b.lastTime = bar.Timestamp
-			b.closeVal = bar.Close
 		}
 
 		if bar.High > b.high {
 			b.high = bar.High
 		}
-		if bar.Low < b.low || b.low == 0 {
+		if bar.Low < b.low {
 			b.low = bar.Low
 		}
+		// Overwrite close on each bar — last iteration = chronologically latest
+		b.closeVal = bar.Close
 		b.volume += bar.Volume
 		b.count++
 	}

@@ -15,7 +15,8 @@ type PriceRecord struct {
 	High         float64   `json:"high"`
 	Low          float64   `json:"low"`
 	Close        float64   `json:"close"`
-	Source       string    `json:"source"` // "twelvedata", "alphavantage", "yahoo"
+	Volume       float64   `json:"volume,omitempty"` // Weekly volume (tick volume for FX)
+	Source       string    `json:"source"`           // "twelvedata", "alphavantage", "yahoo"
 }
 
 // WeeklyChange returns the percentage change from open to close.

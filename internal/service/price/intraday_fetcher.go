@@ -131,6 +131,7 @@ func (f *Fetcher) fetchTwelveDataIntraday(ctx context.Context, mapping domain.Pr
 				High:         parseFloat(v.High),
 				Low:          parseFloat(v.Low),
 				Close:        parseFloat(v.Close),
+				Volume:       parseFloat(v.Volume),
 				Source:       "twelvedata",
 			}
 			if bar.Close > 0 {
@@ -251,6 +252,17 @@ func (f *Fetcher) fetchYahooIntraday(ctx context.Context, mapping domain.PriceSy
 // aggregateTo4H converts 1H bars into 4H bars.
 // Groups by 4-hour buckets: 00-03, 04-07, 08-11, 12-15, 16-19, 20-23.
 func aggregateTo4H(hourBars []domain.IntradayBar, contractCode string) []domain.IntradayBar {
+	if len(hourBars) == 0 {
+		return nil
+	}
+
+	// Sort chronologically (oldest first) to ensure correct Open/Close assignment.
+	sorted := make([]domain.IntradayBar, len(hourBars))
+	copy(sorted, hourBars)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Timestamp.Before(sorted[j].Timestamp)
+	})
+
 	type bucket struct {
 		open    float64
 		high    float64
@@ -263,7 +275,7 @@ func aggregateTo4H(hourBars []domain.IntradayBar, contractCode string) []domain.
 
 	buckets := make(map[string]*bucket)
 
-	for _, bar := range hourBars {
+	for _, bar := range sorted {
 		h := bar.Timestamp.Hour()
 		bucketHour := (h / 4) * 4
 		bucketTime := time.Date(
@@ -285,7 +297,7 @@ func aggregateTo4H(hourBars []domain.IntradayBar, contractCode string) []domain.
 		if bar.High > b.high {
 			b.high = bar.High
 		}
-		if bar.Low < b.low || b.low == 0 {
+		if bar.Low < b.low {
 			b.low = bar.Low
 		}
 		b.close = bar.Close

@@ -295,6 +295,7 @@ func (f *Fetcher) fetchTwelveData(ctx context.Context, mapping domain.PriceSymbo
 				High:         parseFloat(v.High),
 				Low:          parseFloat(v.Low),
 				Close:        parseFloat(v.Close),
+				Volume:       parseFloat(v.Volume),
 				Source:       "twelvedata",
 			}
 			if rec.Close > 0 {
@@ -519,6 +520,9 @@ func (f *Fetcher) fetchYahoo(ctx context.Context, mapping domain.PriceSymbolMapp
 				Low:          derefFloat(safeIndex(quote.Low, i)),
 				Close:        derefFloat(quote.Close[i]),
 				Source:       "yahoo",
+			}
+			if i < len(quote.Volume) && quote.Volume[i] != nil {
+				rec.Volume = *quote.Volume[i]
 			}
 			if rec.Close > 0 {
 				records = append(records, rec)

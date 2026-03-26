@@ -228,6 +228,7 @@ func (f *Fetcher) fetchTwelveDataDaily(ctx context.Context, mapping domain.Price
 				High:         parseFloat(v.High),
 				Low:          parseFloat(v.Low),
 				Close:        parseFloat(v.Close),
+				Volume:       parseFloat(v.Volume),
 				Source:       "twelvedata",
 			}
 			if rec.Close > 0 {
