@@ -20,6 +20,7 @@ type UnifiedOutlookData struct {
 	NewsEvents         []domain.NewsEvent
 	MacroData          *fred.MacroData
 	MacroRegime        *fred.MacroRegime
+	MacroComposites    *domain.MacroComposites
 	PriceContexts      map[string]*domain.PriceContext
 	DailyPriceContexts map[string]*domain.DailyPriceContext
 	RiskContext         *domain.RiskContext
@@ -223,6 +224,29 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 			b.WriteString(fmt.Sprintf("DXY: %.1f (%s)\n", m.DXY, regime.USDStrength))
 		}
 		b.WriteString(fmt.Sprintf("Implied Bias: %s\n", regime.Bias))
+		b.WriteString("\n")
+	}
+
+	// -----------------------------------------------------------------------
+	// Section X: Macro Composite Scores
+	// -----------------------------------------------------------------------
+	if data.MacroComposites != nil {
+		b.WriteString(fmt.Sprintf("=== %d. MACRO COMPOSITE SCORES ===\n", section))
+		section++
+		comp := data.MacroComposites
+		b.WriteString(fmt.Sprintf("Labor Health: %.0f/100 (%s)\n", comp.LaborHealth, comp.LaborLabel))
+		b.WriteString(fmt.Sprintf("Inflation Momentum: %+.2f (%s)\n", comp.InflationMomentum, comp.InflationLabel))
+		b.WriteString(fmt.Sprintf("Yield Curve: %s\n", comp.YieldCurveSignal))
+		b.WriteString(fmt.Sprintf("Credit Stress: %.0f/100 (%s)\n", comp.CreditStress, comp.CreditLabel))
+		b.WriteString(fmt.Sprintf("Housing Pulse: %s\n", comp.HousingPulse))
+		b.WriteString(fmt.Sprintf("Financial Conditions: %+.2f\n", comp.FinConditions))
+		b.WriteString(fmt.Sprintf("Sentiment Composite: %+.0f (%s)\n", comp.SentimentComposite, comp.SentimentLabel))
+		if comp.VIXTermRegime != "" && comp.VIXTermRegime != "N/A" {
+			b.WriteString(fmt.Sprintf("VIX Term Structure: %s (ratio: %.3f)\n", comp.VIXTermRegime, comp.VIXTermRatio))
+		}
+		b.WriteString(fmt.Sprintf("Country Scores: US=%+.0f EZ=%+.0f UK=%+.0f JP=%+.0f AU=%+.0f CA=%+.0f NZ=%+.0f\n",
+			comp.USScore, comp.EZScore, comp.UKScore, comp.JPScore, comp.AUScore, comp.CAScore, comp.NZScore))
+		b.WriteString("Use these composite scores as the PRIMARY basis for macro assessment — they synthesize 80+ underlying FRED series.\n")
 		b.WriteString("\n")
 	}
 

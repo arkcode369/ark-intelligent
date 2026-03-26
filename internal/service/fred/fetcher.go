@@ -71,7 +71,7 @@ type MacroData struct {
 	YieldSpreadTrend SeriesTrend // trend: is spread steepening or flattening?
 
 	// Inflation
-	Breakeven5Y  float64     // T10YIE — 10-Year Breakeven Inflation Rate
+	Breakeven5Y  float64     // T10YIE — 10-Year Breakeven Inflation Rate (field name legacy; value is 10Y)
 	CorePCE      float64     // PCEPILFE — Core PCE Price Index (YoY %)
 	CPI          float64     // CPIAUCSL — Consumer Price Index (YoY %)
 	CorePCETrend SeriesTrend // trend: inflation rising or falling?
@@ -79,7 +79,7 @@ type MacroData struct {
 
 	// Financial stress & liquidity
 	NFCI      float64     // NFCI — National Financial Conditions Index (negative = loose)
-	TedSpread float64     // TEDRATE — TED Spread (credit risk proxy, bps)
+	TedSpread float64     // BAMLH0A0HYM2 — ICE BofA HY OAS (credit stress proxy, %)
 	NFCITrend SeriesTrend
 
 	// Short-term rates & liquidity
@@ -142,10 +142,14 @@ type MacroData struct {
 	JOLTSOpeningsTrend SeriesTrend
 	JOLTSQuitRate      float64     // JTSQUR — JOLTS Quit Rate (%)
 	JOLTSQuitRateTrend SeriesTrend
+	JOLTSHiringRate      float64     // JTSHIR — JOLTS Hiring Rate (%)
+	JOLTSHiringRateTrend SeriesTrend
 	ContinuingClaims      float64     // CCSA — Continuing Claims
 	ContinuingClaimsTrend SeriesTrend
 	U6Unemployment     float64     // LNS13025703 — U-6 Unemployment Rate (%)
 	EmpPopRatio        float64     // EMRATIO — Employment-Population Ratio (%)
+	AvgHourlyEarningsPriv float64 // CES0500000003 — Avg Hourly Earnings All Private ($/hr)
+	AvgHourlyEarningsYoY  float64 // CEU0500000008 — Avg Hourly Earnings YoY (%)
 
 	// --- Extended Inflation ---
 	MedianCPI          float64     // MEDCPIM158SFRBCLE — Cleveland Fed Median CPI (%)
@@ -157,6 +161,9 @@ type MacroData struct {
 	MichInflExp1Y      float64     // MICH — Michigan Inflation Expectations 1Y (%)
 	ClevelandInfExp1Y  float64     // EXPINF1YR — Cleveland Fed Expected Inflation 1Y (%)
 	ClevelandInfExp10Y float64     // EXPINF10YR — Cleveland Fed Expected Inflation 10Y (%)
+	CoreCPINSA    float64 // CUUR0000SA0L1E — CPI Less Food & Energy (NSA)
+	PPIFinished   float64 // WPSFD4131 — PPI Finished Goods Less Food & Energy (YoY%)
+	PPIFinishedTrend SeriesTrend
 
 	// --- Extended Yield Curve ---
 	Yield1Y     float64 // DGS1 — 1-Year Treasury
@@ -173,6 +180,8 @@ type MacroData struct {
 	StLouisStress     float64     // STLFSI4 — St. Louis Financial Stress Index
 	StLouisStressTrend SeriesTrend
 	ReverseRepo       float64     // RRPONTSYD — Reverse Repo (billions)
+	TotalReserves     float64 // TOTRESNS — Total Reserves in Banking System (millions)
+	SeniorLoanSurvey  float64 // DRTSCILM — Fed Senior Loan Officer Survey C&I Tightening (%)
 
 	// --- Housing & Consumer ---
 	HousingStarts      float64     // HOUST — Housing Starts (thousands, ann.)
@@ -183,26 +192,36 @@ type MacroData struct {
 	MortgageRate30Y    float64     // MORTGAGE30US — 30Y Mortgage Rate (%)
 	RetailSalesExFood  float64     // RSXFS — Retail Sales Ex Food (YoY%)
 	SavingsRate        float64     // PSAVERT — Personal Savings Rate (%)
+	RealDisposableInc     float64     // DSPIC96 — Real Disposable Personal Income (billions)
+	RealDisposableIncTrend SeriesTrend
 
 	// --- VIX Term Structure ---
 	VIX3M         float64 // VXVCLS — VIX3M (3-Month VIX)
 	VIXTermRatio  float64 // Computed: VIX / VIX3M
 	VIXTermRegime string  // BACKWARDATION, FLAT, CONTANGO
+	VIX6M          float64 // VXMTCLS — VIX6M (6-Month VIX)
+	VIX3M6MRatio   float64 // Computed: VIX3M / VIX6M (medium-term slope)
 
 	// --- Global Macro: Eurozone ---
 	EZ_CPI          float64 // CP0000EZ19M086NEST — Eurozone HICP (YoY%)
 	EZ_GDP          float64 // CLVMNACSCAB1GQEA19 — Eurozone Real GDP (QoQ%)
 	EZ_Unemployment float64 // LRHUTTTTEZM156S — Eurozone Unemployment (%)
 	EZ_Rate         float64 // IR3TIB01EZM156N — Eurozone 3M Interbank Rate (%)
+	EZ_10Y          float64 // IRLTLT01EZM156N — Eurozone 10Y Government Bond Yield (%)
+	EZ_BrentCrude   float64 // MCOILBRENTEU — Brent Crude Oil ($/barrel)
+	EZ_FinConditions float64 // EA19FCHI — Euro Area Financial Conditions Index
+	GlobalPolicyUncertainty float64 // GEPUCURRENT — Global Economic Policy Uncertainty Index
 
 	// --- Global Macro: UK ---
 	UK_CPI          float64 // GBRCPIALLMINMEI — UK CPI (YoY%)
 	UK_Unemployment float64 // LRHUTTTTGBM156S — UK Unemployment (%)
+	UK_IndustrialProd float64 // GBRPROINDMISMEI — UK Industrial Production (YoY%)
 
 	// --- Global Macro: Japan ---
 	JP_CPI          float64 // JPNCPIALLMINMEI — Japan CPI (YoY%)
 	JP_Unemployment float64 // LRHUTTTTJPM156S — Japan Unemployment (%)
 	JP_10Y          float64 // IRLTLT01JPM156N — Japan 10Y Bond Yield (%)
+	JP_IndustrialProd float64 // JPNPROINDMISMEI — Japan Industrial Production (YoY%)
 
 	// --- Global Macro: Australia ---
 	AU_CPI          float64 // AUSCPIALLQINMEI — Australia CPI (QoQ%)
@@ -261,20 +280,24 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 		{"MEDCPIM158SFRBCLE", 3}, {"CORESTICKM159SFRBATL", 3},
 		{"PPIACO", 14}, {"MICH", 3},
 		{"EXPINF1YR", 3}, {"EXPINF10YR", 3},
+		{"CUUR0000SA0L1E", 3}, {"WPSFD4131", 14},
 		// Financial stress
 		{"NFCI", 3}, {"BAMLH0A0HYM2", 5},
 		// Extended credit
 		{"BAMLC0A4CBBB", 5}, {"BAMLC0A1CAAA", 5},
 		{"STLFSI4", 3}, {"RRPONTSYD", 3},
+		{"TOTRESNS", 3}, {"DRTSCILM", 3},
 		// Short-term rates
 		{"SOFR", 5}, {"IORB", 5},
 		// VIX + term structure
 		{"VIXCLS", 5}, {"VXVCLS", 5},
+		{"VXMTCLS", 5},
 		// Labor
 		{"ICSA", 3}, {"UNRATE", 5}, {"PAYEMS", 3},
 		// Extended labor
-		{"JTSJOL", 3}, {"JTSQUR", 3},
+		{"JTSJOL", 3}, {"JTSQUR", 3}, {"JTSHIR", 3},
 		{"CCSA", 3}, {"LNS13025703", 5}, {"EMRATIO", 5},
+		{"CES0500000003", 5}, {"CEU0500000008", 5},
 		// Monetary policy
 		{"FEDFUNDS", 5}, {"M2SL", 14},
 		// Growth
@@ -286,19 +309,23 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 		// Housing & Consumer
 		{"HOUST", 3}, {"PERMIT", 3}, {"CSUSHPINSA", 3},
 		{"MORTGAGE30US", 3}, {"RSXFS", 14}, {"PSAVERT", 3},
+		{"DSPIC96", 3},
 		// Global - Eurozone
 		{"CP0000EZ19M086NEST", 14}, {"CLVMNACSCAB1GQEA19", 5},
 		{"LRHUTTTTEZM156S", 5}, {"IR3TIB01EZM156N", 5},
+		{"IRLTLT01EZM156N", 5}, {"MCOILBRENTEU", 3}, {"EA19FCHI", 3}, {"GEPUCURRENT", 3},
 		// Global - UK
 		{"GBRCPIALLMINMEI", 14}, {"LRHUTTTTGBM156S", 5},
+		{"GBRPROINDMISMEI", 14},
 		// Global - Japan
 		{"JPNCPIALLMINMEI", 14}, {"LRHUTTTTJPM156S", 5}, {"IRLTLT01JPM156N", 5},
-		// Global - Australia
-		{"AUSCPIALLQINMEI", 5}, {"LRHUTTTTAUM156S", 5},
+		{"JPNPROINDMISMEI", 14},
+		// Global - Australia (quarterly CPI — need 14 obs for yoy)
+		{"AUSCPIALLQINMEI", 14}, {"LRHUTTTTAUM156S", 5},
 		// Global - Canada
 		{"CANCPIALLMINMEI", 14}, {"LRHUTTTTCAM156S", 5},
-		// Global - NZ
-		{"NZLCPIALLQINMEI", 5},
+		// Global - NZ (quarterly CPI — need 14 obs for yoy)
+		{"NZLCPIALLQINMEI", 14},
 	}
 
 	// Parallel fetch with semaphore
@@ -352,13 +379,39 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 		return 0, SeriesTrend{}
 	}
 
-	// Helper for YoY% from index series (needs 13+ observations)
+	// Helper for YoY% from monthly index series (needs 13+ observations).
+	// Returns YoY percentage change and trend of the YoY rate itself (not the raw index).
 	yoy := func(id string) (float64, SeriesTrend) {
 		obs := obsMap[id]
+		if len(obs) >= 14 && obs[12] != 0 && obs[13] != 0 {
+			// Current YoY%
+			val := (obs[0] - obs[12]) / obs[12] * 100
+			// Previous month's YoY% — for trend of the inflation RATE, not index level
+			prevYoY := (obs[1] - obs[13]) / obs[13] * 100
+			t := computeTrend(val, prevYoY, 0.1) // threshold 0.1pp
+			return val, t
+		}
 		if len(obs) >= 13 && obs[12] != 0 {
 			val := (obs[0] - obs[12]) / obs[12] * 100
-			t := computeTrend(obs[0], obs[1], 0.05)
-			return val, t
+			return val, SeriesTrend{Latest: val}
+		}
+		if len(obs) >= 1 {
+			return obs[0], SeriesTrend{}
+		}
+		return 0, SeriesTrend{}
+	}
+
+	// Helper for YoY% from quarterly index series (needs 5+ observations).
+	// Quarterly: obs[4] = 4 quarters ago = 1 year ago.
+	yoyQ := func(id string) (float64, SeriesTrend) {
+		obs := obsMap[id]
+		if len(obs) >= 5 && obs[4] != 0 {
+			val := (obs[0] - obs[4]) / obs[4] * 100
+			if len(obs) >= 6 && obs[5] != 0 {
+				prevYoY := (obs[1] - obs[5]) / obs[5] * 100
+				return val, computeTrend(val, prevYoY, 0.1)
+			}
+			return val, SeriesTrend{Latest: val}
 		}
 		if len(obs) >= 1 {
 			return obs[0], SeriesTrend{}
@@ -393,6 +446,8 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	data.MichInflExp1Y = single("MICH")
 	data.ClevelandInfExp1Y = single("EXPINF1YR")
 	data.ClevelandInfExp10Y = single("EXPINF10YR")
+	data.CoreCPINSA = single("CUUR0000SA0L1E")
+	data.PPIFinished, data.PPIFinishedTrend = yoy("WPSFD4131")
 
 	// Financial stress
 	data.NFCI, data.NFCITrend = trend("NFCI", 0.02)
@@ -402,6 +457,8 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	data.AAASpread = single("BAMLC0A1CAAA")
 	data.StLouisStress, data.StLouisStressTrend = trend("STLFSI4", 0.1)
 	data.ReverseRepo = single("RRPONTSYD")
+	data.TotalReserves = single("TOTRESNS")
+	data.SeniorLoanSurvey = single("DRTSCILM")
 
 	// Short-term rates
 	data.SOFR = single("SOFR")
@@ -410,6 +467,7 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	// VIX + term structure
 	data.VIX, data.VIXTrend = trend("VIXCLS", 1.0)
 	data.VIX3M = single("VXVCLS")
+	data.VIX6M = single("VXMTCLS")
 	if data.VIX > 0 && data.VIX3M > 0 {
 		data.VIXTermRatio = data.VIX / data.VIX3M
 		switch {
@@ -420,6 +478,9 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 		default:
 			data.VIXTermRegime = "CONTANGO"
 		}
+	}
+	if data.VIX3M > 0 && data.VIX6M > 0 {
+		data.VIX3M6MRatio = data.VIX3M / data.VIX6M
 	}
 
 	// Labor
@@ -436,23 +497,25 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	// Extended labor
 	data.JOLTSOpenings, data.JOLTSOpeningsTrend = trend("JTSJOL", 50)
 	data.JOLTSQuitRate, data.JOLTSQuitRateTrend = trend("JTSQUR", 0.1)
+	data.JOLTSHiringRate, data.JOLTSHiringRateTrend = trend("JTSHIR", 0.1)
 	data.ContinuingClaims, data.ContinuingClaimsTrend = trend("CCSA", 10_000)
 	data.U6Unemployment = single("LNS13025703")
 	data.EmpPopRatio = single("EMRATIO")
+	data.AvgHourlyEarningsPriv = single("CES0500000003")
+	data.AvgHourlyEarningsYoY = single("CEU0500000008")
 
 	// Monetary policy
 	data.FedFundsRate = single("FEDFUNDS")
 	// M2
-	if obs := obsMap["M2SL"]; len(obs) >= 2 {
-		var yoyBase float64
-		if len(obs) >= 13 {
-			yoyBase = obs[12]
-		} else {
-			yoyBase = obs[len(obs)-1]
-		}
+	if obs := obsMap["M2SL"]; len(obs) >= 13 {
+		// Proper YoY%: compare current (obs[0]) to 12 months ago (obs[12])
+		yoyBase := obs[12]
 		if yoyBase != 0 {
 			data.M2Growth = (obs[0] - yoyBase) / yoyBase * 100
 		}
+		data.M2GrowthTrend = computeTrend(obs[0], obs[1], 50)
+	} else if obs := obsMap["M2SL"]; len(obs) >= 2 {
+		// Not enough data for YoY — only compute trend, leave M2Growth=0 (unknown)
 		data.M2GrowthTrend = computeTrend(obs[0], obs[1], 50)
 	}
 
@@ -475,42 +538,60 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	data.MortgageRate30Y = single("MORTGAGE30US")
 	data.RetailSalesExFood, _ = yoy("RSXFS")
 	data.SavingsRate = single("PSAVERT")
+	data.RealDisposableInc, data.RealDisposableIncTrend = trend("DSPIC96", 10)
 
 	// Global - Eurozone
 	data.EZ_CPI, _ = yoy("CP0000EZ19M086NEST")
 	data.EZ_GDP = single("CLVMNACSCAB1GQEA19")
 	data.EZ_Unemployment = single("LRHUTTTTEZM156S")
 	data.EZ_Rate = single("IR3TIB01EZM156N")
+	data.EZ_10Y = single("IRLTLT01EZM156N")
+	data.EZ_BrentCrude = single("MCOILBRENTEU")
+	data.EZ_FinConditions = single("EA19FCHI")
+	data.GlobalPolicyUncertainty = single("GEPUCURRENT")
 
 	// Global - UK
 	data.UK_CPI, _ = yoy("GBRCPIALLMINMEI")
 	data.UK_Unemployment = single("LRHUTTTTGBM156S")
+	data.UK_IndustrialProd, _ = yoy("GBRPROINDMISMEI")
 
 	// Global - Japan
 	data.JP_CPI, _ = yoy("JPNCPIALLMINMEI")
 	data.JP_Unemployment = single("LRHUTTTTJPM156S")
 	data.JP_10Y = single("IRLTLT01JPM156N")
+	data.JP_IndustrialProd, _ = yoy("JPNPROINDMISMEI")
 
-	// Global - Australia
-	data.AU_CPI = single("AUSCPIALLQINMEI")
+	// Global - Australia (quarterly CPI — use yoyQ for 4-quarter YoY)
+	data.AU_CPI, _ = yoyQ("AUSCPIALLQINMEI")
 	data.AU_Unemployment = single("LRHUTTTTAUM156S")
 
 	// Global - Canada
 	data.CA_CPI, _ = yoy("CANCPIALLMINMEI")
 	data.CA_Unemployment = single("LRHUTTTTCAM156S")
 
-	// Global - NZ
-	data.NZ_CPI = single("NZLCPIALLQINMEI")
+	// Global - NZ (quarterly CPI — use yoyQ for 4-quarter YoY)
+	data.NZ_CPI, _ = yoyQ("NZLCPIALLQINMEI")
 
 	// --- Derived metrics ---
 	data.YieldSpread = data.Yield10Y - data.Yield2Y
+	// Prefer FRED pre-computed spread (T10Y2Y) when available — more accurate
+	if data.Spread10Y2Y != 0 {
+		data.YieldSpread = data.Spread10Y2Y
+	}
 	if data.Yield3M > 0 && data.Yield10Y > 0 {
 		data.Spread3M10Y = data.Yield10Y - data.Yield3M
+	}
+	// Prefer FRED pre-computed 3M-10Y spread when available
+	if data.Spread10Y3M != 0 {
+		data.Spread3M10Y = data.Spread10Y3M
 	}
 	if data.Yield2Y > 0 && data.Yield30Y > 0 {
 		data.Spread2Y30Y = data.Yield30Y - data.Yield2Y
 	}
-	if data.YieldSpread != 0 {
+	// Compute YieldSpreadTrend using pre-computed T10Y2Y if available (has Previous for STEEPENING detection).
+	if obs := obsMap["T10Y2Y"]; len(obs) >= 2 {
+		data.YieldSpreadTrend = computeTrend(obs[0], obs[1], 0.05)
+	} else if data.YieldSpread != 0 {
 		data.YieldSpreadTrend = SeriesTrend{Latest: data.YieldSpread, Direction: "FLAT"}
 	}
 
@@ -550,9 +631,12 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	// Extended Labor Market
 	sanitizeFloat(&data.JOLTSOpenings)
 	sanitizeFloat(&data.JOLTSQuitRate)
+	sanitizeFloat(&data.JOLTSHiringRate)
 	sanitizeFloat(&data.ContinuingClaims)
 	sanitizeFloat(&data.U6Unemployment)
 	sanitizeFloat(&data.EmpPopRatio)
+	sanitizeFloat(&data.AvgHourlyEarningsPriv)
+	sanitizeFloat(&data.AvgHourlyEarningsYoY)
 
 	// Extended Inflation
 	sanitizeFloat(&data.MedianCPI)
@@ -561,6 +645,8 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	sanitizeFloat(&data.MichInflExp1Y)
 	sanitizeFloat(&data.ClevelandInfExp1Y)
 	sanitizeFloat(&data.ClevelandInfExp10Y)
+	sanitizeFloat(&data.CoreCPINSA)
+	sanitizeFloat(&data.PPIFinished)
 
 	// Extended Yield Curve
 	sanitizeFloat(&data.Yield1Y)
@@ -576,6 +662,8 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	sanitizeFloat(&data.AAASpread)
 	sanitizeFloat(&data.StLouisStress)
 	sanitizeFloat(&data.ReverseRepo)
+	sanitizeFloat(&data.TotalReserves)
+	sanitizeFloat(&data.SeniorLoanSurvey)
 
 	// Housing & Consumer
 	sanitizeFloat(&data.HousingStarts)
@@ -584,25 +672,34 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	sanitizeFloat(&data.MortgageRate30Y)
 	sanitizeFloat(&data.RetailSalesExFood)
 	sanitizeFloat(&data.SavingsRate)
+	sanitizeFloat(&data.RealDisposableInc)
 
 	// VIX Term Structure
 	sanitizeFloat(&data.VIX3M)
 	sanitizeFloat(&data.VIXTermRatio)
+	sanitizeFloat(&data.VIX6M)
+	sanitizeFloat(&data.VIX3M6MRatio)
 
 	// Global Macro: Eurozone
 	sanitizeFloat(&data.EZ_CPI)
 	sanitizeFloat(&data.EZ_GDP)
 	sanitizeFloat(&data.EZ_Unemployment)
 	sanitizeFloat(&data.EZ_Rate)
+	sanitizeFloat(&data.EZ_10Y)
+	sanitizeFloat(&data.EZ_BrentCrude)
+	sanitizeFloat(&data.EZ_FinConditions)
+	sanitizeFloat(&data.GlobalPolicyUncertainty)
 
 	// Global Macro: UK
 	sanitizeFloat(&data.UK_CPI)
 	sanitizeFloat(&data.UK_Unemployment)
+	sanitizeFloat(&data.UK_IndustrialProd)
 
 	// Global Macro: Japan
 	sanitizeFloat(&data.JP_CPI)
 	sanitizeFloat(&data.JP_Unemployment)
 	sanitizeFloat(&data.JP_10Y)
+	sanitizeFloat(&data.JP_IndustrialProd)
 
 	// Global Macro: Australia
 	sanitizeFloat(&data.AU_CPI)
@@ -682,5 +779,29 @@ func buildFREDURL(seriesID, apiKey string, limit int) string {
 func sanitizeFloat(v *float64) {
 	if math.IsNaN(*v) || math.IsInf(*v, 0) {
 		*v = 0
+	}
+}
+
+// MergeSentiment populates MacroData's sentiment fields from external sentiment data.
+// Call this before ComputeComposites() so the SentimentComposite score
+// includes CNN Fear & Greed, AAII Bull/Bear, and CBOE Put/Call data.
+func MergeSentiment(data *MacroData, cnnFearGreed, aaiiBullBear, putCallTotal, putCallEquity, putCallIndex float64) {
+	if data == nil {
+		return
+	}
+	if cnnFearGreed > 0 {
+		data.CNNFearGreed = cnnFearGreed
+	}
+	if aaiiBullBear > 0 {
+		data.AAIIBullBear = aaiiBullBear
+	}
+	if putCallTotal > 0 {
+		data.PutCallTotal = putCallTotal
+	}
+	if putCallEquity > 0 {
+		data.PutCallEquity = putCallEquity
+	}
+	if putCallIndex > 0 {
+		data.PutCallIndex = putCallIndex
 	}
 }

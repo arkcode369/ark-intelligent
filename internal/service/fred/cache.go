@@ -18,10 +18,29 @@ type cachedMacroData struct {
 }
 
 var (
-	globalCache *cachedMacroData
-	cacheMu     sync.RWMutex
-	cacheTTL    = defaultTTL //nolint:gochecknoglobals
+	globalCache    *cachedMacroData
+	cacheMu        sync.RWMutex
+	cacheTTL       = defaultTTL //nolint:gochecknoglobals
+	postFetchHook  func(context.Context, *MacroData) //nolint:gochecknoglobals
+	postFetchHookMu sync.RWMutex                      //nolint:gochecknoglobals
 )
+
+// SetPostFetchHook registers a callback that is invoked after every fresh
+// FRED data fetch (not on cache hits). Use this to persist snapshots.
+func SetPostFetchHook(fn func(context.Context, *MacroData)) {
+	postFetchHookMu.Lock()
+	postFetchHook = fn
+	postFetchHookMu.Unlock()
+}
+
+func invokePostFetchHook(ctx context.Context, data *MacroData) {
+	postFetchHookMu.RLock()
+	fn := postFetchHook
+	postFetchHookMu.RUnlock()
+	if fn != nil {
+		fn(ctx, data)
+	}
+}
 
 // CacheResult wraps MacroData with metadata about whether it came from cache.
 type CacheResult struct {
@@ -54,6 +73,7 @@ func GetCachedOrFetch(ctx context.Context) (*MacroData, error) {
 	cacheMu.Unlock()
 
 	fmt.Printf("[fred-cache] fetched fresh data from FRED API\n")
+	invokePostFetchHook(ctx, data)
 
 	return data, nil
 }
@@ -83,6 +103,7 @@ func GetCachedOrFetchWithMeta(ctx context.Context) (*CacheResult, error) {
 	cacheMu.Unlock()
 
 	fmt.Printf("[fred-cache] fetched fresh data from FRED API\n")
+	invokePostFetchHook(ctx, data)
 
 	return &CacheResult{Data: data, FromCache: false, CacheAge: 0}, nil
 }

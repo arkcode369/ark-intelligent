@@ -33,9 +33,13 @@ func ComputeComposites(data *MacroData) *domain.MacroComposites {
 
 	// Per-country macro scores
 	c.USScore = computeUSMacroScore(data)
-	c.EZScore = computeCountryScore(data.EZ_CPI, data.EZ_GDP, data.EZ_Unemployment, data.EZ_Rate, 2.0, 0.3, 6.5)
-	c.UKScore = computeCountryScore(data.UK_CPI, 0, data.UK_Unemployment, 0, 2.0, 0.3, 4.5)
-	c.JPScore = computeCountryScore(data.JP_CPI, 0, data.JP_Unemployment, data.JP_10Y, 2.0, 0.2, 2.8)
+	ezRate := data.EZ_Rate
+	if data.EZ_10Y != 0 {
+		ezRate = data.EZ_10Y // prefer 10Y as it's more comparable across countries
+	}
+	c.EZScore = computeCountryScore(data.EZ_CPI, data.EZ_GDP, data.EZ_Unemployment, ezRate, 2.0, 0.3, 6.5)
+	c.UKScore = computeCountryScore(data.UK_CPI, data.UK_IndustrialProd, data.UK_Unemployment, 0, 2.0, 2.0, 4.5)
+	c.JPScore = computeCountryScore(data.JP_CPI, data.JP_IndustrialProd, data.JP_Unemployment, data.JP_10Y, 2.0, 1.5, 2.8)
 	c.AUScore = computeCountryScore(data.AU_CPI, 0, data.AU_Unemployment, 0, 2.5, 0.5, 4.5)
 	c.CAScore = computeCountryScore(data.CA_CPI, 0, data.CA_Unemployment, 0, 2.0, 0.3, 6.0)
 	c.NZScore = computeCountryScore(data.NZ_CPI, 0, 0, 0, 2.0, 0.5, 4.5)
@@ -150,11 +154,18 @@ func computeInflationMomentum(data *MacroData) float64 {
 		weights += 15
 	}
 
-	// PPI Commodities (10%)
+	// PPI Commodities (5%)
 	if data.PPICommodities != 0 {
 		ppiScore := mapRange(data.PPICommodities, -5.0, 10.0, -1.0, 1.0)
-		total += ppiScore * 10
-		weights += 10
+		total += ppiScore * 5
+		weights += 5
+	}
+
+	// PPI Finished Goods core (5% — secondary confirmation)
+	if data.PPIFinished != 0 {
+		ppiFinScore := mapRange(data.PPIFinished, -3.0, 8.0, -1.0, 1.0)
+		total += ppiFinScore * 5
+		weights += 5
 	}
 
 	// Market breakevens average (15%)
@@ -165,11 +176,18 @@ func computeInflationMomentum(data *MacroData) float64 {
 		weights += 15
 	}
 
-	// Consumer expectations (15%)
+	// Consumer expectations (10%)
 	if data.MichInflExp1Y > 0 {
 		expScore := mapRange(data.MichInflExp1Y, 2.0, 5.0, -1.0, 1.0)
-		total += expScore * 15
-		weights += 15
+		total += expScore * 10
+		weights += 10
+	}
+
+	// Cleveland Fed Expected Inflation 1Y (5%)
+	if data.ClevelandInfExp1Y > 0 {
+		clevScore := mapRange(data.ClevelandInfExp1Y, 1.5, 4.0, -1.0, 1.0)
+		total += clevScore * 5
+		weights += 5
 	}
 
 	if weights == 0 {
@@ -194,11 +212,19 @@ func computeYieldCurveSignal(data *MacroData) string {
 	bothInverted := spread2Y10Y < 0 && spread3M10Y < 0
 	eitherInverted := spread2Y10Y < 0 || spread3M10Y < 0
 
+	// Detect steepening: spread was recently negative (trend direction DOWN→UP transition)
+	// Use the trend direction as a proxy — if spread is now positive but small,
+	// and the trend was recently coming from inversion, classify as STEEPENING.
+	recentlyInverted := data.YieldSpreadTrend.Previous < 0 && spread2Y10Y > 0
+
 	switch {
-	case bothInverted && (spread2Y10Y < -0.5 || spread3M10Y < -0.5):
+	case bothInverted && (spread2Y10Y < -0.5 && spread3M10Y < -0.5):
 		return "DEEP_INVERSION"
 	case eitherInverted:
 		return "INVERTED"
+	case recentlyInverted && spread2Y10Y < 0.50:
+		// Curve just un-inverted — this transition historically precedes recession by 3-6 months
+		return "STEEPENING"
 	case spread2Y10Y >= 0 && spread2Y10Y < 0.25:
 		return "FLAT"
 	case spread2Y10Y > 1.5 || spread3M10Y > 1.5:
@@ -233,27 +259,36 @@ func computeCreditStress(data *MacroData) float64 {
 		weights += 10
 	}
 
-	// NFCI (20%)
-	if data.NFCI != 0 {
-		// NFCI: <-0.5=0 (very loose), 0=40, >0.7=100
+	// NFCI (20%) — 0 is a valid value (neutral conditions), only skip if we have no FRED data.
+	// NFCI=0 maps to ~40/100 (normal credit), which is a safe neutral default even if unfetched.
+	{
 		nfciScore := mapRange(data.NFCI, -0.5, 0.7, 0, 100)
 		total += nfciScore * 20
 		weights += 20
 	}
 
-	// St. Louis Stress Index (15%)
-	if data.StLouisStress != 0 {
+	// St. Louis Stress Index (15%) — 0 is also a valid neutral value.
+	// St. Louis Stress Index (15%) — 0 is also a valid neutral value.
+	{
 		stlScore := mapRange(data.StLouisStress, -1.0, 2.0, 0, 100)
 		total += stlScore * 15
 		weights += 15
 	}
 
-	// SOFR-IORB spread (10%)
+	// SOFR-IORB spread (5%)
 	if data.SOFR > 0 && data.IORB > 0 {
 		sofrSpread := data.SOFR - data.IORB
 		sofrScore := mapRange(sofrSpread, -0.05, 0.2, 0, 100)
-		total += sofrScore * 10
-		weights += 10
+		total += sofrScore * 5
+		weights += 5
+	}
+
+	// Senior Loan Officer Survey (5% — credit cycle leading indicator)
+	// Positive values = net tightening of lending standards
+	if data.SeniorLoanSurvey != 0 {
+		loanScore := mapRange(data.SeniorLoanSurvey, -10, 50, 0, 100)
+		total += loanScore * 5
+		weights += 5
 	}
 
 	if weights == 0 {
@@ -318,10 +353,9 @@ func computeHousingPulse(data *MacroData) string {
 func computeFinancialConditions(data *MacroData) float64 {
 	var total, weights float64
 
-	// NFCI (primary, 40%) — negative = loose
-	if data.NFCI != 0 {
-		// NFCI range: -0.8 (very loose) to +1.0 (very tight)
-		// Map to: +1.0 (loose) to -1.0 (tight)
+	// NFCI (primary, 40%) — negative = loose, 0 = neutral, positive = tight
+	// NFCI=0 is valid (neutral conditions); always include.
+	{
 		nfciNorm := mapRange(data.NFCI, -0.8, 1.0, 1.0, -1.0)
 		total += nfciNorm * 40
 		weights += 40
@@ -401,15 +435,15 @@ func computeUSMacroScore(data *MacroData) float64 {
 func computeCountryScore(cpi, gdp, unemployment, rate, cpiTarget, gdpGood, unempNeutral float64) float64 {
 	var total, weights float64
 
-	// CPI vs target (30%)
-	if cpi > 0 {
+	// CPI vs target (30%) — cpi != 0 allows deflation as valid data
+	if cpi != 0 {
 		deviation := math.Abs(cpi - cpiTarget)
 		infScore := mapRange(deviation, 0, 3.0, 100, -100)
 		total += infScore * 30
 		weights += 30
 	}
 
-	// GDP (25%)
+	// GDP (25%) — gdp == 0 treated as missing data (exact 0% stagnation is rare)
 	if gdp != 0 {
 		gdpScore := mapRange(gdp, -1.0, gdpGood*3, -100, 100)
 		total += gdpScore * 25
@@ -423,8 +457,8 @@ func computeCountryScore(cpi, gdp, unemployment, rate, cpiTarget, gdpGood, unemp
 		weights += 20
 	}
 
-	// Rate level (25%)
-	if rate > 0 {
+	// Rate level (25%) — rate can be 0 (ZIRP) or negative (NIRP), both valid
+	if rate != 0 {
 		rateScore := mapRange(rate, 0, 6.0, -100, 100)
 		total += rateScore * 25
 		weights += 25

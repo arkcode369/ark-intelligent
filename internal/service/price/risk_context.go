@@ -73,3 +73,13 @@ func (rb *RiskContextBuilder) Build(ctx context.Context) (*domain.RiskContext, e
 
 	return rc, nil
 }
+
+// EnrichWithTermStructure adds VIX term structure data from FRED to the risk context.
+// Call this after Build() with FRED-sourced VIX3M data.
+func EnrichWithTermStructure(rc *domain.RiskContext, vix3m float64) {
+	if rc == nil || vix3m <= 0 || rc.VIXLevel <= 0 {
+		return
+	}
+	rc.TermStructureSlope = rc.VIXLevel / vix3m
+	rc.IsBackwardation = rc.TermStructureSlope > 1.0
+}

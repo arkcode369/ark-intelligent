@@ -164,7 +164,13 @@ func (kb *KeyboardBuilder) MacroMenu(isAdmin bool) ports.InlineKeyboard {
 		{Text: "🌍 Global", CallbackData: "macro:global"},
 	})
 
-	// Row 3: Additional views
+	// Row 3: Drill-down views
+	rows = append(rows, []ports.InlineButton{
+		{Text: "👷 Labor", CallbackData: "macro:labor"},
+		{Text: "🔥 Inflation", CallbackData: "macro:inflation"},
+	})
+
+	// Row 4: Additional views
 	row3 := []ports.InlineButton{
 		{Text: "📈 Performance", CallbackData: "macro:performance"},
 	}
@@ -182,6 +188,22 @@ func (kb *KeyboardBuilder) MacroDetailMenu() ports.InlineKeyboard {
 		Rows: [][]ports.InlineButton{
 			{
 				{Text: "<< Kembali ke Ringkasan", CallbackData: "macro:summary"},
+			},
+		},
+	}
+}
+
+// MacroDrillDownMenu builds navigation keyboard for macro drill-down views (labor, inflation).
+func (kb *KeyboardBuilder) MacroDrillDownMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "👷 Labor", CallbackData: "macro:labor"},
+				{Text: "🔥 Inflation", CallbackData: "macro:inflation"},
+			},
+			{
+				{Text: "🧮 Composites", CallbackData: "macro:composites"},
+				{Text: "<< Ringkasan", CallbackData: "macro:summary"},
 			},
 		},
 	}

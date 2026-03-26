@@ -1,10 +1,12 @@
 package sentiment
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"strconv"
+	"os"
 	"time"
 )
 
@@ -17,66 +19,110 @@ type CBOEPutCallData struct {
 	FetchedAt time.Time
 }
 
-// FetchCBOEPutCall fetches the latest CBOE put/call ratios.
-// Primary source: CBOE market statistics page.
-// Fallback: returns unavailable (no hardcoded defaults).
+// FetchCBOEPutCall fetches the latest CBOE put/call ratios via Firecrawl.
+// The CBOE market statistics page is HTML-only; Firecrawl renders and extracts
+// the data using structured JSON extraction.
+// If FIRECRAWL_API_KEY is not set, returns unavailable.
 func FetchCBOEPutCall(ctx context.Context) *CBOEPutCallData {
 	result := &CBOEPutCallData{FetchedAt: time.Now()}
 
-	client := &http.Client{Timeout: 15 * time.Second}
-
-	// Try CBOE's JSON API endpoint for market statistics.
-	// This endpoint provides daily volume data from which P/C can be derived.
-	url := "https://www.cboe.com/us/options/market_statistics/daily/"
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		log.Debug().Err(err).Msg("CBOE P/C: failed to build request")
+	apiKey := os.Getenv("FIRECRAWL_API_KEY")
+	if apiKey == "" {
+		log.Debug().Msg("CBOE P/C: skipping — FIRECRAWL_API_KEY not set")
 		return result
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ARKBot/1.0)")
-	req.Header.Set("Accept", "text/html,application/json")
 
-	resp, err := client.Do(req)
+	type fcJSONOpts struct {
+		Prompt string          `json:"prompt"`
+		Schema json.RawMessage `json:"schema"`
+	}
+	type fcReq struct {
+		URL         string      `json:"url"`
+		Formats     []string    `json:"formats"`
+		WaitFor     int         `json:"waitFor"`
+		JSONOptions *fcJSONOpts `json:"jsonOptions,omitempty"`
+	}
+
+	schema := json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"total_put_call_ratio":  {"type": "number"},
+			"equity_put_call_ratio": {"type": "number"},
+			"index_put_call_ratio":  {"type": "number"}
+		}
+	}`)
+
+	reqBody := fcReq{
+		URL:     "https://www.cboe.com/us/options/market_statistics/daily/",
+		Formats: []string{"json"},
+		WaitFor: 5000,
+		JSONOptions: &fcJSONOpts{
+			Prompt: "Extract the latest CBOE daily put/call ratios: total put/call ratio, equity put/call ratio, and index put/call ratio. Return as numbers.",
+			Schema: schema,
+		},
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Debug().Err(err).Msg("CBOE P/C: request failed")
+		log.Debug().Err(err).Msg("CBOE P/C: failed to marshal Firecrawl request")
+		return result
+	}
+
+	fcClient := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.firecrawl.dev/v1/scrape", bytes.NewReader(bodyBytes))
+	if err != nil {
+		log.Debug().Err(err).Msg("CBOE P/C: failed to build Firecrawl request")
+		return result
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+
+	resp, err := fcClient.Do(req)
+	if err != nil {
+		log.Debug().Err(err).Msg("CBOE P/C: Firecrawl request failed")
 		return result
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		log.Debug().Int("status", resp.StatusCode).Msg("CBOE P/C: non-200 response")
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Debug().Int("status", resp.StatusCode).Msg("CBOE P/C: Firecrawl non-2xx response")
 		return result
 	}
 
-	// Try to parse as JSON (some endpoints return JSON).
-	var data struct {
-		Data []struct {
-			TotalPC  string `json:"total_put_call_ratio"`
-			EquityPC string `json:"equity_put_call_ratio"`
-			IndexPC  string `json:"index_put_call_ratio"`
+	var fcResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			JSON struct {
+				TotalPC  float64 `json:"total_put_call_ratio"`
+				EquityPC float64 `json:"equity_put_call_ratio"`
+				IndexPC  float64 `json:"index_put_call_ratio"`
+			} `json:"json"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err == nil && len(data.Data) > 0 {
-		d := data.Data[0]
-		if v, err := strconv.ParseFloat(d.TotalPC, 64); err == nil {
-			result.TotalPC = v
-		}
-		if v, err := strconv.ParseFloat(d.EquityPC, 64); err == nil {
-			result.EquityPC = v
-		}
-		if v, err := strconv.ParseFloat(d.IndexPC, 64); err == nil {
-			result.IndexPC = v
-		}
-		if result.TotalPC > 0 {
-			result.Available = true
-		}
+
+	if err := json.NewDecoder(resp.Body).Decode(&fcResp); err != nil {
+		log.Debug().Err(err).Msg("CBOE P/C: Firecrawl decode failed")
 		return result
 	}
 
-	// If CBOE direct fetch fails, the data will be populated via
-	// manual input or alternative sources in future iterations.
-	log.Debug().Msg("CBOE P/C: could not parse response, data unavailable")
+	if !fcResp.Success {
+		log.Debug().Msg("CBOE P/C: Firecrawl returned unsuccessful")
+		return result
+	}
+
+	d := fcResp.Data.JSON
+	result.TotalPC = d.TotalPC
+	result.EquityPC = d.EquityPC
+	result.IndexPC = d.IndexPC
+	if result.TotalPC > 0 {
+		result.Available = true
+		log.Debug().
+			Float64("total", result.TotalPC).
+			Float64("equity", result.EquityPC).
+			Float64("index", result.IndexPC).
+			Msg("CBOE P/C fetched via Firecrawl")
+	}
+
 	return result
 }
 
@@ -96,12 +142,16 @@ func ClassifyPutCallSignal(totalPC float64) (signal, description string) {
 	}
 }
 
-// IntegratePutCallIntoSentiment merges CBOE data into the main SentimentData.
-// Call this after FetchSentiment to add P/C ratios.
-// Note: The actual P/C fields live on MacroData (PutCallTotal/Equity/Index),
-// so the caller (scheduler/handler) populates those directly from CBOEPutCallData.
-func IntegratePutCallIntoSentiment(_ *SentimentData, _ *CBOEPutCallData) {
-	// P/C data flows into MacroData.PutCallTotal/PutCallEquity/PutCallIndex,
-	// which is populated by the caller. This function is a no-op placeholder
-	// for future SentimentData integration if P/C fields are added there.
+// IntegratePutCallIntoSentiment merges CBOE put/call data into SentimentData.
+func IntegratePutCallIntoSentiment(sd *SentimentData, pc *CBOEPutCallData) {
+	if sd == nil || pc == nil || !pc.Available {
+		return
+	}
+	sd.PutCallTotal = pc.TotalPC
+	sd.PutCallEquity = pc.EquityPC
+	sd.PutCallIndex = pc.IndexPC
+	sd.PutCallAvailable = true
+	if pc.TotalPC > 0 {
+		sd.PutCallSignal, _ = ClassifyPutCallSignal(pc.TotalPC)
+	}
 }

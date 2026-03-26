@@ -24,6 +24,8 @@ const (
 	AlertLaborWeakening   AlertType = "LABOR_WEAKENING"    // Initial claims or Sahm Rule deterioration
 	AlertCreditStress     AlertType = "CREDIT_STRESS"      // HY OAS (TedSpread) crosses stress threshold
 	AlertCurveUninversion AlertType = "CURVE_UNINVERSION"  // Yield spread crosses from negative to positive
+	AlertInflationDivergence AlertType = "INFLATION_DIVERGENCE" // Market breakevens vs realized CPI divergence
+	AlertHousingContraction  AlertType = "HOUSING_CONTRACTION"   // Housing market entering contraction
 )
 
 // MacroAlert represents a single triggered macro regime change event.
@@ -351,6 +353,77 @@ func CheckAlerts(current, previous *MacroData) []MacroAlert {
 			Value:    current.YieldSpread,
 			Previous: previous.YieldSpread,
 		})
+	}
+
+	// --- 13. Inflation Divergence (market breakevens vs realized CPI) ---
+	// Detect when market inflation expectations diverge from realized inflation
+	if current.Breakeven5Y > 0 && current.CorePCE > 0 && previous.Breakeven5Y > 0 && previous.CorePCE > 0 {
+		// Case 1: Breakevens rising but realized CPI falling — hawkish repricing risk
+		beDelta := current.Breakeven5Y - previous.Breakeven5Y
+		pceDelta := current.CorePCE - previous.CorePCE
+		if beDelta > 0.2 && pceDelta < -0.1 {
+			alerts = append(alerts, MacroAlert{
+				Type:  AlertInflationDivergence,
+				Title: "⚠️ INFLATION DIVERGENCE — Markets vs Reality",
+				Description: fmt.Sprintf(
+					"Market breakevens rising (+%.2f%% to %.2f%%) while Core PCE falling (%.2f%% to %.2f%%). "+
+						"Markets pricing inflation re-acceleration despite soft data. "+
+						"Hawkish repricing risk — USD may strengthen if expectations prove correct.",
+					beDelta, current.Breakeven5Y, previous.CorePCE, current.CorePCE),
+				Severity: "MEDIUM",
+				Value:    current.Breakeven5Y,
+				Previous: previous.Breakeven5Y,
+			})
+		}
+		// Case 2: Breakevens falling but realized CPI still high — dovish over-pricing risk
+		if beDelta < -0.2 && current.CorePCE > 3.0 {
+			alerts = append(alerts, MacroAlert{
+				Type:  AlertInflationDivergence,
+				Title: "⚠️ INFLATION DIVERGENCE — Dovish Over-Pricing Risk",
+				Description: fmt.Sprintf(
+					"Market breakevens falling (%.2f%% to %.2f%%) while Core PCE remains elevated (%.2f%%). "+
+						"Markets may be pricing in too many rate cuts. "+
+						"Risk of upside inflation surprise — bonds vulnerable.",
+					previous.Breakeven5Y, current.Breakeven5Y, current.CorePCE),
+				Severity: "MEDIUM",
+				Value:    current.CorePCE,
+				Previous: previous.CorePCE,
+			})
+		}
+	}
+
+	// --- 14. Housing Contraction (building permits declining) ---
+	if current.BuildingPermits > 0 && previous.BuildingPermits > 0 {
+		// Permits declining >10% signals meaningful contraction
+		permitChg := (current.BuildingPermits - previous.BuildingPermits) / previous.BuildingPermits * 100
+		// Alert on first breach OR on acceleration (permits already falling but drop accelerates)
+		prevChg := 0.0
+		if previous.BuildingPermitsTrend.Previous > 0 {
+			prevChg = (previous.BuildingPermits - previous.BuildingPermitsTrend.Previous) / previous.BuildingPermitsTrend.Previous * 100
+		}
+		isAccelerating := permitChg < prevChg-5 // decline accelerating by >5pp
+		isFirstBreach := previous.BuildingPermitsTrend.Direction != "DOWN"
+		if permitChg < -10 && (isFirstBreach || isAccelerating) {
+			severity := "MEDIUM"
+			title := "🟡 HOUSING CONTRACTION — Building Permits Declining"
+			if permitChg < -20 {
+				severity = "HIGH"
+				title = "🔴 HOUSING CONTRACTION — Building Permits Collapsing"
+			}
+			alerts = append(alerts, MacroAlert{
+				Type:  AlertHousingContraction,
+				Title: title,
+				Description: fmt.Sprintf(
+					"Building permits dropped %.1f%% (%.0fK → %.0fK). "+
+						"Housing leads GDP by 6-12 months. Sustained permit declines "+
+						"signal future economic slowdown. "+
+						"CAD, AUD may weaken (commodity/housing-sensitive).",
+					permitChg, previous.BuildingPermits, current.BuildingPermits),
+				Severity: severity,
+				Value:    current.BuildingPermits,
+				Previous: previous.BuildingPermits,
+			})
+		}
 	}
 
 	return alerts

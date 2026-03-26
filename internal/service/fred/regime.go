@@ -4,6 +4,8 @@ package fred
 import (
 	"fmt"
 	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 // MacroRegime holds the classified macro environment and bias.
@@ -39,11 +41,12 @@ type TradingImplication struct {
 
 // ClassifyMacroRegime derives a macro regime and trading bias from FRED data.
 // Uses a multi-factor scoring system across 9 dimensions.
-func ClassifyMacroRegime(data *MacroData) MacroRegime {
+func ClassifyMacroRegime(data *MacroData, composites ...*domain.MacroComposites) MacroRegime {
 	r := MacroRegime{}
 	riskScore := 0 // accumulates bearish/risk-off pressure
 
 	// --- 1. Yield Curve 2Y-10Y ---
+	// data.YieldSpread is now authoritative (fetcher prefers FRED pre-computed T10Y2Y)
 	switch {
 	case data.YieldSpread > 0.75:
 		r.YieldCurve = fmt.Sprintf("Steepening (%.2f%%) ✅ %s", data.YieldSpread, data.YieldSpreadTrend.Arrow())
@@ -58,6 +61,7 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 	}
 
 	// --- 2. Yield Curve 3M-10Y (better recession predictor) ---
+	// data.Spread3M10Y is now authoritative (fetcher prefers FRED pre-computed T10Y3M)
 	if data.Spread3M10Y != 0 {
 		switch {
 		case data.Spread3M10Y > 0.5:
@@ -462,6 +466,43 @@ func ClassifyMacroRegime(data *MacroData) MacroRegime {
 	} else if data.GDPGrowth < 0 && data.GDPGrowth != 0 {
 		r.Name = "RECESSION"
 		riskScore += 30
+	}
+
+	// --- Composite Score Enhancements (when available) ---
+	if len(composites) > 0 && composites[0] != nil {
+		comp := composites[0]
+
+		// Labor Health composite can override labor-based scoring
+		if comp.LaborHealth < 30 {
+			riskScore += 10 // composite confirms weakening
+		} else if comp.LaborHealth > 80 {
+			if riskScore >= 5 {
+				riskScore -= 5 // healthy labor reduces risk
+			}
+		}
+
+		// Credit Stress composite refinement
+		if comp.CreditStress > 70 {
+			riskScore += 10 // composite confirms stress
+		}
+
+		// VIX term structure backwardation — only add if VIX not already
+		// contributing maximum stress (avoid double-counting VIX signal)
+		if comp.VIXTermRegime == "BACKWARDATION" && data.VIX <= 30 {
+			riskScore += 10 // backwardation without extreme VIX = hidden stress
+		}
+
+		// Housing pulse warning
+		if comp.HousingPulse == "COLLAPSING" {
+			riskScore += 10
+		} else if comp.HousingPulse == "CONTRACTING" {
+			riskScore += 5
+		}
+
+		// Inflation momentum enhancement
+		if comp.InflationMomentum > 0.5 && r.Name != "INFLATIONARY" {
+			riskScore += 5 // inflation re-accelerating but regime hasn't caught it yet
+		}
 	}
 
 	// Cap risk score at 100

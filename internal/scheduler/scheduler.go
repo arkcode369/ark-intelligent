@@ -360,7 +360,8 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 
 	// Set FRED regime for regime-conditional signal filtering
 	if md, fredErr := fred.GetCachedOrFetch(ctx); fredErr == nil && md != nil {
-		regime := fred.ClassifyMacroRegime(md)
+		comp := fred.ComputeComposites(md)
+		regime := fred.ClassifyMacroRegime(md, comp)
 		if regime.Name != "" {
 			recalDetector.SetCurrentRegime(regime.Name)
 		}
@@ -372,6 +373,11 @@ func (s *Scheduler) broadcastCOTRelease(ctx context.Context, date time.Time, ana
 	if s.deps.PriceRepo != nil {
 		rcBuilder := pricesvc.NewRiskContextBuilder(s.deps.PriceRepo)
 		riskCtx, _ = rcBuilder.Build(ctx) // ignore error — nil means no adjustment
+		if riskCtx != nil {
+			if mdEnrich, _ := fred.GetCachedOrFetch(ctx); mdEnrich != nil {
+				pricesvc.EnrichWithTermStructure(riskCtx, mdEnrich.VIX3M)
+			}
+		}
 		// Build price contexts for ATR volatility multiplier
 		ctxBuilder := pricesvc.NewContextBuilder(s.deps.PriceRepo)
 		if pcs, pcErr := ctxBuilder.BuildAll(ctx); pcErr == nil {
@@ -857,7 +863,8 @@ func (s *Scheduler) persistSignals(ctx context.Context, signals []cotsvc.Signal,
 	var macroData *fred.MacroData
 	if md, fredErr := fred.GetCachedOrFetch(ctx); fredErr == nil && md != nil {
 		macroData = md
-		macroRegime = fred.ClassifyMacroRegime(md)
+		comp := fred.ComputeComposites(md)
+		macroRegime = fred.ClassifyMacroRegime(md, comp)
 		fredRegime = macroRegime.Name
 	}
 

@@ -43,6 +43,13 @@ type SentimentData struct {
 	CNNPrev1Year      float64 // Score 1 year ago
 	CNNAvailable      bool
 
+	// CBOE Put/Call Ratios
+	PutCallTotal   float64 // Total Put/Call Ratio
+	PutCallEquity  float64 // Equity Put/Call Ratio
+	PutCallIndex   float64 // Index Put/Call Ratio
+	PutCallSignal  string  // "EXTREME FEAR", "FEAR", "NEUTRAL", "COMPLACENCY", "EXTREME COMPLACENCY"
+	PutCallAvailable bool
+
 	FetchedAt time.Time
 }
 
@@ -58,6 +65,10 @@ func FetchSentiment(ctx context.Context) (*SentimentData, error) {
 
 	// Fetch AAII Sentiment (via Firecrawl if API key available)
 	fetchAAIISentiment(ctx, client, data)
+
+	// Fetch CBOE Put/Call Ratios (via Firecrawl if API key available)
+	pcData := FetchCBOEPutCall(ctx)
+	IntegratePutCallIntoSentiment(data, pcData)
 
 	return data, nil
 }

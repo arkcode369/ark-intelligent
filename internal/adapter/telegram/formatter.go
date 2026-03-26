@@ -2000,7 +2000,7 @@ func (f *Formatter) FormatMacroGlobal(composites *domain.MacroComposites, data *
 		}
 
 		cpiStr := "  — "
-		if r.cpi > 0 {
+		if r.cpi != 0 {
 			cpiStr = fmt.Sprintf("%4.1f%%", r.cpi)
 		}
 		gdpStr := "  — "
@@ -2012,7 +2012,7 @@ func (f *Formatter) FormatMacroGlobal(composites *domain.MacroComposites, data *
 			unempStr = fmt.Sprintf("%4.1f%%", r.unemp)
 		}
 		rateStr := "  — "
-		if r.rate > 0 {
+		if r.rate != 0 {
 			rateStr = fmt.Sprintf("%4.2f", r.rate)
 		}
 
@@ -2042,6 +2042,220 @@ func (f *Formatter) FormatMacroGlobal(composites *domain.MacroComposites, data *
 		} else {
 			b.WriteString(fmt.Sprintf("Supports: %s strength vs %s\n", strongest.code, weakest.code))
 		}
+	}
+
+	return b.String()
+}
+
+// trendLabel converts a direction string to a human-readable trend label.
+func trendLabel(direction string) string {
+	switch direction {
+	case "UP":
+		return "RISING"
+	case "DOWN":
+		return "FALLING"
+	default:
+		return "STABLE"
+	}
+}
+
+// FormatMacroLabor renders a detailed labor market deep-dive for Telegram.
+func (f *Formatter) FormatMacroLabor(composites *domain.MacroComposites, data *fred.MacroData) string {
+	var b strings.Builder
+
+	b.WriteString("👷 <b>LABOR MARKET DEEP DIVE</b>\n")
+	b.WriteString(fmt.Sprintf("<i>Updated %s WIB</i>\n\n", data.FetchedAt.Format("02 Jan 15:04")))
+
+	// Health Index
+	healthEmoji := "🟢"
+	switch {
+	case composites != nil && composites.LaborHealth < 20:
+		healthEmoji = "🔴"
+	case composites != nil && composites.LaborHealth < 40:
+		healthEmoji = "🟠"
+	case composites != nil && composites.LaborHealth < 60:
+		healthEmoji = "🟡"
+	}
+	if composites != nil {
+		b.WriteString(fmt.Sprintf("<b>Health Index: %.0f/100 %s %s</b>\n\n", composites.LaborHealth, healthEmoji, composites.LaborLabel))
+	}
+
+	b.WriteString("<code>┌─────────────────────────────────────┐</code>\n")
+
+	// JOLTS Openings
+	if data.JOLTSOpenings > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ JOLTS Openings  %6.0fK  %s %-9s│</code>\n",
+			data.JOLTSOpenings, data.JOLTSOpeningsTrend.Arrow(), trendLabel(data.JOLTSOpeningsTrend.Direction)))
+	}
+	// JOLTS Hiring Rate
+	if data.JOLTSHiringRate > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ JOLTS Hiring    %5.1f%%   %s %-9s│</code>\n",
+			data.JOLTSHiringRate, data.JOLTSHiringRateTrend.Arrow(), trendLabel(data.JOLTSHiringRateTrend.Direction)))
+	}
+	// JOLTS Quit Rate
+	if data.JOLTSQuitRate > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ JOLTS Quit Rate %5.1f%%   %s %-9s│</code>\n",
+			data.JOLTSQuitRate, data.JOLTSQuitRateTrend.Arrow(), trendLabel(data.JOLTSQuitRateTrend.Direction)))
+	}
+	// Initial Claims
+	if data.InitialClaims > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Initial Claims  %6.0fK  %s %-9s│</code>\n",
+			data.InitialClaims/1_000, data.ClaimsTrend.Arrow(), trendLabel(data.ClaimsTrend.Direction)))
+	}
+	// Continuing Claims
+	if data.ContinuingClaims > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Cont. Claims    %5.0fK  %s %-9s│</code>\n",
+			data.ContinuingClaims/1_000, data.ContinuingClaimsTrend.Arrow(), trendLabel(data.ContinuingClaimsTrend.Direction)))
+	}
+	// Unemployment U3
+	if data.UnemployRate > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Unemployment U3 %5.1f%%   → LEVEL    │</code>\n", data.UnemployRate))
+	}
+	// U6
+	if data.U6Unemployment > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Unemployment U6 %5.1f%%   → LEVEL    │</code>\n", data.U6Unemployment))
+	}
+	// Emp-Pop Ratio
+	if data.EmpPopRatio > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Emp-Pop Ratio   %5.1f%%   → LEVEL    │</code>\n", data.EmpPopRatio))
+	}
+	// NFP
+	if data.NFP > 0 {
+		nfpArrow := data.NFPTrend.Arrow()
+		b.WriteString(fmt.Sprintf("<code>│ NFP (MoM)       %+6.0fK  %s          │</code>\n", data.NFPChange, nfpArrow))
+	}
+	// Wage Growth
+	if data.WageGrowth > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Avg Hourly Earn %+5.1f%%  %s %-9s│</code>\n",
+			data.WageGrowth, data.WageGrowthTrend.Arrow(), trendLabel(data.WageGrowthTrend.Direction)))
+	}
+	// Sahm Rule
+	if data.SahmRule > 0 {
+		sahmEmoji := "✅"
+		if data.SahmRule >= 0.5 {
+			sahmEmoji = "🚨"
+		} else if data.SahmRule >= 0.3 {
+			sahmEmoji = "⚠️"
+		}
+		b.WriteString(fmt.Sprintf("<code>│ Sahm Rule       %5.2f   %s          │</code>\n", data.SahmRule, sahmEmoji))
+	}
+
+	b.WriteString("<code>└─────────────────────────────────────┘</code>\n")
+
+	// Key insight
+	b.WriteString("\n<b>💡 Key Insight:</b>\n")
+	if data.SahmRule >= 0.5 {
+		b.WriteString("<i>Sahm Rule triggered — historically reliable recession signal. Labor market deteriorating rapidly.</i>\n")
+	} else if data.InitialClaims > 280_000 {
+		b.WriteString("<i>Initial claims elevated above 280K — labor demand weakening. Watch for sustained trend.</i>\n")
+	} else if data.JOLTSQuitRate > 0 && data.JOLTSQuitRate > 2.5 {
+		b.WriteString("<i>Quit rate high = workers confident about job prospects. Healthy labor demand.</i>\n")
+	} else if data.JOLTSOpenings > 0 && data.JOLTSOpeningsTrend.Direction == "DOWN" {
+		b.WriteString("<i>JOLTS openings declining — labor demand cooling. Leading indicator for future weakness.</i>\n")
+	} else {
+		b.WriteString("<i>Labor market stable. Monitor initial claims and JOLTS for early warning signals.</i>\n")
+	}
+
+	return b.String()
+}
+
+// FormatMacroInflation renders a detailed inflation deep-dive for Telegram.
+func (f *Formatter) FormatMacroInflation(composites *domain.MacroComposites, data *fred.MacroData) string {
+	var b strings.Builder
+
+	b.WriteString("🔥 <b>INFLATION DEEP DIVE</b>\n")
+	b.WriteString(fmt.Sprintf("<i>Updated %s WIB</i>\n\n", data.FetchedAt.Format("02 Jan 15:04")))
+
+	// Momentum
+	momEmoji := "🟢"
+	switch {
+	case composites != nil && composites.InflationMomentum > 0.5:
+		momEmoji = "🔴"
+	case composites != nil && composites.InflationMomentum > 0.2:
+		momEmoji = "🟠"
+	case composites != nil && composites.InflationMomentum < -0.2:
+		momEmoji = "🔵"
+	}
+	if composites != nil {
+		b.WriteString(fmt.Sprintf("<b>Momentum: %+.2f %s %s</b>\n\n", composites.InflationMomentum, momEmoji, composites.InflationLabel))
+	}
+
+	// Realized section
+	b.WriteString("<b>REALIZED</b>\n")
+	b.WriteString("<code>┌─────────────────────────────────────┐</code>\n")
+	if data.CorePCE > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Core PCE        %5.1f%%  %s          │</code>\n", data.CorePCE, data.CorePCETrend.Arrow()))
+	}
+	if data.CPI > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Headline CPI    %5.1f%%  %s          │</code>\n", data.CPI, data.CPITrend.Arrow()))
+	}
+	if data.MedianCPI > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Median CPI      %5.1f%%  %s          │</code>\n", data.MedianCPI, data.MedianCPITrend.Arrow()))
+	}
+	if data.StickyCPI > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Sticky CPI      %5.1f%%  %s          │</code>\n", data.StickyCPI, data.StickyCPITrend.Arrow()))
+	}
+	if data.PPICommodities != 0 {
+		b.WriteString(fmt.Sprintf("<code>│ PPI Commodities %+5.1f%%  %s          │</code>\n", data.PPICommodities, data.PPICommoditiesTrend.Arrow()))
+	}
+	if data.WageGrowth > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Wage Growth     %+5.1f%%  %s          │</code>\n", data.WageGrowth, data.WageGrowthTrend.Arrow()))
+	}
+	b.WriteString("<code>└─────────────────────────────────────┘</code>\n")
+
+	// Expectations section
+	b.WriteString("\n<b>EXPECTATIONS</b>\n")
+	b.WriteString("<code>┌─────────────────────────────────────┐</code>\n")
+	if data.Breakeven5Y > 0 {
+		anchored := "STABLE"
+		if data.Breakeven5Y > 2.8 {
+			anchored = "ELEVATED"
+		}
+		b.WriteString(fmt.Sprintf("<code>│ 5Y Breakeven    %5.2f%%  → %-9s│</code>\n", data.Breakeven5Y, anchored))
+	}
+	if data.ForwardInflation > 0 {
+		anchored := "ANCHORED"
+		if data.ForwardInflation > 2.8 {
+			anchored = "DE-ANCHORING"
+		} else if data.ForwardInflation < 2.0 {
+			anchored = "DEFL RISK"
+		}
+		b.WriteString(fmt.Sprintf("<code>│ 5Y5Y Forward    %5.2f%%  → %-9s│</code>\n", data.ForwardInflation, anchored))
+	}
+	if data.MichInflExp1Y > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Michigan 1Y     %5.1f%%  → SURVEY    │</code>\n", data.MichInflExp1Y))
+	}
+	if data.ClevelandInfExp1Y > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Cleveland 1Y    %5.2f%%  → MODEL     │</code>\n", data.ClevelandInfExp1Y))
+	}
+	if data.ClevelandInfExp10Y > 0 {
+		b.WriteString(fmt.Sprintf("<code>│ Cleveland 10Y   %5.2f%%  → LONG-RUN  │</code>\n", data.ClevelandInfExp10Y))
+	}
+	b.WriteString("<code>└─────────────────────────────────────┘</code>\n")
+
+	// Divergence detection
+	b.WriteString("\n<b>💡 Key Insight:</b>\n")
+	if data.Breakeven5Y > 0 && data.CorePCE > 0 {
+		beHigh := data.Breakeven5Y > 2.5
+		pceHigh := data.CorePCE > 3.0
+		beFalling := data.Breakeven5Y < 2.2
+		pceFalling := data.CorePCE < 2.5
+
+		if beHigh && pceFalling {
+			b.WriteString("<i>⚠️ Divergence: Market pricing inflation re-acceleration despite soft realized data. Hawkish repricing risk → USD bullish.</i>\n")
+		} else if beFalling && pceHigh {
+			b.WriteString("<i>⚠️ Divergence: Market expects disinflation but realized data hasn't confirmed. Risk of dovish over-pricing.</i>\n")
+		} else if data.StickyCPI > 4.0 {
+			b.WriteString("<i>Sticky CPI elevated — services inflation persistent. Fed unlikely to cut aggressively.</i>\n")
+		} else if data.PPICommodities > 5.0 {
+			b.WriteString("<i>PPI rising sharply — input cost pressure building. Watch for pass-through to consumer prices.</i>\n")
+		} else if data.CorePCE < 2.5 && data.ForwardInflation > 0 && data.ForwardInflation < 2.5 {
+			b.WriteString("<i>Inflation on target with anchored expectations — ideal for risk assets and potential rate cuts.</i>\n")
+		} else {
+			b.WriteString("<i>Inflation mixed. Monitor divergences between realized data and market expectations.</i>\n")
+		}
+	} else {
+		b.WriteString("<i>Insufficient data for full inflation analysis.</i>\n")
 	}
 
 	return b.String()
@@ -3462,6 +3676,44 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 		} else if data.AAIIBullish >= 50 {
 			b.WriteString("<code>Signal: </code>🔴 <b>Contrarian SELL</b> — Bullish >50%% historically precedes pullbacks\n")
 		}
+	}
+
+	// --- CBOE Put/Call Ratios ---
+	b.WriteString("\n<b>CBOE Put/Call Ratios</b>\n")
+	if data.PutCallAvailable {
+		b.WriteString(fmt.Sprintf("<code>Total P/C : %.2f</code>\n", data.PutCallTotal))
+		if data.PutCallEquity > 0 {
+			b.WriteString(fmt.Sprintf("<code>Equity P/C: %.2f</code>\n", data.PutCallEquity))
+		}
+		if data.PutCallIndex > 0 {
+			b.WriteString(fmt.Sprintf("<code>Index P/C : %.2f</code>\n", data.PutCallIndex))
+		}
+		if data.PutCallSignal != "" {
+			signalEmoji := "🟡"
+			switch data.PutCallSignal {
+			case "EXTREME FEAR":
+				signalEmoji = "🟢"
+			case "FEAR":
+				signalEmoji = "🟢"
+			case "EXTREME COMPLACENCY":
+				signalEmoji = "🔴"
+			case "COMPLACENCY":
+				signalEmoji = "🟠"
+			}
+			b.WriteString(fmt.Sprintf("<code>Signal    : %s %s</code>\n", signalEmoji, data.PutCallSignal))
+		}
+		// Context interpretation
+		if data.PutCallIndex > 0 && data.PutCallEquity > 0 {
+			if data.PutCallIndex > 1.0 && data.PutCallEquity < 0.8 {
+				b.WriteString("<i>Index P/C elevated → institutions hedging. Equity P/C normal → retail not panicking yet.</i>\n")
+			} else if data.PutCallTotal >= 1.2 {
+				b.WriteString("<i>Extreme put buying across the board — strong contrarian bullish signal.</i>\n")
+			} else if data.PutCallTotal < 0.7 {
+				b.WriteString("<i>Very low protection buying — complacency warning. Contrarian bearish.</i>\n")
+			}
+		}
+	} else {
+		b.WriteString("<code>Data unavailable</code>\n")
 	}
 
 	// --- Composite reading ---

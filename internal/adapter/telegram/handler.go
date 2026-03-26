@@ -300,7 +300,8 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 	var overviewConvictions []cot.ConvictionScore
 	macroDataOv, fredErrOv := fred.GetCachedOrFetch(ctx)
 	if fredErrOv == nil && macroDataOv != nil {
-		regimeOv := fred.ClassifyMacroRegime(macroDataOv)
+		compositeOv := fred.ComputeComposites(macroDataOv)
+		regimeOv := fred.ClassifyMacroRegime(macroDataOv, compositeOv)
 		var priceCtxsOv map[string]*domain.PriceContext
 		if h.priceRepo != nil {
 			ctxBuilderOv := pricesvc.NewContextBuilder(h.priceRepo)
@@ -401,7 +402,8 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 	if editMsgID == 0 {
 		macroData, fredErr := fred.GetCachedOrFetch(ctx)
 		if fredErr == nil && macroData != nil {
-			regime := fred.ClassifyMacroRegime(macroData)
+			composites := fred.ComputeComposites(macroData)
+			regime := fred.ClassifyMacroRegime(macroData, composites)
 			fredCtx := h.fmt.FormatFREDContext(macroData, regime)
 			if fredCtx != "" {
 				html += fredCtx
@@ -424,7 +426,8 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 		}
 		macroData2, fredErr2 := fred.GetCachedOrFetch(ctx)
 		if fredErr2 == nil && macroData2 != nil {
-			regime2 := fred.ClassifyMacroRegime(macroData2)
+			composites2 := fred.ComputeComposites(macroData2)
+			regime2 := fred.ClassifyMacroRegime(macroData2, composites2)
 			cs := cot.ComputeConvictionScoreV3(*analysis, regime2, surpriseSigma2, "", macroData2, pc2)
 			html += h.fmt.FormatConvictionBlock(cs)
 		} else {
@@ -494,7 +497,8 @@ func (h *Handler) cbCOTDetail(ctx context.Context, chatID string, msgID int, use
 		var cbConvictions []cot.ConvictionScore
 		cbMacro, cbFredErr := fred.GetCachedOrFetch(ctx)
 		if cbFredErr == nil && cbMacro != nil {
-			cbRegime := fred.ClassifyMacroRegime(cbMacro)
+			cbComposites := fred.ComputeComposites(cbMacro)
+		cbRegime := fred.ClassifyMacroRegime(cbMacro, cbComposites)
 			var cbPriceCtxs map[string]*domain.PriceContext
 			if h.priceRepo != nil {
 				cbBuilder := pricesvc.NewContextBuilder(h.priceRepo)
@@ -617,7 +621,8 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	macroData, _ := fred.GetCachedOrFetch(ctx)
 	var macroRegime *fred.MacroRegime
 	if macroData != nil {
-		r := fred.ClassifyMacroRegime(macroData)
+		comp := fred.ComputeComposites(macroData)
+		r := fred.ClassifyMacroRegime(macroData, comp)
 		macroRegime = &r
 	}
 
@@ -635,6 +640,9 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	if h.priceRepo != nil {
 		riskBuilder := pricesvc.NewRiskContextBuilder(h.priceRepo)
 		riskCtx, _ = riskBuilder.Build(ctx)
+		if riskCtx != nil && macroData != nil {
+			pricesvc.EnrichWithTermStructure(riskCtx, macroData.VIX3M)
+		}
 	}
 
 	// Sentiment (CNN Fear & Greed)
@@ -677,11 +685,28 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	}
 
 	// ---------- Build unified data ----------
+	var macroComposites *domain.MacroComposites
+	if macroData != nil {
+		// Merge sentiment data into MacroData before computing composites,
+		// so SentimentComposite includes CNN F&G, AAII, and CBOE P/C.
+		if sentimentData != nil {
+			fred.MergeSentiment(macroData,
+				sentimentData.CNNFearGreed,
+				sentimentData.AAIIBullBear,
+				sentimentData.PutCallTotal,
+				sentimentData.PutCallEquity,
+				sentimentData.PutCallIndex,
+			)
+		}
+		macroComposites = fred.ComputeComposites(macroData)
+	}
+
 	unifiedData := aisvc.UnifiedOutlookData{
 		COTAnalyses:        cotAnalyses,
 		NewsEvents:         weekEvts,
 		MacroData:          macroData,
 		MacroRegime:        macroRegime,
+		MacroComposites:    macroComposites,
 		PriceContexts:      priceCtxs,
 		DailyPriceContexts: dailyPriceCtxs,
 		RiskContext:         riskCtx,
@@ -1387,7 +1412,8 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 	var regime *fred.MacroRegime
 	if md, fredErr := fred.GetCachedOrFetch(ctx); fredErr == nil && md != nil {
 		macroData = md
-		r := fred.ClassifyMacroRegime(md)
+		comp := fred.ComputeComposites(md)
+		r := fred.ClassifyMacroRegime(md, comp)
 		regime = &r
 	}
 
@@ -1478,7 +1504,19 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 			"Failed to fetch macro data. Please try again later.")
 	}
 
-	regime := fred.ClassifyMacroRegime(data)
+	// Merge sentiment data into MacroData for complete composite scoring
+	if sentData, sentErr := sentiment.GetCachedOrFetch(ctx); sentErr == nil && sentData != nil {
+		fred.MergeSentiment(data,
+			sentData.CNNFearGreed,
+			sentData.AAIIBullBear,
+			sentData.PutCallTotal,
+			sentData.PutCallEquity,
+			sentData.PutCallIndex,
+		)
+	}
+
+	composites := fred.ComputeComposites(data)
+	regime := fred.ClassifyMacroRegime(data, composites)
 
 	// Route to specific view
 	switch upper {
@@ -1489,14 +1527,20 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
 	case "COMPOSITES":
-		composites := fred.ComputeComposites(data)
 		htmlMsg := h.fmt.FormatMacroComposites(composites, data)
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
 	case "GLOBAL":
-		composites := fred.ComputeComposites(data)
 		htmlMsg := h.fmt.FormatMacroGlobal(composites, data)
 		kb := h.kb.MacroDetailMenu()
+		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
+	case "LABOR":
+		htmlMsg := h.fmt.FormatMacroLabor(composites, data)
+		kb := h.kb.MacroDrillDownMenu()
+		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
+	case "INFLATION":
+		htmlMsg := h.fmt.FormatMacroInflation(composites, data)
+		kb := h.kb.MacroDrillDownMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
 	}
 
@@ -1547,7 +1591,8 @@ func (h *Handler) cbMacro(ctx context.Context, chatID string, msgID int, userID 
 		log.Error().Err(err).Msg("FRED data fetch failed in macro callback")
 		return h.bot.EditMessage(ctx, chatID, msgID, "Failed to load macro data. Ketik /macro untuk coba lagi.")
 	}
-	regime := fred.ClassifyMacroRegime(macroData)
+	composites := fred.ComputeComposites(macroData)
+	regime := fred.ClassifyMacroRegime(macroData, composites)
 
 	switch action {
 	case "detail":
@@ -1565,26 +1610,24 @@ func (h *Handler) cbMacro(ctx context.Context, chatID string, msgID int, userID 
 		return h.macroRegimePerformance(ctx, chatID, msgID)
 
 	case "composites":
-		composites := fred.ComputeComposites(macroData)
 		htmlMsg := h.fmt.FormatMacroComposites(composites, macroData)
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 
 	case "global":
-		composites := fred.ComputeComposites(macroData)
 		htmlMsg := h.fmt.FormatMacroGlobal(composites, macroData)
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 
 	case "labor":
-		// Future: drill-down for labor market depth
-		return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-			"🚧 Labor market deep-dive coming soon.", h.kb.MacroDetailMenu())
+		htmlMsg := h.fmt.FormatMacroLabor(composites, macroData)
+		kb := h.kb.MacroDrillDownMenu()
+		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 
 	case "inflation":
-		// Future: drill-down for inflation depth
-		return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-			"🚧 Inflation deep-dive coming soon.", h.kb.MacroDetailMenu())
+		htmlMsg := h.fmt.FormatMacroInflation(composites, macroData)
+		kb := h.kb.MacroDrillDownMenu()
+		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 
 	case "refresh":
 		if !h.requireAdmin(ctx, chatID, userID) {
@@ -1595,7 +1638,8 @@ func (h *Handler) cbMacro(ctx context.Context, chatID string, msgID int, userID 
 		if err != nil {
 			return h.bot.EditMessage(ctx, chatID, msgID, "Failed to refresh macro data.")
 		}
-		freshRegime := fred.ClassifyMacroRegime(freshData)
+		freshComposites := fred.ComputeComposites(freshData)
+		freshRegime := fred.ClassifyMacroRegime(freshData, freshComposites)
 		return h.macroSendSummary(ctx, chatID, msgID, userID, freshRegime, freshData)
 	}
 
@@ -1676,7 +1720,8 @@ func (h *Handler) currentMacroRegimeName(ctx context.Context) string {
 	if err != nil || data == nil {
 		return ""
 	}
-	regime := fred.ClassifyMacroRegime(data)
+	composites := fred.ComputeComposites(data)
+	regime := fred.ClassifyMacroRegime(data, composites)
 	return regime.Name
 }
 

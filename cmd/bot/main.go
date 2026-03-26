@@ -26,6 +26,7 @@ import (
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
 	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
@@ -92,6 +93,13 @@ func main() {
 	impactRepo := storage.NewImpactRepo(db)
 	dailyPriceRepo := storage.NewDailyPriceRepo(db)
 	intradayRepo := storage.NewIntradayRepo(db)
+	fredRepo := storage.NewFREDRepo(db)
+	fredPersistence := fred.NewPersistenceService(&fredPersistAdapter{repo: fredRepo})
+	fred.SetPostFetchHook(func(ctx context.Context, data *fred.MacroData) {
+		if err := fredPersistence.PersistSnapshot(ctx, data); err != nil {
+			log.Warn().Err(err).Msg("FRED snapshot persistence failed (non-fatal)")
+		}
+	})
 
 	log.Info().Msg("Storage layer initialized")
 	logStorageSize(db)
@@ -539,4 +547,18 @@ func newImpactBootstrapper(
 	ib := newssvc.NewImpactBootstrapper(fetcher, priceRepo, impactRepo, priceFetcher)
 	ib.SetMonths(months)
 	return ib
+}
+
+// fredPersistAdapter adapts storage.FREDRepo (ports.FREDRepository) to the
+// fred.FREDPersister interface, bridging the ports ↔ fred type boundary.
+type fredPersistAdapter struct {
+	repo *storage.FREDRepo
+}
+
+func (a *fredPersistAdapter) SaveSnapshots(ctx context.Context, obs []fred.FREDObservation) error {
+	portObs := make([]ports.FREDObservation, len(obs))
+	for i, o := range obs {
+		portObs[i] = ports.FREDObservation{SeriesID: o.SeriesID, Date: o.Date, Value: o.Value}
+	}
+	return a.repo.SaveSnapshots(ctx, portObs)
 }

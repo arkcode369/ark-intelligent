@@ -22,7 +22,9 @@ type RiskContext struct {
 	SPXWeeklyChg  float64    `json:"spx_weekly_chg"`  // S&P 500 weekly % change
 	SPXMonthlyChg float64    `json:"spx_monthly_chg"` // S&P 500 4-week % change
 	SPXAboveMA4W  bool       `json:"spx_above_ma4w"`  // Risk-on if true
-	Regime        RiskRegime `json:"regime"`          // Classified risk regime
+	Regime             RiskRegime `json:"regime"`                // Classified risk regime
+	TermStructureSlope float64    `json:"term_structure_slope"` // VIX / VIX3M ratio (>1 = backwardation)
+	IsBackwardation    bool       `json:"is_backwardation"`     // true when VIX > VIX3M
 }
 
 // ClassifyRiskRegime determines the risk regime from VIX level.
