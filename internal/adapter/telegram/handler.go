@@ -214,10 +214,7 @@ func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, arg
 /outlook — Unified analysis (all data + web search)
 
 <b>📈 Backtest &amp; Analytics</b>
-/backtest — Stats + significance + risk metrics
-/backtest timing — Optimal horizon per signal type
-/backtest walkforward — Overfit detection
-/backtest weights — Data-driven weight optimization
+/backtest — Dashboard (17 sub-views via menu)
 /accuracy — Quick win rate summary
 /report — Weekly signal performance
 
