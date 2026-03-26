@@ -147,8 +147,8 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 	for _, s := range signals {
 		sumConfidenceAll += s.Confidence
 
-		// Strength breakdown (only count evaluated signals)
-		if s.Outcome1W != "" && s.Outcome1W != domain.OutcomePending {
+		// Strength breakdown (only count evaluated signals, exclude EXPIRED)
+		if s.Outcome1W != "" && s.Outcome1W != domain.OutcomePending && s.Outcome1W != domain.OutcomeExpired {
 			if s.Strength >= 4 {
 				highTotal++
 				if s.Outcome1W == domain.OutcomeWin {
@@ -172,13 +172,13 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 			brierOutcomes = append(brierOutcomes, s.Outcome1W == domain.OutcomeWin)
 			if s.Outcome1W == domain.OutcomeWin {
 				wins1W++
-				sumWinReturn1W += s.Return1W
+				sumWinReturn1W += math.Abs(s.Return1W) // abs: BEARISH wins have negative Return1W
 				winCount1W++
-				winReturns1W = append(winReturns1W, s.Return1W)
+				winReturns1W = append(winReturns1W, math.Abs(s.Return1W))
 			} else {
-				sumLossReturn1W += s.Return1W
+				sumLossReturn1W += math.Abs(s.Return1W) // abs: store magnitude, sign handled separately
 				lossCount1W++
-				lossReturns1W = append(lossReturns1W, s.Return1W)
+				lossReturns1W = append(lossReturns1W, math.Abs(s.Return1W))
 			}
 		}
 
@@ -221,12 +221,12 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 		stats.AvgReturn4W = round4(sumReturn4W / float64(eval4W))
 	}
 
-	// Avg win/loss return at 1W
+	// Avg win/loss return at 1W (absolute magnitude for wins, negative for losses)
 	if winCount1W > 0 {
 		stats.AvgWinReturn1W = round4(sumWinReturn1W / float64(winCount1W))
 	}
 	if lossCount1W > 0 {
-		stats.AvgLossReturn1W = round4(sumLossReturn1W / float64(lossCount1W))
+		stats.AvgLossReturn1W = round4(-(sumLossReturn1W / float64(lossCount1W)))
 	}
 
 	// Best period
@@ -324,7 +324,14 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 			stats.SharpeRatio = round2(mathutil.SharpeRatio(aggWeekly, 0))
 			maxDD, _, _ := mathutil.MaxDrawdown(aggWeekly)
 			stats.MaxDrawdown = round2(maxDD)
-			avgAnnualReturn := stats.AvgReturn1W * 52
+			// Calmar: use mean of aggregated weekly returns (same population as MaxDD)
+			// to avoid mixing per-signal returns with portfolio-level drawdown.
+			aggSum := 0.0
+			for _, r := range aggWeekly {
+				aggSum += r
+			}
+			aggMean := aggSum / float64(len(aggWeekly))
+			avgAnnualReturn := aggMean * 52
 			stats.CalmarRatio = round2(mathutil.CalmarRatio(avgAnnualReturn, stats.MaxDrawdown))
 		}
 	}
@@ -366,7 +373,7 @@ func aggregateByWeek(signals []domain.PersistedSignal) []float64 {
 	weekMap := make(map[string]*weekAcc)
 
 	for _, s := range signals {
-		if s.Outcome1W == "" || s.Outcome1W == domain.OutcomePending {
+		if s.Outcome1W == "" || s.Outcome1W == domain.OutcomePending || s.Outcome1W == domain.OutcomeExpired {
 			continue
 		}
 		y, w := s.ReportDate.ISOWeek()

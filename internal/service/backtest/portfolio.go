@@ -109,12 +109,14 @@ func (pa *PortfolioAnalyzer) Analyze(ctx context.Context) (*PortfolioResult, err
 	cumReturn := (equity - 1) * 100
 	n := float64(len(weeklyReturns))
 
-	// Sharpe ratio: annualized from weekly.
+	// Sharpe ratio: annualized from weekly (sample variance, n-1 denominator).
 	meanRet := sumRet / n
-	variance := sumRetSq/n - meanRet*meanRet
 	sharpe := 0.0
-	if variance > 0 {
-		sharpe = (meanRet / math.Sqrt(variance)) * math.Sqrt(52)
+	if n > 1 {
+		variance := (sumRetSq - n*meanRet*meanRet) / (n - 1)
+		if variance > 0 {
+			sharpe = (meanRet / math.Sqrt(variance)) * math.Sqrt(52)
+		}
 	}
 
 	// Calmar ratio: annualized return / max drawdown (both in %).

@@ -147,9 +147,15 @@ func (b *Bootstrapper) bootstrapContract(ctx context.Context, mapping domain.Pri
 			continue // Not enough history context
 		}
 
-		// Run signal detection on this single analysis with its history context
+		// Run signal detection on this single analysis with its history context.
+		// DetectAll expects history in newest-first order (consistent with live path
+		// where GetHistory returns newest-first). Reverse the window for DetectAll.
+		reversedWindow := make([]domain.COTRecord, len(historyWindow))
+		for ri, rj := 0, len(historyWindow)-1; ri <= rj; ri, rj = ri+1, rj-1 {
+			reversedWindow[ri], reversedWindow[rj] = historyWindow[rj], historyWindow[ri]
+		}
 		historyMap := map[string][]domain.COTRecord{
-			mapping.ContractCode: historyWindow,
+			mapping.ContractCode: reversedWindow,
 		}
 		signals := b.detector.DetectAll([]domain.COTAnalysis{*analysis}, historyMap)
 		if len(signals) == 0 {

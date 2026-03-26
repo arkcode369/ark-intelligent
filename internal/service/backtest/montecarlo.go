@@ -99,10 +99,13 @@ func (mc *MonteCarloSimulator) Simulate(ctx context.Context, numSims int) (*Mont
 		}
 
 		// Sharpe: mean / stddev * sqrt(52) (weekly to annualized).
+		// Use sample variance (n-1 denominator) for consistency with mathutil.SharpeRatio.
 		meanRet := sumRet / float64(n)
-		variance := sumRetSq/float64(n) - meanRet*meanRet
-		if variance > 0 {
-			simSharpes[i] = (meanRet / math.Sqrt(variance)) * math.Sqrt(52)
+		if n > 1 {
+			variance := (sumRetSq - float64(n)*meanRet*meanRet) / float64(n-1)
+			if variance > 0 {
+				simSharpes[i] = (meanRet / math.Sqrt(variance)) * math.Sqrt(52)
+			}
 		}
 	}
 
