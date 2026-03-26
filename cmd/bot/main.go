@@ -215,7 +215,7 @@ func main() {
 	}
 
 	// Backtest evaluator
-	signalEvaluator := backtestsvc.NewEvaluator(signalRepo, priceRepo)
+	signalEvaluator := backtestsvc.NewEvaluator(signalRepo, priceRepo, dailyPriceRepo)
 
 	log.Info().Msg("Service layer initialized")
 
@@ -374,7 +374,7 @@ func main() {
 
 		// Backtest bootstrap (replay historical COT signals against prices)
 		log.Info().Msg("Running backtest bootstrap...")
-		bootstrapper := backtestsvc.NewBootstrapper(cotRepo, priceRepo, signalRepo, signalRepo)
+		bootstrapper := backtestsvc.NewBootstrapper(cotRepo, priceRepo, signalRepo, signalRepo, dailyPriceRepo)
 		if created, err := bootstrapper.Run(initCtx); err != nil {
 			log.Warn().Err(err).Msg("backtest bootstrap failed (non-fatal)")
 		} else if created > 0 {
@@ -401,6 +401,14 @@ func main() {
 			log.Warn().Err(evalErr).Msg("initial signal evaluation failed (non-fatal)")
 		} else {
 			log.Info().Int("evaluated", evaluated).Msg("signal evaluation complete")
+		}
+
+		// Backfill calibrated confidence on bootstrap signals using Platt scaling.
+		// Must run AFTER evaluation so we have outcome data to fit against.
+		if calibrated, calErr := backtestsvc.BackfillCalibration(initCtx, signalRepo); calErr != nil {
+			log.Warn().Err(calErr).Msg("confidence calibration backfill failed (non-fatal)")
+		} else if calibrated > 0 {
+			log.Info().Int("calibrated", calibrated).Msg("signal confidence backfill complete")
 		}
 
 		initCancel()

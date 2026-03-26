@@ -66,10 +66,12 @@ func (wfa *WalkForwardAnalyzer) Analyze(ctx context.Context) (*WalkForwardResult
 		return nil, fmt.Errorf("get all signals for walk-forward: %w", err)
 	}
 
-	// Keep only signals with at least a 1W outcome.
+	// Keep only signals with a definitive 1W outcome (WIN or LOSS).
+	// Exclude PENDING and EXPIRED — expired signals have no real outcome data
+	// and would dilute win rates if included.
 	var evaluated []domain.PersistedSignal
 	for i := range signals {
-		if signals[i].Outcome1W != "" && signals[i].Outcome1W != domain.OutcomePending {
+		if signals[i].Outcome1W == domain.OutcomeWin || signals[i].Outcome1W == domain.OutcomeLoss {
 			evaluated = append(evaluated, signals[i])
 		}
 	}

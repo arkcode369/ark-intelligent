@@ -18,14 +18,24 @@ var log = logger.Component("backtest")
 type Evaluator struct {
 	signalRepo ports.SignalRepository
 	priceRepo  ports.PriceRepository
+	dailyRepo  FlexDailyProvider // optional — enables flexible exit evaluation
+}
+
+// FlexDailyProvider returns daily prices in a date range (oldest-first).
+type FlexDailyProvider interface {
+	GetDailyRange(ctx context.Context, contractCode string, from, to time.Time) ([]domain.DailyPrice, error)
 }
 
 // NewEvaluator creates a new signal outcome evaluator.
-func NewEvaluator(signalRepo ports.SignalRepository, priceRepo ports.PriceRepository) *Evaluator {
-	return &Evaluator{
+func NewEvaluator(signalRepo ports.SignalRepository, priceRepo ports.PriceRepository, dailyRepo ...FlexDailyProvider) *Evaluator {
+	e := &Evaluator{
 		signalRepo: signalRepo,
 		priceRepo:  priceRepo,
 	}
+	if len(dailyRepo) > 0 && dailyRepo[0] != nil {
+		e.dailyRepo = dailyRepo[0]
+	}
+	return e
 }
 
 // EvaluatePending finds all signals that need outcome evaluation and fills
@@ -94,6 +104,13 @@ func (e *Evaluator) EvaluatePending(ctx context.Context) (int, error) {
 		if !updated {
 			skippedNoPrice++
 			continue
+		}
+
+		// Flexible exit evaluation — uses daily prices to find intra-period wins.
+		// Run if ANY flex outcome is still blank (not just 1W), so that 2W/4W
+		// get populated even after 1W is already set from a prior evaluation pass.
+		if e.dailyRepo != nil && (pending[i].FlexOutcome1W == "" || pending[i].FlexOutcome2W == "" || pending[i].FlexOutcome4W == "") {
+			e.evaluateFlexible(ctx, &pending[i], 0.3) // 0.3% target return
 		}
 
 		if err := e.signalRepo.UpdateSignal(ctx, pending[i]); err != nil {
@@ -247,4 +264,70 @@ func classifyOutcome(direction string, returnPct float64) string {
 	default:
 		return domain.OutcomePending
 	}
+}
+
+// evaluateFlexible computes flexible exit outcomes using daily price data.
+// A flexible WIN means the price moved at least targetPct in the signal's
+// direction at ANY point within the evaluation window — capturing intra-week
+// wins that the fixed weekly-close evaluation misses.
+func (e *Evaluator) evaluateFlexible(ctx context.Context, sig *domain.PersistedSignal, targetPct float64) {
+	if sig.EntryPrice == 0 || e.dailyRepo == nil {
+		return
+	}
+
+	from := sig.ReportDate.AddDate(0, 0, 1)  // day after report
+	to := sig.ReportDate.AddDate(0, 0, 28)    // 4 weeks out
+	dailyPrices, err := e.dailyRepo.GetDailyRange(ctx, sig.ContractCode, from, to)
+	if err != nil || len(dailyPrices) == 0 {
+		return
+	}
+
+	bestReturn := 0.0
+	bestDay := 0
+
+	for i, dp := range dailyPrices {
+		dayNum := i + 1
+		ret := computeReturn(sig.EntryPrice, dp.Close, sig.Inverse)
+
+		// Check if move is in the signal's direction
+		isFavorable := (sig.Direction == "BULLISH" && ret > 0) || (sig.Direction == "BEARISH" && ret < 0)
+		absRet := math.Abs(ret)
+
+		// Track best favorable move
+		if isFavorable && absRet > math.Abs(bestReturn) {
+			bestReturn = ret
+			bestDay = dayNum
+		}
+
+		// Flexible outcome: WIN if target hit at any point within window
+		if isFavorable && absRet >= targetPct {
+			if dayNum <= 5 && sig.FlexOutcome1W == "" {
+				sig.FlexOutcome1W = domain.OutcomeWin
+			}
+			if dayNum <= 10 && sig.FlexOutcome2W == "" {
+				sig.FlexOutcome2W = domain.OutcomeWin
+			}
+			if dayNum <= 20 && sig.FlexOutcome4W == "" {
+				sig.FlexOutcome4W = domain.OutcomeWin
+			}
+		}
+	}
+
+	// Fill LOSS for windows that have fully elapsed without hitting target.
+	// Use actual trading days observed (len of dailyPrices) rather than
+	// wall-clock time.Since() to avoid marking windows as LOSS prematurely
+	// when daily price data hasn't been ingested yet.
+	tradingDays := len(dailyPrices)
+	if tradingDays >= 5 && sig.FlexOutcome1W == "" {
+		sig.FlexOutcome1W = domain.OutcomeLoss
+	}
+	if tradingDays >= 10 && sig.FlexOutcome2W == "" {
+		sig.FlexOutcome2W = domain.OutcomeLoss
+	}
+	if tradingDays >= 20 && sig.FlexOutcome4W == "" {
+		sig.FlexOutcome4W = domain.OutcomeLoss
+	}
+
+	sig.MaxFavorableReturn = math.Round(bestReturn*10000) / 10000
+	sig.MaxFavorableDay = bestDay
 }

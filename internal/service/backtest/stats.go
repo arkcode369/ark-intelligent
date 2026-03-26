@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
@@ -89,6 +90,29 @@ func (sc *StatsCalculator) ComputeAllBySignalType(ctx context.Context) (map[stri
 	return result, nil
 }
 
+// ComputeByRegime returns stats grouped by FRED regime label.
+func (sc *StatsCalculator) ComputeByRegime(ctx context.Context) (map[string]*domain.BacktestStats, error) {
+	signals, err := sc.signalRepo.GetAllSignals(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get all signals: %w", err)
+	}
+
+	grouped := make(map[string][]domain.PersistedSignal)
+	for _, s := range signals {
+		regime := s.FREDRegime
+		if regime == "" {
+			regime = "UNKNOWN"
+		}
+		grouped[regime] = append(grouped[regime], s)
+	}
+
+	result := make(map[string]*domain.BacktestStats, len(grouped))
+	for regime, sigs := range grouped {
+		result[regime] = computeStats(sigs, "Regime:"+regime)
+	}
+	return result, nil
+}
+
 // computeStats calculates BacktestStats from a slice of signals.
 func computeStats(signals []domain.PersistedSignal, label string) *domain.BacktestStats {
 	stats := &domain.BacktestStats{
@@ -138,8 +162,8 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 			}
 		}
 
-		// 1W outcomes
-		if s.Outcome1W != "" && s.Outcome1W != domain.OutcomePending {
+		// 1W outcomes — exclude EXPIRED signals (no real outcome data).
+		if s.Outcome1W != "" && s.Outcome1W != domain.OutcomePending && s.Outcome1W != domain.OutcomeExpired {
 			eval1W++
 			sumConfidenceEval += s.Confidence // BUG-H2: accumulate confidence for evaluated-only population
 			sumReturn1W += s.Return1W
@@ -158,8 +182,8 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 			}
 		}
 
-		// 2W outcomes
-		if s.Outcome2W != "" && s.Outcome2W != domain.OutcomePending {
+		// 2W outcomes — exclude EXPIRED.
+		if s.Outcome2W != "" && s.Outcome2W != domain.OutcomePending && s.Outcome2W != domain.OutcomeExpired {
 			eval2W++
 			sumReturn2W += s.Return2W
 			if s.Outcome2W == domain.OutcomeWin {
@@ -167,8 +191,8 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 			}
 		}
 
-		// 4W outcomes
-		if s.Outcome4W != "" && s.Outcome4W != domain.OutcomePending {
+		// 4W outcomes — exclude EXPIRED.
+		if s.Outcome4W != "" && s.Outcome4W != domain.OutcomePending && s.Outcome4W != domain.OutcomeExpired {
 			eval4W++
 			sumReturn4W += s.Return4W
 			if s.Outcome4W == domain.OutcomeWin {
@@ -288,18 +312,21 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 	stats.MinSamplesNeeded = mathutil.MinSampleSize(0.05, 0.95)
 
 	// Risk-adjusted performance metrics (require evaluated 1W data)
+	// Use per-signal returns for profit factor/Kelly, but aggregate by calendar
+	// week for Sharpe/MaxDD to avoid inflating drawdown from parallel signals.
 	stats.WeeklyReturns = weeklyReturns
 	if len(weeklyReturns) >= 2 {
-		// Sharpe ratio: assume 0 risk-free rate for simplicity (weekly)
-		stats.SharpeRatio = round2(mathutil.SharpeRatio(weeklyReturns, 0))
+		// Aggregate returns by calendar week for risk metrics.
+		// Multiple signals in the same week are averaged (equal-weighted portfolio).
+		aggWeekly := aggregateByWeek(signals)
 
-		// Max drawdown
-		maxDD, _, _ := mathutil.MaxDrawdown(weeklyReturns)
-		stats.MaxDrawdown = round2(maxDD)
-
-		// Calmar ratio: annualize the average weekly return (* 52) and compare to max drawdown
-		avgAnnualReturn := stats.AvgReturn1W * 52
-		stats.CalmarRatio = round2(mathutil.CalmarRatio(avgAnnualReturn, stats.MaxDrawdown))
+		if len(aggWeekly) >= 2 {
+			stats.SharpeRatio = round2(mathutil.SharpeRatio(aggWeekly, 0))
+			maxDD, _, _ := mathutil.MaxDrawdown(aggWeekly)
+			stats.MaxDrawdown = round2(maxDD)
+			avgAnnualReturn := stats.AvgReturn1W * 52
+			stats.CalmarRatio = round2(mathutil.CalmarRatio(avgAnnualReturn, stats.MaxDrawdown))
+		}
 	}
 
 	// Profit factor, expected value, Kelly criterion
@@ -309,8 +336,10 @@ func computeStats(signals []domain.PersistedSignal, label string) *domain.Backte
 		winRate := float64(winCount1W) / float64(eval1W)
 		stats.ExpectedValue = round4(mathutil.ExpectedValue(winRate, stats.AvgWinReturn1W, stats.AvgLossReturn1W))
 
-		winLossRatio := stats.AvgWinReturn1W / math.Abs(stats.AvgLossReturn1W)
-		stats.KellyFraction = round4(mathutil.KellyCriterion(winRate, winLossRatio))
+		if math.Abs(stats.AvgLossReturn1W) > 0 {
+			winLossRatio := stats.AvgWinReturn1W / math.Abs(stats.AvgLossReturn1W)
+			stats.KellyFraction = round4(mathutil.KellyCriterion(winRate, winLossRatio))
+		}
 	}
 
 	return stats
@@ -322,4 +351,47 @@ func round2(v float64) float64 {
 
 func round4(v float64) float64 {
 	return math.Round(v*10000) / 10000
+}
+
+// aggregateByWeek groups evaluated 1W signal returns by ISO calendar week
+// and computes the average return per week. This produces a proper time series
+// for Sharpe ratio and drawdown calculations, avoiding the distortion of
+// treating parallel signals as sequential trades.
+func aggregateByWeek(signals []domain.PersistedSignal) []float64 {
+	type weekAcc struct {
+		sumReturn float64
+		count     int
+		isoWeek   string
+	}
+	weekMap := make(map[string]*weekAcc)
+
+	for _, s := range signals {
+		if s.Outcome1W == "" || s.Outcome1W == domain.OutcomePending {
+			continue
+		}
+		y, w := s.ReportDate.ISOWeek()
+		key := fmt.Sprintf("%04d-W%02d", y, w)
+		acc, ok := weekMap[key]
+		if !ok {
+			acc = &weekAcc{isoWeek: key}
+			weekMap[key] = acc
+		}
+		acc.sumReturn += s.Return1W
+		acc.count++
+	}
+
+	// Sort weeks chronologically
+	weeks := make([]string, 0, len(weekMap))
+	for k := range weekMap {
+		weeks = append(weeks, k)
+	}
+	sort.Strings(weeks)
+
+	// Average return per week (equal-weighted portfolio of that week's signals)
+	result := make([]float64, 0, len(weeks))
+	for _, k := range weeks {
+		acc := weekMap[k]
+		result = append(result, acc.sumReturn/float64(acc.count))
+	}
+	return result
 }

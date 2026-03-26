@@ -2219,28 +2219,56 @@ func (f *Formatter) FormatBacktestStats(stats *domain.BacktestStats) string {
 
 	b.WriteString(fmt.Sprintf("\xF0\x9F\x93\x8A <b>Backtest: %s</b>\n\n", stats.GroupLabel))
 
-	b.WriteString(fmt.Sprintf("<code>Signals  :</code> %d total, %d evaluated\n", stats.TotalSignals, stats.Evaluated))
-	b.WriteString(fmt.Sprintf("<code>Win 1W   :</code> %.1f%% (n=%d)\n", stats.WinRate1W, stats.Evaluated1W))
-	b.WriteString(fmt.Sprintf("<code>Win 2W   :</code> %.1f%% (n=%d)\n", stats.WinRate2W, stats.Evaluated2W))
-	b.WriteString(fmt.Sprintf("<code>Win 4W   :</code> %.1f%% (n=%d)\n", stats.WinRate4W, stats.Evaluated4W))
-	b.WriteString(fmt.Sprintf("<code>Best     :</code> %s at %.1f%%\n\n", stats.BestPeriod, stats.BestWinRate))
+	b.WriteString(fmt.Sprintf("<code>Signals  :</code> %d total, %d evaluated\n\n", stats.TotalSignals, stats.Evaluated))
 
-	b.WriteString(fmt.Sprintf("<code>Avg Ret 1W:</code> %.2f%%\n", stats.AvgReturn1W))
-	b.WriteString(fmt.Sprintf("<code>Avg Ret 2W:</code> %.2f%%\n", stats.AvgReturn2W))
-	b.WriteString(fmt.Sprintf("<code>Avg Ret 4W:</code> %.2f%%\n\n", stats.AvgReturn4W))
-
+	// Primary metrics: Expectancy and Profit Factor
+	b.WriteString("<b>Performance</b>\n")
+	if stats.ExpectedValue != 0 {
+		evIcon := "\xE2\x9C\x85" // checkmark
+		evLabel := "Positive Edge"
+		if stats.ExpectedValue > 0.3 {
+			evLabel = "Strong Edge"
+		} else if stats.ExpectedValue <= 0 {
+			evIcon = "\xF0\x9F\x94\xB4" // red circle
+			evLabel = "Negative Edge"
+		} else if stats.ExpectedValue < 0.1 {
+			evIcon = "\xE2\x9A\xA0\xEF\xB8\x8F" // warning
+			evLabel = "Marginal Edge"
+		}
+		b.WriteString(fmt.Sprintf("<code>EV/Trade :</code> %+.4f%% %s %s\n", stats.ExpectedValue, evIcon, evLabel))
+	}
+	if stats.ProfitFactor != 0 {
+		pfIcon := "\xE2\x9C\x85"
+		if stats.ProfitFactor < 1.0 {
+			pfIcon = "\xF0\x9F\x94\xB4"
+		}
+		b.WriteString(fmt.Sprintf("<code>Profit F :</code> %.2f %s\n", stats.ProfitFactor, pfIcon))
+	}
 	if stats.AvgWinReturn1W != 0 || stats.AvgLossReturn1W != 0 {
 		b.WriteString(fmt.Sprintf("<code>Avg Win  :</code> +%.2f%%\n", stats.AvgWinReturn1W))
-		b.WriteString(fmt.Sprintf("<code>Avg Loss :</code> %.2f%%\n\n", stats.AvgLossReturn1W))
+		b.WriteString(fmt.Sprintf("<code>Avg Loss :</code> %.2f%%\n", stats.AvgLossReturn1W))
 	}
+	b.WriteString("\n")
+
+	// Secondary metrics: Win rates
+	b.WriteString("<b>Win Rates</b>\n")
+	b.WriteString(fmt.Sprintf("<code>1W:</code> %.1f%% (n=%d) | <code>2W:</code> %.1f%% (n=%d) | <code>4W:</code> %.1f%% (n=%d)\n",
+		stats.WinRate1W, stats.Evaluated1W,
+		stats.WinRate2W, stats.Evaluated2W,
+		stats.WinRate4W, stats.Evaluated4W))
+	b.WriteString(fmt.Sprintf("<code>Best     :</code> %s at %.1f%%\n\n", stats.BestPeriod, stats.BestWinRate))
+
+	b.WriteString("<b>Average Returns</b>\n")
+	b.WriteString(fmt.Sprintf("<code>1W:</code> %.2f%% | <code>2W:</code> %.2f%% | <code>4W:</code> %.2f%%\n\n",
+		stats.AvgReturn1W, stats.AvgReturn2W, stats.AvgReturn4W))
 
 	// Risk-adjusted performance metrics
-	if stats.SharpeRatio != 0 || stats.MaxDrawdown != 0 || stats.ProfitFactor != 0 {
+	if stats.SharpeRatio != 0 || stats.MaxDrawdown != 0 {
 		b.WriteString("<b>Risk-Adjusted Metrics</b>\n")
 		if stats.SharpeRatio != 0 {
-			sharpeIcon := "\xE2\x9C\x85" // checkmark
+			sharpeIcon := "\xE2\x9C\x85"
 			if stats.SharpeRatio < 0.5 {
-				sharpeIcon = "\xE2\x9A\xA0\xEF\xB8\x8F" // warning
+				sharpeIcon = "\xE2\x9A\xA0\xEF\xB8\x8F"
 			}
 			b.WriteString(fmt.Sprintf("<code>Sharpe   :</code> %.2f %s\n", stats.SharpeRatio, sharpeIcon))
 		}
@@ -2253,16 +2281,6 @@ func (f *Formatter) FormatBacktestStats(stats *domain.BacktestStats) string {
 		}
 		if stats.CalmarRatio != 0 {
 			b.WriteString(fmt.Sprintf("<code>Calmar   :</code> %.2f\n", stats.CalmarRatio))
-		}
-		if stats.ProfitFactor != 0 {
-			pfIcon := "\xE2\x9C\x85"
-			if stats.ProfitFactor < 1.0 {
-				pfIcon = "\xF0\x9F\x94\xB4" // red circle
-			}
-			b.WriteString(fmt.Sprintf("<code>Profit F :</code> %.2f %s\n", stats.ProfitFactor, pfIcon))
-		}
-		if stats.ExpectedValue != 0 {
-			b.WriteString(fmt.Sprintf("<code>Exp Value:</code> %.4f%%\n", stats.ExpectedValue))
 		}
 		if stats.KellyFraction != 0 {
 			b.WriteString(fmt.Sprintf("<code>Kelly %%  :</code> %.1f%%\n", stats.KellyFraction*100))

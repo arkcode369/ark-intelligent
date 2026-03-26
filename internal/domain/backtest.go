@@ -51,6 +51,13 @@ type PersistedSignal struct {
 	Outcome2W string `json:"outcome_2w,omitempty"`
 	Outcome4W string `json:"outcome_4w,omitempty"`
 
+	// Flexible exit outcomes (WIN if target return hit at any point within window)
+	MaxFavorableReturn float64 `json:"max_favorable_return,omitempty"` // Best favorable return within 4W
+	MaxFavorableDay    int     `json:"max_favorable_day,omitempty"`    // Trading day of best return (1-20)
+	FlexOutcome1W      string  `json:"flex_outcome_1w,omitempty"`      // WIN if target hit within 1W
+	FlexOutcome2W      string  `json:"flex_outcome_2w,omitempty"`
+	FlexOutcome4W      string  `json:"flex_outcome_4w,omitempty"`
+
 	EvaluatedAt time.Time `json:"evaluated_at,omitempty"`
 }
 

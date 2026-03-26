@@ -7,6 +7,7 @@ import (
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/pkg/mathutil"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
@@ -242,6 +243,21 @@ func (b *Bootstrapper) bootstrapContract(ctx context.Context, mapping domain.Pri
 // returning at most `maxWeeks` records in oldest-first order.
 // IMPORTANT: allRecords MUST be in oldest-first (chronological) order.
 func buildHistoryWindow(allRecords []domain.COTRecord, targetDate time.Time, maxWeeks int) []domain.COTRecord {
+	// Runtime assertion: verify input is sorted oldest-first.
+	// If the caller passes newest-first data, the break-on-After logic
+	// would silently return an empty or truncated window, producing
+	// incorrect backtest results.
+	for i := 1; i < len(allRecords); i++ {
+		if allRecords[i].ReportDate.Before(allRecords[i-1].ReportDate) {
+			log.Error().
+				Time("prev", allRecords[i-1].ReportDate).
+				Time("curr", allRecords[i].ReportDate).
+				Int("index", i).
+				Msg("buildHistoryWindow: allRecords not in chronological order — results may be incorrect")
+			break // log once, don't spam
+		}
+	}
+
 	var window []domain.COTRecord
 	for i := range allRecords {
 		if allRecords[i].ReportDate.After(targetDate) {
@@ -255,4 +271,71 @@ func buildHistoryWindow(allRecords []domain.COTRecord, targetDate time.Time, max
 		window = window[len(window)-maxWeeks:]
 	}
 	return window
+}
+
+// BackfillCalibration retroactively adjusts stored signal confidence using
+// Platt scaling fitted on evaluated signals. This corrects the calibration
+// gap for bootstrap signals that were created with raw rule-based confidence.
+//
+// Call this AFTER evaluation has populated outcomes, so Platt fitting has data.
+// Safe to call multiple times — only updates signals whose confidence changes
+// by more than 1 percentage point.
+func BackfillCalibration(ctx context.Context, signalRepo ports.SignalRepository) (int, error) {
+	allSignals, err := signalRepo.GetAllSignals(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("get all signals: %w", err)
+	}
+
+	// Group evaluated signals by type for Platt fitting
+	byType := make(map[string][]domain.PersistedSignal)
+	for _, s := range allSignals {
+		if s.Outcome1W != "" && s.Outcome1W != domain.OutcomePending {
+			byType[s.SignalType] = append(byType[s.SignalType], s)
+		}
+	}
+
+	// Fit Platt scaling per signal type (need >= 20 evaluated signals)
+	type plattCoeffs struct{ a, b float64 }
+	coeffs := make(map[string]*plattCoeffs)
+	for sigType, sigs := range byType {
+		if len(sigs) < 20 {
+			continue
+		}
+		var confs []float64
+		var outcomes []bool
+		for _, s := range sigs {
+			confs = append(confs, s.Confidence)
+			outcomes = append(outcomes, s.Outcome1W == domain.OutcomeWin)
+		}
+		a, b := mathutil.PlattScaling(confs, outcomes)
+		if a != 0 || b != 0 {
+			coeffs[sigType] = &plattCoeffs{a: a, b: b}
+		}
+	}
+
+	if len(coeffs) == 0 {
+		return 0, nil // no types with enough data for Platt
+	}
+
+	// Update all signals with calibrated confidence
+	updated := 0
+	for _, s := range allSignals {
+		pc, ok := coeffs[s.SignalType]
+		if !ok {
+			continue
+		}
+		calibrated := mathutil.PlattCalibrate(s.Confidence, pc.a, pc.b)
+		// Only update if meaningful change (> 1pp)
+		diff := calibrated - s.Confidence
+		if diff > 1 || diff < -1 {
+			s.RawConfidence = s.Confidence
+			s.Confidence = calibrated
+			if err := signalRepo.UpdateSignal(ctx, s); err != nil {
+				continue // skip on error, non-fatal
+			}
+			updated++
+		}
+	}
+
+	return updated, nil
 }

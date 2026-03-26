@@ -295,10 +295,13 @@ type COTAnalysis struct {
 	SmartDumbDivergence bool   `json:"smart_dumb_divergence"`
 
 	// --- D. Open Interest Analysis ---
+	OpenInterest      float64 `json:"open_interest"`
 	OpenInterestChg   float64 `json:"open_interest_chg"`
 	OIPctChange       float64 `json:"oi_pct_change"`
 	OITrend           string  `json:"oi_trend"`
 	Top4Concentration float64 `json:"top4_concentration"`
+	Top4LongPct       float64 `json:"top4_long_pct"`  // Top-4 long % of OI
+	Top4ShortPct      float64 `json:"top4_short_pct"` // Top-4 short % of OI
 	Top8Concentration float64 `json:"top8_concentration"`
 	SpreadPctOfOI     float64 `json:"spread_pct_of_oi"` // Now populated from API spread fields
 

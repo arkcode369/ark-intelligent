@@ -271,6 +271,7 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	}
 
 	// 4. Percentage of Open Interest
+	analysis.OpenInterest = current.OpenInterest
 	if current.OpenInterest > 0 {
 		oi := current.OpenInterest
 		analysis.PctOfOI = analysis.NetPosition / oi * 100
@@ -459,6 +460,8 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 
 	// 17-18. Concentration (top 4/8 traders)
 	analysis.Top4Concentration = (current.Top4Long + current.Top4Short) / 2
+	analysis.Top4LongPct = current.Top4Long
+	analysis.Top4ShortPct = current.Top4Short
 	analysis.Top8Concentration = (current.Top8Long + current.Top8Short) / 2
 
 	// === Extreme Detection ===
@@ -489,7 +492,7 @@ func (a *Analyzer) computeMetrics(current domain.COTRecord, history []domain.COT
 	}
 
 	// Thin market detection: flag when key category has very few traders
-	const thinThreshold = 15 // < 15 traders in a dominant category = concentrated
+	const thinThreshold = 10 // tightened from 15: <10 traders = genuinely thin
 	analysis.ThinMarketAlert = false
 	if rt == "TFF" {
 		switch {
@@ -599,8 +602,17 @@ func computeSentiment(a domain.COTAnalysis) float64 {
 	indexScore := (a.COTIndex - 50) * 2
 	score += indexScore * 0.40
 
-	// Commercial positioning (30% weight)
-	commScore := (50 - a.COTIndexComm) * 2
+	// Commercial positioning (30% weight).
+	// For TFF (forex/indices/bonds): dealers are counterparties, not smart money.
+	//   High dealer COTIndex → forced long by client selling → bearish → invert.
+	// For DISAGGREGATED (commodities): commercials are producers/hedgers (smart money).
+	//   High commercial COTIndex → producers net long → bullish → same direction.
+	var commScore float64
+	if a.Contract.ReportType == "DISAGGREGATED" {
+		commScore = (a.COTIndexComm - 50) * 2 // same direction: high = bullish
+	} else {
+		commScore = (50 - a.COTIndexComm) * 2 // inverted: high = bearish (contrarian to dealers)
+	}
 	score += commScore * 0.30
 
 	// Momentum contribution (20% weight) — continuous scaling

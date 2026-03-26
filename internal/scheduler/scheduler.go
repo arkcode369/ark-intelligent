@@ -886,12 +886,14 @@ func (s *Scheduler) persistSignals(ctx context.Context, signals []cotsvc.Signal,
 			}
 		}
 
-		// Look up entry price — skip signal if no price available
-		priceRec, err := s.deps.PriceRepo.GetLatest(ctx, sig.ContractCode)
+		// Look up entry price at report date — not latest price, to avoid look-ahead bias.
+		// COT data reflects positioning as of Tuesday, released Friday. Use the report
+		// date's close price so the entry price matches the signal's information set.
+		priceRec, err := s.deps.PriceRepo.GetPriceAt(ctx, sig.ContractCode, analysis.ReportDate)
 		if err != nil || priceRec == nil || priceRec.Close <= 0 {
 			log.Debug().
 				Str("contract", sig.ContractCode).
-				Msg("No entry price available — skipping signal persistence")
+				Msg("No entry price at report date — skipping signal persistence")
 			continue
 		}
 		entryClose := priceRec.Close

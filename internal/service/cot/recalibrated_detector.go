@@ -159,8 +159,11 @@ func computeStatsMap(grouped map[string][]domain.PersistedSignal) map[string]*Si
 		}
 
 		// Determine edge / suppression status
+		// Use expected value (EV) rather than raw win rate for suppression.
+		// A system with 45% win rate but 2.5 profit factor has positive EV
+		// and should NOT be suppressed.
 		if evaluated >= minSampleForSuppression {
-			if st.WinRate >= 50 {
+			if st.AvgReturn > 0 || st.WinRate >= 50 {
 				st.HasEdge = true
 			} else {
 				st.Suppressed = true

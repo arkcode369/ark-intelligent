@@ -257,6 +257,50 @@ func (r *DailyPriceRepo) GetDailyHistoryBefore(_ context.Context, contractCode s
 	return records, nil
 }
 
+// GetDailyRange returns daily price records for a contract between two dates (inclusive).
+// Returns records in chronological (oldest-first) order.
+func (r *DailyPriceRepo) GetDailyRange(_ context.Context, contractCode string, from, to time.Time) ([]domain.DailyPrice, error) {
+	var records []domain.DailyPrice
+
+	prefix := dailyPricePrefix(contractCode)
+	seekKey := []byte(fmt.Sprintf("dprice:%s:%s", contractCode, from.Format("20060102")))
+	endKey := fmt.Sprintf("dprice:%s:%s", contractCode, to.Format("20060102"))
+
+	err := r.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		opts.PrefetchValues = true
+		opts.PrefetchSize = 50
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			if string(item.Key()) > endKey+"\xff" {
+				break
+			}
+			err := item.Value(func(val []byte) error {
+				var rec domain.DailyPrice
+				if err := json.Unmarshal(val, &rec); err != nil {
+					return err
+				}
+				records = append(records, rec)
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("read daily price range: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get daily price range %s: %w", contractCode, err)
+	}
+
+	return records, nil
+}
+
 // CountDailyRecords returns the total number of daily price records for a contract.
 func (r *DailyPriceRepo) CountDailyRecords(_ context.Context, contractCode string) (int, error) {
 	count := 0
