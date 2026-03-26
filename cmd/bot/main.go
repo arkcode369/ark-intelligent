@@ -208,7 +208,7 @@ func main() {
 	newsFetcher := newssvc.NewMQL5Fetcher()
 
 	// Price fetcher (3-layer resilience: TwelveData → AlphaVantage → Yahoo + CoinGecko)
-	priceFetcher := pricesvc.NewFetcher(cfg.TwelveDataAPIKey, cfg.AlphaVantageAPIKeys)
+	priceFetcher := pricesvc.NewFetcher(cfg.TwelveDataAPIKeys, cfg.AlphaVantageAPIKeys)
 	if cfg.CoinGeckoAPIKey != "" {
 		priceFetcher.SetCoinGeckoKey(cfg.CoinGeckoAPIKey)
 		log.Info().Msg("CoinGecko API key configured for TOTAL3 market cap data")
@@ -244,8 +244,9 @@ func main() {
 	})
 
 	sched.Start(ctx, &scheduler.Intervals{
-		COTFetch:   cfg.COTFetchInterval,
-		PriceFetch: cfg.PriceFetchInterval,
+		COTFetch:      cfg.COTFetchInterval,
+		PriceFetch:    cfg.PriceFetchInterval,
+		IntradayFetch: cfg.IntradayFetchInterval,
 	})
 
 	// News Background Scheduler (always starts — uses MQL5 Economic Calendar)

@@ -21,6 +21,7 @@ type RetentionPolicy struct {
 	HistoryMaxAge  time.Duration // Default: 24 months
 	PriceMaxAge    time.Duration // Default: 260 weeks (5 years)
 	SignalMaxAge   time.Duration // Default: 52 weeks
+	IntradayMaxAge time.Duration // Default: 60 days
 }
 
 // DefaultRetentionPolicy returns the standard retention windows.
@@ -32,6 +33,7 @@ func DefaultRetentionPolicy() RetentionPolicy {
 		HistoryMaxAge:  24 * 30 * 24 * time.Hour,   // ~24 months
 		PriceMaxAge:    260 * 7 * 24 * time.Hour,   // ~5 years (matches seasonal analysis window)
 		SignalMaxAge:   52 * 7 * 24 * time.Hour,    // 52 weeks
+		IntradayMaxAge: 60 * 24 * time.Hour,        // 60 days
 	}
 }
 
@@ -94,6 +96,13 @@ func (d *DB) RunRetentionCleanup(ctx context.Context, policy RetentionPolicy) (i
 	n, err = d.deleteByDatePrefix("sig:", 1, now.Add(-policy.SignalMaxAge))
 	if err != nil {
 		return totalDeleted, fmt.Errorf("cleanup sig: %w", err)
+	}
+	totalDeleted += n
+
+	// 9. Intraday bars (iprice:{contract}:{interval}:{YYYYMMDDHHmm}) — special 12-char timestamp
+	n, err = d.deleteByTimestampPrefix("iprice:", now.Add(-policy.IntradayMaxAge))
+	if err != nil {
+		return totalDeleted, fmt.Errorf("cleanup iprice: %w", err)
 	}
 	totalDeleted += n
 
@@ -161,5 +170,55 @@ func (d *DB) deleteByDatePrefix(prefix string, dateSegmentIndex int, cutoff time
 	}
 
 	retentionLog.Info().Int("deleted", len(deleteKeys)).Str("prefix", prefix).Str("cutoff", cutoffStr).Msg("Deleted expired keys")
+	return len(deleteKeys), nil
+}
+
+// deleteByTimestampPrefix scans all keys with the given prefix and compares
+// the last 12 characters as a YYYYMMDDHHmm timestamp for deletion.
+// Used for intraday keys (iprice:{contract}:{interval}:{YYYYMMDDHHmm}).
+func (d *DB) deleteByTimestampPrefix(prefix string, cutoff time.Time) (int, error) {
+	cutoffStr := cutoff.UTC().Format("200601021504")
+	var deleteKeys [][]byte
+
+	err := d.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = []byte(prefix)
+		opts.PrefetchValues = false
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek([]byte(prefix)); it.ValidForPrefix([]byte(prefix)); it.Next() {
+			key := string(it.Item().Key())
+			// Key format: iprice:CODE:INTERVAL:YYYYMMDDHHmm
+			if len(key) >= 12 {
+				tsPart := key[len(key)-12:]
+				if tsPart < cutoffStr {
+					deleteKeys = append(deleteKeys, it.Item().KeyCopy(nil))
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	if len(deleteKeys) == 0 {
+		return 0, nil
+	}
+
+	wb := d.db.NewWriteBatch()
+	defer wb.Cancel()
+	for _, k := range deleteKeys {
+		if err := wb.Delete(k); err != nil {
+			return 0, fmt.Errorf("delete key: %w", err)
+		}
+	}
+	if err := wb.Flush(); err != nil {
+		return 0, fmt.Errorf("flush deletes: %w", err)
+	}
+
+	retentionLog.Info().Int("deleted", len(deleteKeys)).Str("prefix", prefix).Msg("Deleted expired intraday keys")
 	return len(deleteKeys), nil
 }

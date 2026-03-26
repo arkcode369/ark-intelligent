@@ -23,7 +23,8 @@ var log = logger.Component("price")
 // CoinGecko is used as a dedicated provider for crypto market cap data (TOTAL3).
 type Fetcher struct {
 	httpClient     *http.Client
-	twelveDataKey  string
+	twelveDataKeys []string
+	tdKeyIndex     uint64 // atomic counter for round-robin TD key selection
 	avKeys         []string
 	avKeyIndex     uint64 // atomic counter for round-robin AV key selection
 	coinGeckoKey   string
@@ -35,12 +36,12 @@ type Fetcher struct {
 
 // NewFetcher creates a new price fetcher with the given API keys.
 // Both keys are optional — Yahoo Finance fallback requires no key.
-func NewFetcher(twelveDataKey string, avKeys []string) *Fetcher {
+func NewFetcher(twelveDataKeys []string, avKeys []string) *Fetcher {
 	return &Fetcher{
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		twelveDataKey:  twelveDataKey,
+		twelveDataKeys: twelveDataKeys,
 		avKeys:         avKeys,
 		cbTwelveData:   circuitbreaker.New("twelve-data", 3, 5*time.Minute),
 		cbAlphaVantage: circuitbreaker.New("alpha-vantage", 3, 5*time.Minute),
@@ -197,7 +198,7 @@ func (f *Fetcher) FetchWeekly(ctx context.Context, mapping domain.PriceSymbolMap
 	}
 
 	// Try Twelve Data first (if key configured and symbol available)
-	if f.twelveDataKey != "" && mapping.TwelveData != "" {
+	if len(f.twelveDataKeys) > 0 && mapping.TwelveData != "" {
 		records, err := f.fetchTwelveData(ctx, mapping, weeks)
 		if err == nil && len(records) > 0 {
 			return records, nil
@@ -263,7 +264,7 @@ func (f *Fetcher) fetchTwelveData(ctx context.Context, mapping domain.PriceSymbo
 	err := f.cbTwelveData.Execute(func() error {
 		url := fmt.Sprintf(
 			"https://api.twelvedata.com/time_series?symbol=%s&interval=1week&outputsize=%d&apikey=%s",
-			mapping.TwelveData, weeks, f.twelveDataKey,
+			mapping.TwelveData, weeks, f.nextTDKey(),
 		)
 
 		body, err := f.doGet(ctx, url, nil)
@@ -807,6 +808,14 @@ func (f *Fetcher) nextAVKey() string {
 	}
 	idx := atomic.AddUint64(&f.avKeyIndex, 1)
 	return f.avKeys[idx%uint64(len(f.avKeys))]
+}
+
+func (f *Fetcher) nextTDKey() string {
+	if len(f.twelveDataKeys) == 0 {
+		return ""
+	}
+	idx := atomic.AddUint64(&f.tdKeyIndex, 1)
+	return f.twelveDataKeys[idx%uint64(len(f.twelveDataKeys))]
 }
 
 func (f *Fetcher) doGet(ctx context.Context, url string, headers map[string]string) ([]byte, error) {

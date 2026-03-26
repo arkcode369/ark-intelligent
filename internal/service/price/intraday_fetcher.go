@@ -14,7 +14,7 @@ import (
 // Uses TwelveData as primary (supports 4h interval), Yahoo as fallback (1h only).
 func (f *Fetcher) FetchIntraday(ctx context.Context, mapping domain.PriceSymbolMapping, interval string, bars int) ([]domain.IntradayBar, error) {
 	// TwelveData is the primary source for 4H data
-	if f.twelveDataKey != "" && mapping.TwelveData != "" {
+	if len(f.twelveDataKeys) > 0 && mapping.TwelveData != "" {
 		records, err := f.fetchTwelveDataIntraday(ctx, mapping, interval, bars)
 		if err == nil && len(records) > 0 {
 			return records, nil
@@ -95,7 +95,7 @@ func (f *Fetcher) fetchTwelveDataIntraday(ctx context.Context, mapping domain.Pr
 	err := f.cbTwelveData.Execute(func() error {
 		url := fmt.Sprintf(
 			"https://api.twelvedata.com/time_series?symbol=%s&interval=%s&outputsize=%d&apikey=%s",
-			mapping.TwelveData, interval, bars, f.twelveDataKey,
+			mapping.TwelveData, interval, bars, f.nextTDKey(),
 		)
 
 		body, err := f.doGet(ctx, url, nil)

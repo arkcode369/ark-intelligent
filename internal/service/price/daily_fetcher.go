@@ -26,7 +26,7 @@ func (f *Fetcher) FetchDaily(ctx context.Context, mapping domain.PriceSymbolMapp
 	}
 
 	// Fallback to TwelveData
-	if f.twelveDataKey != "" && mapping.TwelveData != "" {
+	if len(f.twelveDataKeys) > 0 && mapping.TwelveData != "" {
 		records, err := f.fetchTwelveDataDaily(ctx, mapping, days)
 		if err == nil && len(records) > 0 {
 			return records, nil
@@ -197,7 +197,7 @@ func (f *Fetcher) fetchTwelveDataDaily(ctx context.Context, mapping domain.Price
 	err := f.cbTwelveData.Execute(func() error {
 		url := fmt.Sprintf(
 			"https://api.twelvedata.com/time_series?symbol=%s&interval=1day&outputsize=%d&apikey=%s",
-			mapping.TwelveData, days, f.twelveDataKey,
+			mapping.TwelveData, days, f.nextTDKey(),
 		)
 
 		body, err := f.doGet(ctx, url, nil)

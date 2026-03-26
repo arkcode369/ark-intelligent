@@ -77,8 +77,9 @@ type Deps struct {
 
 // Intervals configures how often each job runs.
 type Intervals struct {
-	COTFetch   time.Duration // Default: 6h
-	PriceFetch time.Duration // Default: 6h
+	COTFetch      time.Duration // Default: 6h
+	PriceFetch    time.Duration // Default: 6h
+	IntradayFetch time.Duration // Default: 15m
 }
 
 // ---------------------------------------------------------------------------
@@ -150,9 +151,13 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 		jobCount++
 	}
 
-	// Intraday (4H) price fetch
+	// Multi-timeframe intraday fetch (15m base -> aggregate to 30m/1h/4h/6h/12h)
 	if s.deps.PriceFetcher != nil && s.deps.IntradayRepo != nil {
-		s.startJobWithDelay(ctx, "intraday-price-fetch", 4*time.Hour, 90*time.Second, s.jobIntradayPriceFetch)
+		intradayInterval := intervals.IntradayFetch
+		if intradayInterval == 0 {
+			intradayInterval = 15 * time.Minute
+		}
+		s.startJobWithDelay(ctx, "intraday-price-fetch", intradayInterval, 90*time.Second, s.jobIntradayPriceFetch)
 		jobCount++
 	}
 
@@ -663,7 +668,7 @@ func (s *Scheduler) jobDailyPriceFetch(ctx context.Context) error {
 	return nil
 }
 
-// jobIntradayPriceFetch fetches 4H OHLCV data for all contracts and stores it.
+// jobIntradayPriceFetch fetches 15m OHLCV data and aggregates to all higher timeframes.
 func (s *Scheduler) jobIntradayPriceFetch(ctx context.Context) error {
 	if s.deps.PriceFetcher == nil || s.deps.IntradayRepo == nil {
 		return nil
@@ -674,19 +679,42 @@ func (s *Scheduler) jobIntradayPriceFetch(ctx context.Context) error {
 		return fmt.Errorf("intraday price fetch requires concrete Fetcher type")
 	}
 
-	// Fetch 60 bars of 4H data (~10 days, enough for IMA55)
-	bars, report, err := fetcher.FetchAllIntraday(ctx, "4h", 60)
+	// Fetch 5000 bars of 15m data (~52 days, max TwelveData outputsize)
+	baseBars, report, err := fetcher.FetchAllIntraday(ctx, "15m", 5000)
 	if err != nil {
 		log.Warn().Err(err).Msg("intraday price fetch failed")
 		return fmt.Errorf("intraday price fetch: %w", err)
 	}
 
-	if len(bars) > 0 {
-		if err := s.deps.IntradayRepo.SaveBars(ctx, bars); err != nil {
-			return fmt.Errorf("save intraday bars: %w", err)
-		}
-		log.Info().Int("bars", len(bars)).Msg("intraday 4H data saved")
+	if len(baseBars) == 0 {
+		return nil
 	}
+
+	// Group base bars by contract for aggregation
+	byContract := make(map[string][]domain.IntradayBar)
+	for _, bar := range baseBars {
+		byContract[bar.ContractCode] = append(byContract[bar.ContractCode], bar)
+	}
+
+	// Aggregate and save all timeframes
+	totalSaved := 0
+	for _, contractBars := range byContract {
+		aggregated := pricesvc.AggregateFromBase(contractBars)
+		for _, bars := range aggregated {
+			if len(bars) > 0 {
+				if err := s.deps.IntradayRepo.SaveBars(ctx, bars); err != nil {
+					log.Warn().Err(err).Str("interval", bars[0].Interval).Msg("save aggregated bars failed")
+					continue
+				}
+				totalSaved += len(bars)
+			}
+		}
+	}
+
+	log.Info().
+		Int("base_bars", len(baseBars)).
+		Int("total_saved", totalSaved).
+		Msg("multi-timeframe intraday data saved")
 
 	if report != nil {
 		log.Info().

@@ -41,11 +41,15 @@ type Config struct {
 	AIMaxDaily int           // Max AI calls per day
 
 	// Price APIs (optional — graceful degradation to Yahoo fallback)
-	TwelveDataAPIKey    string        // Twelve Data API key (for forex + gold)
+	TwelveDataAPIKeys   []string      // Twelve Data API keys (comma-separated for round-robin)
 	AlphaVantageAPIKeys []string      // Alpha Vantage API keys (comma-separated, for oil + treasury)
 	CoinGeckoAPIKey     string        // CoinGecko API key (for TOTAL3 altcoin market cap)
 	PriceFetchInterval  time.Duration // How often to fetch price data
 	PriceHistoryWeeks   int           // How many weeks of price history to bootstrap
+
+	// Intraday multi-timeframe
+	IntradayFetchInterval time.Duration // How often to fetch intraday data (default: 15m)
+	IntradayRetentionDays int           // How many days of intraday data to retain (default: 60)
 
 	// Claude Chatbot (optional — graceful degradation without)
 	ClaudeEndpoint       string        // Claude API proxy URL
@@ -108,14 +112,25 @@ func MustLoad() *Config {
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 
 		// Price APIs
-		TwelveDataAPIKey:    getEnv("TWELVE_DATA_API_KEY", ""),
+		TwelveDataAPIKeys:   getStringSlice("TWELVE_DATA_API_KEYS"),
 		AlphaVantageAPIKeys: getStringSlice("ALPHA_VANTAGE_API_KEYS"),
 		CoinGeckoAPIKey:     getEnv("COINGECKO_API_KEY", ""),
 		PriceFetchInterval:  getDuration("PRICE_FETCH_INTERVAL", 6*time.Hour),
 		PriceHistoryWeeks:   getInt("PRICE_HISTORY_WEEKS", 52),
 
+		// Intraday multi-timeframe
+		IntradayFetchInterval: getDuration("INTRADAY_FETCH_INTERVAL", 15*time.Minute),
+		IntradayRetentionDays: getInt("INTRADAY_RETENTION_DAYS", 60),
+
 		// Impact Bootstrap
 		ImpactBootstrapMonths: getInt("IMPACT_BOOTSTRAP_MONTHS", 12),
+	}
+
+	// Backward compat: TWELVE_DATA_API_KEY (singular) works for single key
+	if len(cfg.TwelveDataAPIKeys) == 0 {
+		if single := getEnv("TWELVE_DATA_API_KEY", ""); single != "" {
+			cfg.TwelveDataAPIKeys = []string{single}
+		}
 	}
 
 	cfg.validate()
@@ -132,9 +147,9 @@ func (c *Config) HasClaude() bool {
 	return c.ClaudeEndpoint != ""
 }
 
-// HasTwelveData returns true if Twelve Data API key is configured.
+// HasTwelveData returns true if at least one Twelve Data API key is configured.
 func (c *Config) HasTwelveData() bool {
-	return c.TwelveDataAPIKey != ""
+	return len(c.TwelveDataAPIKeys) > 0
 }
 
 // HasAlphaVantage returns true if at least one Alpha Vantage API key is configured.
