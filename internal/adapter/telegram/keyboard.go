@@ -529,26 +529,43 @@ func (kb *KeyboardBuilder) ImpactBackMenu() ports.InlineKeyboard {
 // ---------------------------------------------------------------------------
 
 // BacktestMenu builds the backtest sub-command selection keyboard.
+// Organized into three sections: Core, Analysis, Advanced, plus currency drill-down.
 func (kb *KeyboardBuilder) BacktestMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
+			// --- Core ---
 			{
 				{Text: "📊 Overview", CallbackData: "cmd:backtest:all"},
 				{Text: "📋 By Signal Type", CallbackData: "cmd:backtest:signals"},
 			},
+			// --- Analysis ---
 			{
 				{Text: "⏱ Timing", CallbackData: "cmd:backtest:timing"},
 				{Text: "🔄 Walk-Forward", CallbackData: "cmd:backtest:wf"},
-			},
-			{
 				{Text: "⚖️ Weights", CallbackData: "cmd:backtest:weights"},
-				{Text: "🧠 Smart Money", CallbackData: "cmd:backtest:sm"},
 			},
 			{
+				{Text: "🧠 Smart Money", CallbackData: "cmd:backtest:sm"},
 				{Text: "📊 MFE/MAE", CallbackData: "cmd:backtest:excursion"},
-				{Text: "📈 Trend Filter", CallbackData: "cmd:backtest:trend"},
+				{Text: "📈 Trend", CallbackData: "cmd:backtest:trend"},
 			},
-			// Currency row
+			// --- Advanced ---
+			{
+				{Text: "🎯 Baseline", CallbackData: "cmd:backtest:baseline"},
+				{Text: "🌐 Regime", CallbackData: "cmd:backtest:regime"},
+				{Text: "📐 Matrix", CallbackData: "cmd:backtest:matrix"},
+			},
+			{
+				{Text: "🎲 Monte Carlo", CallbackData: "cmd:backtest:mc"},
+				{Text: "📈 Portfolio", CallbackData: "cmd:backtest:portfolio"},
+				{Text: "💰 Cost", CallbackData: "cmd:backtest:cost"},
+			},
+			{
+				{Text: "🔗 Dedup", CallbackData: "cmd:backtest:dedup"},
+				{Text: "🎰 Ruin", CallbackData: "cmd:backtest:ruin"},
+				{Text: "🔍 Audit", CallbackData: "cmd:backtest:audit"},
+			},
+			// --- Currency drill-down ---
 			{
 				{Text: "EUR", CallbackData: "cmd:backtest:EUR"},
 				{Text: "GBP", CallbackData: "cmd:backtest:GBP"},

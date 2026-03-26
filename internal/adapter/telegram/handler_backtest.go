@@ -139,7 +139,7 @@ func (h *Handler) backtestMenu(ctx context.Context, chatID string, calc *backtes
 	} else {
 		summary += "<i>No signal data available yet.</i>\n"
 	}
-	summary += "\n<i>Select a view:</i>"
+	summary += "\n<i>Select a view from Core, Analysis, or Advanced:</i>"
 
 	kb := h.kb.BacktestMenu()
 	_, err = h.bot.SendWithKeyboard(ctx, chatID, summary, kb)
