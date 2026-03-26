@@ -580,7 +580,8 @@ func (h *Handler) backtestMonteCarlo(ctx context.Context, chatID string) error {
 	}
 
 	var b strings.Builder
-	b.WriteString("\xF0\x9F\x8E\xB2 <b>Monte Carlo Simulation</b> (1000 runs)\n\n")
+	b.WriteString("\xF0\x9F\x8E\xB2 <b>Monte Carlo Simulation</b> (1000 runs)\n")
+	b.WriteString(fmt.Sprintf("<i>Resampling %d weekly portfolio returns into simulated 52W years</i>\n\n", result.WeeksResampled))
 
 	b.WriteString("<b>Cumulative Return (52W)</b>\n")
 	b.WriteString(fmt.Sprintf("<code>Median   :</code> %+.2f%%\n", result.MedianReturn))

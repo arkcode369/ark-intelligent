@@ -120,7 +120,7 @@ func computeHorizonStat(label string, signals []domain.PersistedSignal, extract 
 
 	for i := range signals {
 		outcome, ret := extract(&signals[i])
-		if outcome == "" || outcome == domain.OutcomePending {
+		if outcome == "" || outcome == domain.OutcomePending || outcome == domain.OutcomeExpired {
 			continue
 		}
 		evaluated++

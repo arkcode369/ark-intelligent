@@ -71,7 +71,7 @@ func (a *TrendFilterAnalyzer) Analyze(ctx context.Context) (*TrendFilterStats, e
 	)
 
 	for _, sig := range signals {
-		if sig.Outcome1W == "" || sig.Outcome1W == domain.OutcomePending {
+		if sig.Outcome1W == "" || sig.Outcome1W == domain.OutcomePending || sig.Outcome1W == domain.OutcomeExpired {
 			continue
 		}
 
