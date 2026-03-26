@@ -1636,6 +1636,21 @@ func (h *Handler) macroRegimePerformance(ctx context.Context, chatID string, msg
 	return err
 }
 
+// currentMacroRegimeName returns the current FRED macro regime name from cache.
+// Returns "" if FRED data is unavailable (never blocks on a network fetch).
+func (h *Handler) currentMacroRegimeName(ctx context.Context) string {
+	// Only use cached data — don't trigger a FRED fetch just for sentiment context
+	if fred.CacheAge() < 0 {
+		return ""
+	}
+	data, err := fred.GetCachedOrFetch(ctx)
+	if err != nil || data == nil {
+		return ""
+	}
+	regime := fred.ClassifyMacroRegime(data)
+	return regime.Name
+}
+
 // ---------------------------------------------------------------------------
 // /sentiment — Sentiment Survey Dashboard
 // ---------------------------------------------------------------------------
@@ -1667,7 +1682,7 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 			"⚠️ Sentiment data currently unavailable from all sources. Try again later.")
 	}
 
-	htmlMsg := h.fmt.FormatSentiment(data)
+	htmlMsg := h.fmt.FormatSentiment(data, h.currentMacroRegimeName(ctx))
 	return h.bot.EditMessage(ctx, chatID, placeholderID, htmlMsg)
 }
 

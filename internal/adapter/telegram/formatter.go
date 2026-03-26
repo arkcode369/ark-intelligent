@@ -3062,7 +3062,8 @@ func (f *Formatter) FormatSmartMoneyAccuracy(results []backtestsvc.SmartMoneyAcc
 // ---------------------------------------------------------------------------
 
 // FormatSentiment renders the sentiment survey dashboard as Telegram HTML.
-func (f *Formatter) FormatSentiment(data *sentiment.SentimentData) string {
+// macroRegime is the current FRED regime name (e.g. "GOLDILOCKS"); pass "" to skip regime context.
+func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime string) string {
 	var b strings.Builder
 
 	b.WriteString("🧠 <b>SENTIMENT SURVEY DASHBOARD</b>\n")
@@ -3141,11 +3142,68 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData) string {
 		b.WriteString("<code>Data unavailable — set FIRECRAWL_API_KEY to enable</code>\n")
 	}
 
+	// --- AAII contrarian signal ---
+	if data.AAIIAvailable {
+		if data.AAIIBearish >= 50 {
+			b.WriteString("<code>Signal: </code>🟢 <b>Contrarian BUY</b> — Bearish >50%% historically precedes rallies\n")
+		} else if data.AAIIBullish >= 50 {
+			b.WriteString("<code>Signal: </code>🔴 <b>Contrarian SELL</b> — Bullish >50%% historically precedes pullbacks\n")
+		}
+	}
+
 	// --- Composite reading ---
-	if data.CNNAvailable || data.AAIIAvailable {
-		b.WriteString("\n<b>Interpretation</b>\n")
+	b.WriteString("\n<b>Combined Reading</b>\n")
+	compositeWritten := false
+
+	// Cross-source agreement amplifies the signal
+	if data.CNNAvailable && data.AAIIAvailable {
+		cnnFear := data.CNNFearGreed <= 25
+		cnnGreed := data.CNNFearGreed >= 75
+		aaiiFear := data.AAIIBearish >= 50
+		aaiiGreed := data.AAIIBullish >= 50
+
+		if cnnFear && aaiiFear {
+			b.WriteString("🟢 <b>STRONG CONTRARIAN BUY</b>\n")
+			b.WriteString("<i>Kedua sumber menunjukkan ketakutan ekstrem — secara historis ini sinyal beli yang kuat. Pasar sering rebound dari level ini.</i>\n")
+			compositeWritten = true
+		} else if cnnGreed && aaiiGreed {
+			b.WriteString("🔴 <b>STRONG CONTRARIAN SELL</b>\n")
+			b.WriteString("<i>Kedua sumber menunjukkan keserakahan ekstrem — waspada koreksi. Euforia berlebihan jarang bertahan lama.</i>\n")
+			compositeWritten = true
+		} else if (cnnFear && !aaiiFear) || (!cnnFear && aaiiFear) {
+			b.WriteString("🟡 <b>MIXED FEAR</b>\n")
+			b.WriteString("<i>Hanya salah satu sumber menunjukkan fear ekstrem — sinyal belum sekuat jika keduanya sepakat.</i>\n")
+			compositeWritten = true
+		} else if (cnnGreed && !aaiiGreed) || (!cnnGreed && aaiiGreed) {
+			b.WriteString("🟡 <b>MIXED GREED</b>\n")
+			b.WriteString("<i>Hanya salah satu sumber menunjukkan greed ekstrem — belum cukup kuat untuk sinyal jual.</i>\n")
+			compositeWritten = true
+		}
+	}
+
+	if !compositeWritten {
 		b.WriteString("<i>Sentiment surveys are contrarian indicators.\n")
 		b.WriteString("Extreme readings often mark turning points.</i>\n")
+	}
+
+	// --- Regime context ---
+	if macroRegime != "" {
+		b.WriteString(fmt.Sprintf("\n<b>Konteks Regime: %s</b>\n", macroRegime))
+		sentimentFearish := (data.CNNAvailable && data.CNNFearGreed <= 35) || (data.AAIIAvailable && data.AAIIBearish >= 45)
+		sentimentGreedish := (data.CNNAvailable && data.CNNFearGreed >= 65) || (data.AAIIAvailable && data.AAIIBullish >= 45)
+
+		switch {
+		case sentimentFearish && (macroRegime == "GOLDILOCKS" || macroRegime == "DISINFLATIONARY"):
+			b.WriteString("<i>Fear di tengah ekonomi yang sehat — peluang beli lebih kredibel.</i>\n")
+		case sentimentFearish && (macroRegime == "RECESSION" || macroRegime == "STRESS"):
+			b.WriteString("<i>Fear di tengah tekanan makro nyata — ketakutan mungkin memang tepat. Hati-hati mengandalkan sinyal contrarian.</i>\n")
+		case sentimentGreedish && (macroRegime == "RECESSION" || macroRegime == "STRESS"):
+			b.WriteString("<i>Greed di tengah resesi/stress — disconnected dari fundamental. Risiko koreksi tinggi.</i>\n")
+		case sentimentGreedish && macroRegime == "GOLDILOCKS":
+			b.WriteString("<i>Greed di kondisi ideal — wajar tapi tetap waspada jika sudah terlalu jauh.</i>\n")
+		default:
+			b.WriteString("<i>Sentiment sejalan dengan kondisi makro saat ini — tidak ada divergensi signifikan.</i>\n")
+		}
 	}
 
 	return b.String()
