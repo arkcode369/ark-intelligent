@@ -40,7 +40,13 @@ func (ce *CorrelationEngine) BuildMatrix(ctx context.Context, period int) (*doma
 			continue
 		}
 
-		records, err := ce.dailyRepo.GetDailyHistory(ctx, mapping.ContractCode, period+5)
+		// Request extra calendar days to account for weekends/holidays.
+		// 20 trading days ≈ 28 calendar days; period*2 gives comfortable margin.
+		calendarDays := period * 2
+		if calendarDays < period+10 {
+			calendarDays = period + 10
+		}
+		records, err := ce.dailyRepo.GetDailyHistory(ctx, mapping.ContractCode, calendarDays)
 		if err != nil {
 			fmt.Printf("[correlation] SKIP %s: fetch error: %v\n", cur, err)
 			skippedFetchErr = append(skippedFetchErr, cur)
@@ -197,7 +203,7 @@ func (ce *CorrelationEngine) diagnoseDataAvailability(ctx context.Context) strin
 			withoutData = append(withoutData, cur+" (no mapping)")
 			continue
 		}
-		records, err := ce.dailyRepo.GetDailyHistory(ctx, mapping.ContractCode, 10)
+		records, err := ce.dailyRepo.GetDailyHistory(ctx, mapping.ContractCode, 30)
 		if err != nil {
 			withoutData = append(withoutData, cur+fmt.Sprintf(" (error: %v)", err))
 			continue
