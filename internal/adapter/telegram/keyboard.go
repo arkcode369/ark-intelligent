@@ -513,6 +513,17 @@ func (kb *KeyboardBuilder) ImpactEventMenu(category string) ports.InlineKeyboard
 	return ports.InlineKeyboard{Rows: rows}
 }
 
+// ImpactBackMenu builds a back-to-categories button for impact detail views.
+func (kb *KeyboardBuilder) ImpactBackMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "<< Back to Categories", CallbackData: "imp:back"},
+			},
+		},
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Backtest Keyboards
 // ---------------------------------------------------------------------------

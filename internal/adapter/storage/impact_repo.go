@@ -167,8 +167,8 @@ func (r *ImpactRepo) GetEventImpactSummary(_ context.Context, eventTitle string)
 		pctChanges  []float64
 	}
 
-	// Priority: use shortest horizon available (15m > 30m > 1h > 4h)
-	horizonPriority := map[string]int{"15m": 0, "30m": 1, "1h": 2, "4h": 3}
+	// Priority: use shortest horizon available (15m > 30m > 1h > 4h > 1w)
+	horizonPriority := map[string]int{"15m": 0, "30m": 1, "1h": 2, "4h": 3, "1w": 4}
 
 	// First pass: find best (shortest) horizon available per currency+sigma
 	type impKey struct {
@@ -277,20 +277,40 @@ func (r *ImpactRepo) GetTrackedEvents(_ context.Context) ([]string, error) {
 
 	var events []string
 	for name := range seen {
-		// Denormalize: dashes to spaces, then title-case each word.
+		// Denormalize: dashes to spaces, then smart title-case
+		// that preserves known abbreviations.
 		display := strings.ReplaceAll(name, "-", " ")
-		display = titleCase(display)
+		display = smartTitleCase(display)
 		events = append(events, display)
 	}
 	sort.Strings(events)
 	return events, nil
 }
 
-// titleCase capitalises the first letter of each word.
-func titleCase(s string) string {
+// knownUpperWords lists finance abbreviations that should stay all-caps.
+var knownUpperWords = map[string]bool{
+	"cpi": true, "ppi": true, "gdp": true, "pmi": true, "pce": true,
+	"nfp": true, "adp": true, "ism": true, "boj": true, "boe": true,
+	"ecb": true, "rba": true, "boc": true, "rbnz": true, "snb": true,
+	"fomc": true, "cb": true, "fed": true, "us": true, "uk": true,
+	"eu": true, "nz": true, "au": true,
+}
+
+// knownLowerWords lists words that should stay lowercase in titles.
+var knownLowerWords = map[string]bool{
+	"m/m": true, "q/q": true, "y/y": true,
+}
+
+// smartTitleCase capitalises words while preserving finance abbreviations.
+func smartTitleCase(s string) string {
 	words := strings.Fields(s)
 	for i, w := range words {
-		if len(w) > 0 {
+		lower := strings.ToLower(w)
+		if knownUpperWords[lower] {
+			words[i] = strings.ToUpper(w)
+		} else if knownLowerWords[lower] {
+			words[i] = lower
+		} else if len(w) > 0 {
 			words[i] = strings.ToUpper(w[:1]) + w[1:]
 		}
 	}

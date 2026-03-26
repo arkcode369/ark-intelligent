@@ -2942,7 +2942,7 @@ func (f *Formatter) FormatEventImpact(eventTitle string, summaries []domain.Even
 	var b strings.Builder
 
 	b.WriteString(fmt.Sprintf("\xF0\x9F\x93\x8A <b>EVENT IMPACT: %s</b>\n", strings.ToUpper(html.EscapeString(eventTitle))))
-	b.WriteString("<i>Historical price reaction by surprise magnitude (1h horizon)</i>\n\n")
+	b.WriteString("<i>Historical price reaction by surprise magnitude</i>\n\n")
 
 	if len(summaries) == 0 {
 		b.WriteString("No impact data recorded yet for this event.\n")
@@ -2969,12 +2969,8 @@ func (f *Formatter) FormatEventImpact(eventTitle string, summaries []domain.Even
 		b.WriteString(strings.Repeat("\xE2\x94\x80", 36) + "\n")
 
 		for _, item := range items {
-			direction := " "
-			if item.AvgPriceImpactPips > 0 {
-				direction = "+"
-			}
-			b.WriteString(fmt.Sprintf("%-14s %s%6.1f %+7.1f %4d\n",
-				item.SigmaBucket, direction, math.Abs(item.AvgPriceImpactPips), item.MedianImpact, item.Occurrences))
+			b.WriteString(fmt.Sprintf("%-14s %+7.1f %+7.1f %4d\n",
+				item.SigmaBucket, item.AvgPriceImpactPips, item.MedianImpact, item.Occurrences))
 		}
 		b.WriteString("</pre>\n")
 	}

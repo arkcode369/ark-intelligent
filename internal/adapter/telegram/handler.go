@@ -2265,9 +2265,9 @@ func (h *Handler) cbImpact(ctx context.Context, chatID string, msgID int, userID
 		}
 
 		impactHTML := h.fmt.FormatEventImpact(query, summaries)
-		// Send as new message (impact data can be long)
-		_, err = h.bot.SendHTML(ctx, chatID, impactHTML)
-		return err
+		// Edit existing message with impact data + back button
+		kb := h.kb.ImpactBackMenu()
+		return h.bot.EditWithKeyboard(ctx, chatID, msgID, impactHTML, kb)
 	}
 
 	return nil
