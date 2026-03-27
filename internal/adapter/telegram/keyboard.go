@@ -670,11 +670,11 @@ func (kb *KeyboardBuilder) SeasonalDetailMenu(currency string) ports.InlineKeybo
 }
 
 // ---------------------------------------------------------------------------
-// Signal Keyboards
+// Bias Keyboards
 // ---------------------------------------------------------------------------
 
-// COTDetailMenuWithSignals builds a COT detail keyboard with optional signal view button.
-func (kb *KeyboardBuilder) COTDetailMenuWithSignals(code string, isRaw bool, signalCount int, currency string) ports.InlineKeyboard {
+// COTDetailMenuWithBias builds a COT detail keyboard with optional bias view button.
+func (kb *KeyboardBuilder) COTDetailMenuWithBias(code string, isRaw bool, signalCount int, currency string) ports.InlineKeyboard {
 	var rows [][]ports.InlineButton
 
 	if isRaw {
@@ -687,10 +687,10 @@ func (kb *KeyboardBuilder) COTDetailMenuWithSignals(code string, isRaw bool, sig
 		})
 	}
 
-	// Signal view button if there are signals
+	// Bias view button if there are biases
 	if signalCount > 3 {
 		rows = append(rows, []ports.InlineButton{
-			{Text: fmt.Sprintf("🎯 View All %d Signals", signalCount), CallbackData: fmt.Sprintf("cmd:signals:%s", currency)},
+			{Text: fmt.Sprintf("🎯 View All %d Biases", signalCount), CallbackData: fmt.Sprintf("cmd:bias:%s", currency)},
 		})
 	}
 
@@ -717,7 +717,7 @@ func (kb *KeyboardBuilder) MainMenu() ports.InlineKeyboard {
 				{Text: "🦅 Unified Outlook", CallbackData: "out:unified"},
 			},
 			{
-				{Text: "📊 Signals", CallbackData: "cmd:signals"},
+				{Text: "📊 Bias", CallbackData: "cmd:bias"},
 				{Text: "🏦 Macro", CallbackData: "cmd:macro"},
 				{Text: "📈 Rank", CallbackData: "cmd:rank"},
 			},

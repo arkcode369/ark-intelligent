@@ -142,7 +142,7 @@ func NewHandler(
 	bot.RegisterCommand("/calendar", h.cmdCalendar)
 	bot.RegisterCommand("/rank", h.cmdRank)
 	bot.RegisterCommand("/macro", h.cmdMacro)
-	bot.RegisterCommand("/signals", h.cmdSignals)
+	bot.RegisterCommand("/bias", h.cmdBias)
 	bot.RegisterCommand("/backtest", h.cmdBacktest)
 	bot.RegisterCommand("/accuracy", h.cmdAccuracy)
 	bot.RegisterCommand("/report", h.cmdReport)
@@ -205,7 +205,7 @@ func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, arg
 <b>📊 Market Data</b>
 /cot — COT overview · <code>/cot EUR</code> detail
 /rank — Currency strength (price + COT)
-/signals — Signal detection (7 types, ATR-adjusted)
+/bias — Directional bias (COT positioning, 7 types)
 /calendar — Economic calendar · <code>/calendar week</code>
 /price — Daily price context · <code>/price EUR</code>
 /levels — Support/resistance levels · <code>/levels EUR</code>
@@ -453,7 +453,7 @@ func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode
 			}
 			signals := recalDet.DetectAll([]domain.COTAnalysis{*analysis}, histMap, rCtx, priceCtxMap)
 			if len(signals) > 0 {
-				html += h.fmt.FormatSignalsSummary(signals)
+				html += h.fmt.FormatBiasSummary(signals)
 			}
 		}
 	}
@@ -947,13 +947,13 @@ func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, ar
 }
 
 // ---------------------------------------------------------------------------
-// /signals — COT Signal Detection
+// /bias — COT Directional Bias
 // ---------------------------------------------------------------------------
 
-func (h *Handler) cmdSignals(ctx context.Context, chatID string, userID int64, args string) error {
+func (h *Handler) cmdBias(ctx context.Context, chatID string, userID int64, args string) error {
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
-		_, err = h.bot.SendHTML(ctx, chatID, "No COT data available for signal detection.")
+		_, err = h.bot.SendHTML(ctx, chatID, "No COT data available for bias detection.")
 		return err
 	}
 
@@ -972,17 +972,17 @@ func (h *Handler) cmdSignals(ctx context.Context, chatID string, userID int64, a
 		_ = recalDetector.LoadTypeStats(ctx)
 	}
 	var riskCtx *domain.RiskContext
-	var priceCtxsSignals map[string]*domain.PriceContext
+	var priceCtxsBias map[string]*domain.PriceContext
 	if h.priceRepo != nil {
 		rb := pricesvc.NewRiskContextBuilder(h.priceRepo)
 		riskCtx, _ = rb.Build(ctx)
 		// Build price contexts for ATR volatility multiplier
 		ctxBuilder := pricesvc.NewContextBuilder(h.priceRepo)
 		if pcs, pcErr := ctxBuilder.BuildAll(ctx); pcErr == nil {
-			priceCtxsSignals = pcs
+			priceCtxsBias = pcs
 		}
 	}
-	signals := recalDetector.DetectAll(analyses, historyMap, riskCtx, priceCtxsSignals)
+	signals := recalDetector.DetectAll(analyses, historyMap, riskCtx, priceCtxsBias)
 
 	// Filter by currency if specified
 	filterCurrency := strings.ToUpper(strings.TrimSpace(args))
@@ -996,7 +996,7 @@ func (h *Handler) cmdSignals(ctx context.Context, chatID string, userID int64, a
 		signals = filtered
 	}
 
-	html := h.fmt.FormatSignalsHTML(signals, filterCurrency)
+	html := h.fmt.FormatBiasHTML(signals, filterCurrency)
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
@@ -1294,8 +1294,8 @@ func (h *Handler) cbQuickCommand(ctx context.Context, chatID string, msgID int, 
 	}
 
 	switch cmd {
-	case "signals":
-		return h.cmdSignals(ctx, chatID, userID, args)
+	case "bias":
+		return h.cmdBias(ctx, chatID, userID, args)
 	case "macro":
 		return h.cmdMacro(ctx, chatID, userID, args)
 	case "rank":

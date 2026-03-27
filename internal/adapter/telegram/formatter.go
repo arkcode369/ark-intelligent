@@ -2581,28 +2581,28 @@ func (f *Formatter) FormatRegimeLabel(regime string, confidence float64, factors
 }
 
 // ---------------------------------------------------------------------------
-// Signal Detection Formatting
+// Bias Detection Formatting
 // ---------------------------------------------------------------------------
 
-// FormatSignalsHTML formats detected COT signals for Telegram display.
-func (f *Formatter) FormatSignalsHTML(signals []cot.Signal, filterCurrency string) string {
+// FormatBiasHTML formats detected COT directional biases for Telegram display.
+func (f *Formatter) FormatBiasHTML(signals []cot.Signal, filterCurrency string) string {
 	var b strings.Builder
 
-	b.WriteString("\xF0\x9F\x8E\xAF <b>COT SIGNAL DETECTION</b>\n")
+	b.WriteString("\xF0\x9F\x8E\xAF <b>COT DIRECTIONAL BIAS</b>\n")
 	if filterCurrency != "" {
 		b.WriteString(fmt.Sprintf("<i>Filtered: %s</i>\n", filterCurrency))
 	}
 	b.WriteString("\n")
 
 	if len(signals) == 0 {
-		b.WriteString("No actionable signals detected.\n")
-		b.WriteString("\n<i>Tip: Signals fire on extreme positioning, smart money moves,\ndivergences, momentum shifts, and thin markets.</i>")
+		b.WriteString("No actionable biases detected.\n")
+		b.WriteString("\n<i>Tip: Biases fire on extreme positioning, smart money moves,\ndivergences, momentum shifts, and thin markets.</i>")
 		return b.String()
 	}
 
 	for i, s := range signals {
 		if i >= 10 {
-			b.WriteString(fmt.Sprintf("\n<i>... +%d more signals</i>", len(signals)-10))
+			b.WriteString(fmt.Sprintf("\n<i>... +%d more biases</i>", len(signals)-10))
 			break
 		}
 
@@ -2623,18 +2623,18 @@ func (f *Formatter) FormatSignalsHTML(signals []cot.Signal, filterCurrency strin
 		b.WriteString("\n")
 	}
 
-	b.WriteString("<i>Tip: </i><code>/signals EUR</code> | <code>/cot EUR</code>")
+	b.WriteString("<i>Tip: </i><code>/bias EUR</code> | <code>/cot EUR</code>")
 	return b.String()
 }
 
-// FormatSignalsSummary formats a compact signal summary for the /cot detail view.
-func (f *Formatter) FormatSignalsSummary(signals []cot.Signal) string {
+// FormatBiasSummary formats a compact bias summary for the /cot detail view.
+func (f *Formatter) FormatBiasSummary(signals []cot.Signal) string {
 	if len(signals) == 0 {
 		return ""
 	}
 
 	var b strings.Builder
-	b.WriteString("\n\xF0\x9F\x8E\xAF <b>Active Signals:</b>\n")
+	b.WriteString("\n\xF0\x9F\x8E\xAF <b>Active Biases:</b>\n")
 
 	for i, s := range signals {
 		if i >= 3 {

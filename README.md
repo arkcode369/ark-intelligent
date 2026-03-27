@@ -47,7 +47,7 @@ Hexagonal (ports & adapters) architecture in Go 1.22:
 | `/cot`       | COT positioning summary (all currencies or one)  |
 | `/calendar`  | Upcoming high-impact economic events              |
 | `/outlook`   | AI-generated weekly macro outlook                 |
-| `/signals`   | Active COT trading signals with strength ratings  |
+| `/bias`      | Directional bias from COT positioning analysis    |
 | `/rank`      | Currency strength ranking from COT + macro data   |
 | `/macro`     | FRED macro dashboard (yields, labor, inflation)   |
 | `/prefs`     | Configure personal alert preferences              |

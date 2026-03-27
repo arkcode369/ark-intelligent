@@ -561,7 +561,7 @@ func formatStrongSignalAlert(signals []cotsvc.Signal) string {
 			dirIcon, s.Currency, string(s.Type), s.Strength, s.Confidence))
 		b.WriteString(fmt.Sprintf("<i>%s</i>\n\n", s.Description))
 	}
-	b.WriteString("<i>Use /signals for full signal list</i>")
+	b.WriteString("<i>Use /bias for full bias list</i>")
 	return b.String()
 }
 

@@ -285,7 +285,7 @@ func templateFallback() string {
 	b.WriteString("/outlook — Weekly market outlook\n")
 	b.WriteString("/calendar — Economic calendar\n")
 	b.WriteString("/macro — FRED macro dashboard\n")
-	b.WriteString("/signals — Active trading signals\n")
+	b.WriteString("/bias — Directional bias overview\n")
 	b.WriteString("/rank — Currency strength ranking\n\n")
 	b.WriteString("<i>Please try again later for AI chat features.</i>")
 	return b.String()

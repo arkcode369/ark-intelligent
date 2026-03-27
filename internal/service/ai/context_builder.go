@@ -118,7 +118,7 @@ The bot has these slash commands users can run directly. When relevant, suggest 
 - /outlook — Weekly macro + COT market outlook (AI-generated)
 - /calendar — Economic calendar for the current week
 - /macro — FRED macro regime dashboard (yield curve, PCE, unemployment, DXY)
-- /signals — Active COT-based trading signals with entry/SL/TP
+- /bias — Active COT-based directional biases (positioning analysis)
 - /rank — Currency strength ranking based on COT + macro data
 - /backtest — Historical backtest performance of COT signals
 - /accuracy — Quick signal accuracy summary

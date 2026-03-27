@@ -579,10 +579,10 @@ func (sd *SignalDetector) detectThinMarket(a domain.COTAnalysis) *Signal {
 	}
 }
 
-// FormatSignals creates a Telegram-formatted signal summary.
-func FormatSignals(signals []Signal) string {
+// FormatBias creates a Telegram-formatted bias summary.
+func FormatBias(signals []Signal) string {
 	if len(signals) == 0 {
-		return "No actionable COT signals detected."
+		return "No actionable COT biases detected."
 	}
 
 	var b strings.Builder
