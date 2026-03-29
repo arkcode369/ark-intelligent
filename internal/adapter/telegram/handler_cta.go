@@ -507,7 +507,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	if result != nil && result.Snapshot != nil && result.Snapshot.SuperTrend != nil {
 		st := result.Snapshot.SuperTrend
 		if st.Series != nil {
-			ind.SuperTrend = reverseToOldestFirst(st.Series)
+			ind.SuperTrend = reverseToOldestFirst(st.Series) // NaN sanitized by reverseToOldestFirst
 		}
 		if st.DirectionSeries != nil {
 			ind.SuperTrendDir = reverseStringsToOldestFirst(st.DirectionSeries)
@@ -531,7 +531,14 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	// Fibonacci levels
 	fibData := chartFib{}
 	if result != nil && result.Snapshot != nil && result.Snapshot.Fibonacci != nil {
-		fibData.Levels = result.Snapshot.Fibonacci.Levels
+		// Sanitize Fibonacci levels (remove NaN/Inf)
+		sanitizedLevels := make(map[string]float64)
+		for k, v := range result.Snapshot.Fibonacci.Levels {
+			if !math.IsNaN(v) && !math.IsInf(v, 0) {
+				sanitizedLevels[k] = v
+			}
+		}
+		fibData.Levels = sanitizedLevels
 	}
 
 	// Patterns
@@ -625,12 +632,26 @@ func findCTAScript() string {
 	return "scripts/cta_chart.py"
 }
 
-// reverseToOldestFirst converts a newest-first slice to oldest-first.
+// sanitizeFloats replaces NaN and Inf with 0 so JSON marshaling works.
+func sanitizeFloats(s []float64) []float64 {
+	for i, v := range s {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			s[i] = 0
+		}
+	}
+	return s
+}
+
+// reverseToOldestFirst converts a newest-first slice to oldest-first and sanitizes NaN/Inf.
 func reverseToOldestFirst(s []float64) []float64 {
 	n := len(s)
 	out := make([]float64, n)
 	for i, v := range s {
-		out[n-1-i] = v
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			out[n-1-i] = 0
+		} else {
+			out[n-1-i] = v
+		}
 	}
 	return out
 }

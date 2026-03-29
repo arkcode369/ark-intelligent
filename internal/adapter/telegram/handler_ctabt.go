@@ -324,8 +324,14 @@ type backtestChartParams struct {
 }
 
 func (h *Handler) generateBacktestChart(result *ta.BacktestResult, symbol, timeframe string) ([]byte, error) {
-	if result == nil || len(result.EquityCurve) < 2 {
-		return nil, fmt.Errorf("insufficient equity curve data")
+	if result == nil {
+		return nil, fmt.Errorf("no backtest result")
+	}
+
+	// If no trades, create a flat equity line with start equity
+	equityCurve := result.EquityCurve
+	if len(equityCurve) < 2 {
+		equityCurve = []float64{result.Params.StartEquity, result.Params.StartEquity}
 	}
 
 	// Build trade dates and PnL arrays (one entry per trade / equity point)
@@ -337,9 +343,9 @@ func (h *Handler) generateBacktestChart(result *ta.BacktestResult, symbol, timef
 	}
 
 	// Compute drawdown from equity curve
-	drawdown := make([]float64, len(result.EquityCurve))
-	peak := result.EquityCurve[0]
-	for i, eq := range result.EquityCurve {
+	drawdown := make([]float64, len(equityCurve))
+	peak := equityCurve[0]
+	for i, eq := range equityCurve {
 		if eq > peak {
 			peak = eq
 		}
@@ -349,7 +355,7 @@ func (h *Handler) generateBacktestChart(result *ta.BacktestResult, symbol, timef
 	}
 
 	input := backtestChartInput{
-		EquityCurve: result.EquityCurve,
+		EquityCurve: equityCurve,
 		TradeDates:  tradeDates,
 		TradePnL:    tradePnL,
 		Drawdown:    drawdown,
@@ -365,6 +371,28 @@ func (h *Handler) generateBacktestChart(result *ta.BacktestResult, symbol, timef
 			PF:          result.ProfitFactor,
 		},
 	}
+
+	// Sanitize NaN/Inf for JSON marshaling
+	sanitizeBTFloat := func(v float64) float64 {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0
+		}
+		return v
+	}
+	for i := range input.EquityCurve {
+		input.EquityCurve[i] = sanitizeBTFloat(input.EquityCurve[i])
+	}
+	for i := range input.TradePnL {
+		input.TradePnL[i] = sanitizeBTFloat(input.TradePnL[i])
+	}
+	for i := range input.Drawdown {
+		input.Drawdown[i] = sanitizeBTFloat(input.Drawdown[i])
+	}
+	input.Params.WinRate = sanitizeBTFloat(input.Params.WinRate)
+	input.Params.TotalReturn = sanitizeBTFloat(input.Params.TotalReturn)
+	input.Params.MaxDD = sanitizeBTFloat(input.Params.MaxDD)
+	input.Params.Sharpe = sanitizeBTFloat(input.Params.Sharpe)
+	input.Params.PF = sanitizeBTFloat(input.Params.PF)
 
 	jsonData, err := json.Marshal(input)
 	if err != nil {

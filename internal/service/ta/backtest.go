@@ -13,7 +13,7 @@ import (
 type BacktestParams struct {
 	Symbol       string
 	Timeframe    string  // "daily", "4h", "1h"
-	WarmupBars   int     // bars needed to seed indicators (default 200)
+	WarmupBars   int     // bars needed to seed indicators (default 55)
 	MaxOpenBars  int     // max bars to hold a trade (default 20)
 	RiskPerTrade float64 // % of equity per trade (default 2.0)
 	StartEquity  float64 // starting equity (default 10000)
@@ -72,7 +72,7 @@ func DefaultBacktestParams() BacktestParams {
 	return BacktestParams{
 		Symbol:       "EUR",
 		Timeframe:    "daily",
-		WarmupBars:   200,
+		WarmupBars:   55, // enough for Ichimoku (52) + few extra bars
 		MaxOpenBars:  20,
 		RiskPerTrade: 2.0,
 		StartEquity:  10000,
@@ -136,7 +136,7 @@ type openTrade struct {
 func RunBacktest(bars []OHLCV, params BacktestParams) *BacktestResult {
 	// Apply defaults for zero-valued params
 	if params.WarmupBars <= 0 {
-		params.WarmupBars = 200
+		params.WarmupBars = 55
 	}
 	if params.MaxOpenBars <= 0 {
 		params.MaxOpenBars = 20
