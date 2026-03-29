@@ -649,8 +649,8 @@ func (s *Scheduler) jobDailyPriceFetch(ctx context.Context) error {
 		return fmt.Errorf("daily price fetch requires concrete Fetcher type")
 	}
 
-	// Fetch 365 days of daily data (1 year for 200 DMA computation)
-	records, report, err := fetcher.FetchAllDaily(ctx, 365)
+	// Fetch 730 days of daily data (2 years for comprehensive backtesting)
+	records, report, err := fetcher.FetchAllDaily(ctx, 730)
 	if err != nil {
 		log.Warn().Err(err).Msg("daily price fetch failed")
 		return fmt.Errorf("daily price fetch: %w", err)

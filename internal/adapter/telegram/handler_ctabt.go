@@ -97,10 +97,18 @@ func (h *Handler) handleCTABTCallback(ctx context.Context, chatID string, msgID 
 	switch {
 	case action == "daily":
 		timeframe = "daily"
+	case action == "12h":
+		timeframe = "12h"
+	case action == "6h":
+		timeframe = "6h"
 	case action == "4h":
 		timeframe = "4h"
 	case action == "1h":
 		timeframe = "1h"
+	case action == "30m":
+		timeframe = "30m"
+	case action == "15m":
+		timeframe = "15m"
 	case action == "gradeA":
 		grade = "A"
 	case action == "gradeB":
@@ -149,17 +157,21 @@ func (h *Handler) runCTABacktest(ctx context.Context, chatID string, symbol, tim
 
 	switch timeframe {
 	case "daily":
-		dailyRecords, err := h.ctabt.DailyPriceRepo.GetDailyHistory(ctx, code, 300)
+		dailyRecords, err := h.ctabt.DailyPriceRepo.GetDailyHistory(ctx, code, 500)
 		if err != nil || len(dailyRecords) < 50 {
 			if loadingID > 0 {
 				_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 			}
+			cnt := 0
+			if dailyRecords != nil {
+				cnt = len(dailyRecords)
+			}
 			_, err2 := h.bot.SendHTML(ctx, chatID,
-				fmt.Sprintf("❌ Data daily tidak cukup untuk %s (%d bars).", mapping.Currency, len(dailyRecords)))
+				fmt.Sprintf("❌ Data daily tidak cukup untuk %s (%d bars, minimal 65).", mapping.Currency, cnt))
 			return err2
 		}
 		bars = ta.DailyPricesToOHLCV(dailyRecords)
-	case "4h", "1h":
+	case "12h", "6h", "4h", "1h", "30m", "15m":
 		if h.ctabt.IntradayRepo == nil {
 			if loadingID > 0 {
 				_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
@@ -167,24 +179,40 @@ func (h *Handler) runCTABacktest(ctx context.Context, chatID string, symbol, tim
 			_, err := h.bot.SendHTML(ctx, chatID, "❌ Intraday data repository not configured.")
 			return err
 		}
+		// Determine bar count based on timeframe granularity
 		count := 600
-		if timeframe == "1h" {
-			count = 800
+		switch timeframe {
+		case "15m":
+			count = 5000 // ~52 days of 15m bars
+		case "30m":
+			count = 2500
+		case "1h":
+			count = 1200
+		case "4h":
+			count = 600
+		case "6h":
+			count = 400
+		case "12h":
+			count = 300
 		}
 		intradayBars, err := h.ctabt.IntradayRepo.GetHistory(ctx, code, timeframe, count)
 		if err != nil || len(intradayBars) < 50 {
 			if loadingID > 0 {
 				_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 			}
+			cnt := 0
+			if intradayBars != nil {
+				cnt = len(intradayBars)
+			}
 			_, err2 := h.bot.SendHTML(ctx, chatID,
-				fmt.Sprintf("❌ Data %s tidak cukup untuk %s.", timeframe, mapping.Currency))
+				fmt.Sprintf("❌ Data %s tidak cukup untuk %s (%d bars, minimal 65).", timeframe, mapping.Currency, cnt))
 			return err2
 		}
 		bars = ta.IntradayBarsToOHLCV(intradayBars)
 	default:
 		// fallback to daily
 		timeframe = "daily"
-		dailyRecords, err := h.ctabt.DailyPriceRepo.GetDailyHistory(ctx, code, 300)
+		dailyRecords, err := h.ctabt.DailyPriceRepo.GetDailyHistory(ctx, code, 500)
 		if err != nil || len(dailyRecords) < 50 {
 			if loadingID > 0 {
 				_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
@@ -256,18 +284,29 @@ func (h *Handler) showCTABTTrades(ctx context.Context, chatID string, msgID int,
 
 	switch timeframe {
 	case "daily":
-		records, err := h.ctabt.DailyPriceRepo.GetDailyHistory(ctx, code, 300)
+		records, err := h.ctabt.DailyPriceRepo.GetDailyHistory(ctx, code, 500)
 		if err != nil || len(records) < 50 {
 			return h.bot.EditMessage(ctx, chatID, msgID, "❌ Insufficient data.")
 		}
 		bars = ta.DailyPricesToOHLCV(records)
-	case "4h", "1h":
+	case "12h", "6h", "4h", "1h", "30m", "15m":
 		if h.ctabt.IntradayRepo == nil {
 			return h.bot.EditMessage(ctx, chatID, msgID, "❌ Intraday not available.")
 		}
 		count := 600
-		if timeframe == "1h" {
-			count = 800
+		switch timeframe {
+		case "15m":
+			count = 5000
+		case "30m":
+			count = 2500
+		case "1h":
+			count = 1200
+		case "4h":
+			count = 600
+		case "6h":
+			count = 400
+		case "12h":
+			count = 300
 		}
 		intBars, err := h.ctabt.IntradayRepo.GetHistory(ctx, code, timeframe, count)
 		if err != nil || len(intBars) < 50 {
@@ -463,10 +502,18 @@ func normalizeTimeframe(tf string) string {
 	switch strings.ToLower(tf) {
 	case "daily", "d", "1d", "day":
 		return "daily"
+	case "12h", "h12":
+		return "12h"
+	case "6h", "h6":
+		return "6h"
 	case "4h", "h4":
 		return "4h"
 	case "1h", "h1":
 		return "1h"
+	case "30m", "m30":
+		return "30m"
+	case "15m", "m15":
+		return "15m"
 	default:
 		return "daily"
 	}

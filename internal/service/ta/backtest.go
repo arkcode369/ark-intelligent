@@ -549,10 +549,18 @@ func calcSharpe(equityCurve []float64, timeframe string) float64 {
 	// Annualization factor
 	annFactor := 252.0 // daily
 	switch timeframe {
+	case "12h":
+		annFactor = 504.0 // 2 bars/day * ~252 days
+	case "6h":
+		annFactor = 1008.0 // 4 bars/day * ~252 days
 	case "4h":
 		annFactor = 1460.0 // 6 bars/day * ~243 days
 	case "1h":
 		annFactor = 5840.0 // 24 bars/day * ~243 days
+	case "30m":
+		annFactor = 11680.0 // 48 bars/day * ~243 days
+	case "15m":
+		annFactor = 23360.0 // 96 bars/day * ~243 days
 	}
 
 	return (mean / stdDev) * math.Sqrt(annFactor)

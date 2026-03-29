@@ -851,8 +851,14 @@ func (kb *KeyboardBuilder) CTABTMenu() ports.InlineKeyboard {
 		Rows: [][]ports.InlineButton{
 			{
 				{Text: "📊 Daily", CallbackData: "ctabt:daily"},
+				{Text: "📊 12H", CallbackData: "ctabt:12h"},
+				{Text: "📊 6H", CallbackData: "ctabt:6h"},
+			},
+			{
 				{Text: "📊 4H", CallbackData: "ctabt:4h"},
 				{Text: "📊 1H", CallbackData: "ctabt:1h"},
+				{Text: "📊 30M", CallbackData: "ctabt:30m"},
+				{Text: "📊 15M", CallbackData: "ctabt:15m"},
 			},
 			{
 				{Text: "Grade: A", CallbackData: "ctabt:gradeA"},
