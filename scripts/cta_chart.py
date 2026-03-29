@@ -219,23 +219,27 @@ def render_chart(data: dict, output_path: str):
     # -----------------------------------------------------------------------
     # Panel ratios
     # -----------------------------------------------------------------------
-    # Main, RSI, MACD, Volume
-    panel_ratios = [5.5, 1.5, 1.5, 1.5]
-    num_panels = 4
-
     # Only include RSI panel if we have RSI data
     has_rsi = rsi is not None
     has_macd = macd is not None
     has_volume = bool(df["Volume"].sum() > 0)
 
+    # Build panel_ratios dynamically based on what's present
+    # Panel 0 = main candle chart (always present)
+    panel_ratios = [5.5]
+    if has_rsi:
+        panel_ratios.append(1.5)
+    if has_macd:
+        panel_ratios.append(1.5)
+    if has_volume:
+        panel_ratios.append(1.5)
+
     # -----------------------------------------------------------------------
     # Plot
     # -----------------------------------------------------------------------
-    fig, axes = mpf.plot(
-        df,
+    plot_kwargs = dict(
         type="candle",
         style=style,
-        addplot=addplots if addplots else None,
         volume=has_volume,
         panel_ratios=panel_ratios,
         figsize=(12, 9),
@@ -243,6 +247,10 @@ def render_chart(data: dict, output_path: str):
         tight_layout=False,
         warn_too_much_data=999,
     )
+    if addplots:
+        plot_kwargs["addplot"] = addplots
+
+    fig, axes = mpf.plot(df, **plot_kwargs)
 
     # Title
     fig.suptitle(title, color=TEXT_COLOR, fontsize=12, fontweight="bold", y=0.98)
