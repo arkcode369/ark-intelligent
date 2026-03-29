@@ -92,10 +92,23 @@ func (f *Fetcher) FetchAllIntraday(ctx context.Context, interval string, bars in
 func (f *Fetcher) fetchTwelveDataIntraday(ctx context.Context, mapping domain.PriceSymbolMapping, interval string, bars int) ([]domain.IntradayBar, error) {
 	var records []domain.IntradayBar
 
+	// Convert internal interval names to TwelveData API format.
+	// TwelveData uses "15min", "30min", "45min" (not "15m", "30m").
+	// Hourly+ intervals like "1h", "4h" are the same in both.
+	tdInterval := interval
+	switch interval {
+	case "15m":
+		tdInterval = "15min"
+	case "30m":
+		tdInterval = "30min"
+	case "45m":
+		tdInterval = "45min"
+	}
+
 	err := f.cbTwelveData.Execute(func() error {
 		url := fmt.Sprintf(
 			"https://api.twelvedata.com/time_series?symbol=%s&interval=%s&outputsize=%d&apikey=%s",
-			mapping.TwelveData, interval, bars, f.nextTDKey(),
+			mapping.TwelveData, tdInterval, bars, f.nextTDKey(),
 		)
 
 		body, err := f.doGet(ctx, url, nil)
@@ -154,19 +167,42 @@ func (f *Fetcher) fetchTwelveDataIntraday(ctx context.Context, mapping domain.Pr
 func (f *Fetcher) fetchYahooIntraday(ctx context.Context, mapping domain.PriceSymbolMapping, interval string, bars int) ([]domain.IntradayBar, error) {
 	var records []domain.IntradayBar
 
-	// Yahoo supports: 1h, but not 4h directly.
-	// For 4h, we fetch 1h bars and aggregate.
-	yahooInterval := "1h"
+	// Yahoo supports: 15m, 30m, 1h. For larger intervals, fetch 1h and aggregate.
+	yahooInterval := interval
 	fetchBars := bars
 	aggregate := false
-	if interval == "4h" {
+
+	switch interval {
+	case "15m":
+		yahooInterval = "15m"
+	case "30m":
+		yahooInterval = "30m"
+	case "1h":
 		yahooInterval = "1h"
-		fetchBars = bars * 4
+	default:
+		// 4h, 6h, 12h — fetch 1h and aggregate
+		yahooInterval = "1h"
+		fetchBars = bars * 4 // fetch enough 1h bars
 		aggregate = true
 	}
 
-	// Yahoo 1h data available for ~730 days (use 60d for our needs)
-	daysNeeded := (fetchBars / 6) + 2 // ~6 bars per day for 1h
+	// Calculate days needed based on interval granularity.
+	// Yahoo limits: 15m/30m max 60 days, 1h up to 730 days.
+	var daysNeeded int
+	switch yahooInterval {
+	case "15m":
+		daysNeeded = (fetchBars * 15 / 1440) + 2 // 1440 min/day, with margin
+		if daysNeeded > 59 {
+			daysNeeded = 59 // Yahoo 15m limit
+		}
+	case "30m":
+		daysNeeded = (fetchBars * 30 / 1440) + 2
+		if daysNeeded > 59 {
+			daysNeeded = 59 // Yahoo 30m limit
+		}
+	default: // 1h
+		daysNeeded = (fetchBars / 6) + 2 // ~6 bars per day for 1h
+	}
 	rangeStr := yahooRangeForDays(daysNeeded)
 
 	err := f.cbYahoo.Execute(func() error {
@@ -234,7 +270,7 @@ func (f *Fetcher) fetchYahooIntraday(ctx context.Context, mapping domain.PriceSy
 		}
 
 		if aggregate && len(hourBars) > 0 {
-			records = aggregateTo4H(hourBars, mapping.ContractCode)
+			records = aggregateToInterval(hourBars, mapping.ContractCode, interval)
 		} else {
 			records = hourBars
 		}
@@ -251,9 +287,21 @@ func (f *Fetcher) fetchYahooIntraday(ctx context.Context, mapping domain.PriceSy
 
 // aggregateTo4H converts 1H bars into 4H bars.
 // Groups by 4-hour buckets: 00-03, 04-07, 08-11, 12-15, 16-19, 20-23.
-func aggregateTo4H(hourBars []domain.IntradayBar, contractCode string) []domain.IntradayBar {
+// aggregateToInterval aggregates hourly bars into a target interval (e.g. 4h, 6h, 12h).
+func aggregateToInterval(hourBars []domain.IntradayBar, contractCode string, targetInterval string) []domain.IntradayBar {
 	if len(hourBars) == 0 {
 		return nil
+	}
+
+	// Determine bucket size in hours
+	bucketHours := 4 // default
+	switch targetInterval {
+	case "4h":
+		bucketHours = 4
+	case "6h":
+		bucketHours = 6
+	case "12h":
+		bucketHours = 12
 	}
 
 	// Sort chronologically (oldest first) to ensure correct Open/Close assignment.
@@ -277,7 +325,7 @@ func aggregateTo4H(hourBars []domain.IntradayBar, contractCode string) []domain.
 
 	for _, bar := range sorted {
 		h := bar.Timestamp.Hour()
-		bucketHour := (h / 4) * 4
+		bucketHour := (h / bucketHours) * bucketHours
 		bucketTime := time.Date(
 			bar.Timestamp.Year(), bar.Timestamp.Month(), bar.Timestamp.Day(),
 			bucketHour, 0, 0, 0, time.UTC,
@@ -307,13 +355,13 @@ func aggregateTo4H(hourBars []domain.IntradayBar, contractCode string) []domain.
 
 	result := make([]domain.IntradayBar, 0, len(buckets))
 	for _, b := range buckets {
-		if b.count < 2 { // Skip incomplete buckets (need at least 2 of 4 hours)
+		if b.count < 2 { // Skip incomplete buckets
 			continue
 		}
 		result = append(result, domain.IntradayBar{
 			ContractCode: contractCode,
 			Symbol:       hourBars[0].Symbol,
-			Interval:     "4h",
+			Interval:     targetInterval,
 			Timestamp:    b.ts,
 			Open:         b.open,
 			High:         b.high,

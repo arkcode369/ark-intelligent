@@ -704,16 +704,25 @@ func (s *Scheduler) jobIntradayPriceFetch(ctx context.Context) error {
 
 	// Aggregate and save all timeframes
 	totalSaved := 0
-	for _, contractBars := range byContract {
+	savedByInterval := make(map[string]int)
+	for code, contractBars := range byContract {
 		aggregated := pricesvc.AggregateFromBase(contractBars)
-		for _, bars := range aggregated {
+		for interval, bars := range aggregated {
 			if len(bars) > 0 {
 				if err := s.deps.IntradayRepo.SaveBars(ctx, bars); err != nil {
-					log.Warn().Err(err).Str("interval", bars[0].Interval).Msg("save aggregated bars failed")
+					log.Warn().Err(err).Str("interval", interval).Str("contract", code).Int("bars", len(bars)).Msg("save aggregated bars failed")
 					continue
 				}
 				totalSaved += len(bars)
+				savedByInterval[interval] += len(bars)
 			}
+		}
+	}
+
+	// Log per-interval breakdown
+	for _, iv := range []string{"15m", "30m", "1h", "4h", "6h", "12h"} {
+		if n := savedByInterval[iv]; n > 0 {
+			log.Info().Str("interval", iv).Int("bars", n).Msg("intraday bars saved")
 		}
 	}
 
@@ -721,6 +730,21 @@ func (s *Scheduler) jobIntradayPriceFetch(ctx context.Context) error {
 		Int("base_bars", len(baseBars)).
 		Int("total_saved", totalSaved).
 		Msg("multi-timeframe intraday data saved")
+
+	// Verify: read back counts for first contract
+	if s.deps.IntradayRepo != nil {
+		var firstCode string
+		for c := range byContract {
+			firstCode = c
+			break
+		}
+		if firstCode != "" {
+			for _, iv := range []string{"15m", "30m", "1h", "4h", "6h", "12h"} {
+				readBack, _ := s.deps.IntradayRepo.GetHistory(ctx, firstCode, iv, 1)
+				log.Info().Str("contract", firstCode).Str("interval", iv).Int("readback", len(readBack)).Msg("verify readback")
+			}
+		}
+	}
 
 	if report != nil {
 		log.Info().
