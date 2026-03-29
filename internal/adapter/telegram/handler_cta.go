@@ -229,6 +229,11 @@ func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID in
 		txt := formatCTAIchimoku(state)
 		kb := h.kb.CTADetailMenu()
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
+		chartPNG, chartErr := h.generateCTADetailChart(state, "daily", "ichimoku")
+		if chartErr == nil && len(chartPNG) > 0 {
+			shortCaption := fmt.Sprintf("🏯 Ichimoku Cloud — %s", html.EscapeString(state.symbol))
+			_, _ = h.bot.SendPhoto(ctx, chatID, chartPNG, shortCaption)
+		}
 		_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, txt, kb)
 		return err
 
@@ -236,6 +241,11 @@ func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID in
 		txt := formatCTAFibonacci(state)
 		kb := h.kb.CTADetailMenu()
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
+		chartPNG, chartErr := h.generateCTADetailChart(state, "daily", "fibonacci")
+		if chartErr == nil && len(chartPNG) > 0 {
+			shortCaption := fmt.Sprintf("📐 Fibonacci — %s", html.EscapeString(state.symbol))
+			_, _ = h.bot.SendPhoto(ctx, chatID, chartPNG, shortCaption)
+		}
 		_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, txt, kb)
 		return err
 
@@ -264,6 +274,11 @@ func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID in
 		txt := formatCTAZones(state)
 		kb := h.kb.CTADetailMenu()
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
+		chartPNG, chartErr := h.generateCTADetailChart(state, "daily", "zones")
+		if chartErr == nil && len(chartPNG) > 0 {
+			shortCaption := fmt.Sprintf("🎯 Trade Setup — %s", html.EscapeString(state.symbol))
+			_, _ = h.bot.SendPhoto(ctx, chatID, chartPNG, shortCaption)
+		}
 		_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, txt, kb)
 		return err
 	}
@@ -446,10 +461,33 @@ func (h *Handler) getCTAChart(state *ctaState, tf string) ([]byte, error) {
 type chartInput struct {
 	Symbol     string            `json:"symbol"`
 	Timeframe  string            `json:"timeframe"`
+	Mode       string            `json:"mode,omitempty"`
 	Bars       []chartBar        `json:"bars"`
 	Indicators chartIndicators   `json:"indicators"`
 	Fibonacci  chartFib          `json:"fibonacci"`
 	Patterns   []chartPattern    `json:"patterns"`
+	Ichimoku   *chartIchimoku    `json:"ichimoku,omitempty"`
+	Zones      *chartZones       `json:"zones,omitempty"`
+}
+
+type chartIchimoku struct {
+	TenkanSen  []float64 `json:"tenkan_sen"`
+	KijunSen   []float64 `json:"kijun_sen"`
+	SenkouSpanA []float64 `json:"senkou_span_a"`
+	SenkouSpanB []float64 `json:"senkou_span_b"`
+	ChikouSpan []float64 `json:"chikou_span"`
+}
+
+type chartZones struct {
+	Direction   string  `json:"direction"`
+	EntryHigh   float64 `json:"entry_high"`
+	EntryLow    float64 `json:"entry_low"`
+	StopLoss    float64 `json:"stop_loss"`
+	TakeProfit1 float64 `json:"take_profit_1"`
+	TakeProfit2 float64 `json:"take_profit_2"`
+	RiskReward1 float64 `json:"risk_reward_1"`
+	RiskReward2 float64 `json:"risk_reward_2"`
+	Confidence  string  `json:"confidence"`
 }
 
 type chartBar struct {
@@ -477,7 +515,12 @@ type chartIndicators struct {
 }
 
 type chartFib struct {
-	Levels map[string]float64 `json:"levels,omitempty"`
+	Levels       map[string]float64 `json:"levels,omitempty"`
+	TrendDir     string             `json:"trend_dir,omitempty"`
+	SwingHigh    float64            `json:"swing_high,omitempty"`
+	SwingLow     float64            `json:"swing_low,omitempty"`
+	SwingHighIdx int                `json:"swing_high_idx,omitempty"`
+	SwingLowIdx  int                `json:"swing_low_idx,omitempty"`
 }
 
 type chartPattern struct {
@@ -633,6 +676,120 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	}
 
 	return pngData, nil
+}
+
+// runChartScript marshals input to JSON, runs cta_chart.py, and returns PNG bytes.
+func runChartScript(input interface{}) ([]byte, error) {
+	jsonData, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("marshal chart input: %w", err)
+	}
+
+	tmpDir := os.TempDir()
+	inputPath := filepath.Join(tmpDir, fmt.Sprintf("cta_input_%d.json", time.Now().UnixNano()))
+	outputPath := filepath.Join(tmpDir, fmt.Sprintf("cta_output_%d.png", time.Now().UnixNano()))
+
+	if err := os.WriteFile(inputPath, jsonData, 0644); err != nil {
+		return nil, fmt.Errorf("write chart input: %w", err)
+	}
+	defer os.Remove(inputPath)
+	defer os.Remove(outputPath)
+
+	scriptPath := findCTAScript()
+	cmd := exec.CommandContext(context.Background(), "python3", scriptPath, inputPath, outputPath)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("chart renderer failed: %w", err)
+	}
+
+	return os.ReadFile(outputPath)
+}
+
+// generateCTADetailChart creates a mode-specific chart (ichimoku, fibonacci, zones).
+func (h *Handler) generateCTADetailChart(state *ctaState, timeframe string, mode string) ([]byte, error) {
+	bars, ok := state.bars[timeframe]
+	if !ok || len(bars) == 0 {
+		// Fallback to daily
+		bars, ok = state.bars["daily"]
+		if !ok || len(bars) == 0 {
+			return nil, fmt.Errorf("no bars available")
+		}
+		timeframe = "daily"
+	}
+
+	result := h.getCTAResult(state, timeframe)
+
+	// Convert bars to chart format (newest-first → oldest-first)
+	n := len(bars)
+	chartBars := make([]chartBar, n)
+	for i, b := range bars {
+		chartBars[n-1-i] = chartBar{
+			Date:   b.Date.Format(time.RFC3339),
+			Open:   b.Open,
+			High:   b.High,
+			Low:    b.Low,
+			Close:  b.Close,
+			Volume: b.Volume,
+		}
+	}
+
+	input := chartInput{
+		Symbol:    state.symbol,
+		Timeframe: timeframe,
+		Mode:      mode,
+		Bars:      chartBars,
+	}
+
+	switch mode {
+	case "ichimoku":
+		series := ta.CalcIchimokuSeries(bars)
+		if series != nil {
+			input.Ichimoku = &chartIchimoku{
+				TenkanSen:   reverseToOldestFirst(series.Tenkan),
+				KijunSen:    reverseToOldestFirst(series.Kijun),
+				SenkouSpanA: reverseToOldestFirst(series.SenkouA),
+				SenkouSpanB: reverseToOldestFirst(series.SenkouB),
+				ChikouSpan:  reverseToOldestFirst(series.Chikou),
+			}
+		}
+
+	case "fibonacci":
+		if result != nil && result.Snapshot != nil && result.Snapshot.Fibonacci != nil {
+			fib := result.Snapshot.Fibonacci
+			sanitizedLevels := make(map[string]float64)
+			for k, v := range fib.Levels {
+				if !math.IsNaN(v) && !math.IsInf(v, 0) {
+					sanitizedLevels[k] = v
+				}
+			}
+			input.Fibonacci = chartFib{
+				Levels:       sanitizedLevels,
+				TrendDir:     fib.TrendDir,
+				SwingHigh:    fib.SwingHigh,
+				SwingLow:     fib.SwingLow,
+				SwingHighIdx: fib.SwingHighIdx,
+				SwingLowIdx:  fib.SwingLowIdx,
+			}
+		}
+
+	case "zones":
+		if result != nil && result.Zones != nil && result.Zones.Valid {
+			z := result.Zones
+			input.Zones = &chartZones{
+				Direction:   z.Direction,
+				EntryHigh:   z.EntryHigh,
+				EntryLow:    z.EntryLow,
+				StopLoss:    z.StopLoss,
+				TakeProfit1: z.TakeProfit1,
+				TakeProfit2: z.TakeProfit2,
+				RiskReward1: z.RiskReward1,
+				RiskReward2: z.RiskReward2,
+				Confidence:  z.Confidence,
+			}
+		}
+	}
+
+	return runChartScript(input)
 }
 
 // findCTAScript locates the cta_chart.py script.
