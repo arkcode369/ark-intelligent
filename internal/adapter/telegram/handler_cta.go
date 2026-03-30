@@ -44,6 +44,9 @@ type ctaState struct {
 	h4         *ta.FullResult
 	h1         *ta.FullResult
 	m15        *ta.FullResult
+	m30        *ta.FullResult
+	h6         *ta.FullResult
+	h12        *ta.FullResult
 	weekly     *ta.FullResult
 	mtf        *ta.MTFResult
 	bars       map[string][]ta.OHLCV // timeframe -> bars
@@ -364,9 +367,12 @@ func (h *Handler) computeCTAState(ctx context.Context, mapping *domain.PriceSymb
 			interval string
 			count    int
 		}{
+			{"15m", 500},
+			{"30m", 312},
+			{"1h", 200},
 			{"4h", 312},
-			{"1h", 96},
-			{"15m", 96},
+			{"6h", 200},
+			{"12h", 200},
 		} {
 			intradayBars, iErr := h.cta.IntradayRepo.GetHistory(ctx, code, spec.interval, spec.count)
 			if iErr == nil && len(intradayBars) > 10 {
@@ -378,7 +384,7 @@ func (h *Handler) computeCTAState(ctx context.Context, mapping *domain.PriceSymb
 	engine := h.cta.TAEngine
 
 	// Compute FullResult per timeframe
-	var daily, h4, h1, m15, weekly *ta.FullResult
+	var daily, h4, h1, m15, m30, h6, h12, weekly *ta.FullResult
 
 	daily = engine.ComputeFull(barsByTF["daily"])
 	if b, ok := barsByTF["4h"]; ok {
@@ -389,6 +395,15 @@ func (h *Handler) computeCTAState(ctx context.Context, mapping *domain.PriceSymb
 	}
 	if b, ok := barsByTF["15m"]; ok {
 		m15 = engine.ComputeFull(b)
+	}
+	if b, ok := barsByTF["30m"]; ok {
+		m30 = engine.ComputeFull(b)
+	}
+	if b, ok := barsByTF["6h"]; ok {
+		h6 = engine.ComputeFull(b)
+	}
+	if b, ok := barsByTF["12h"]; ok {
+		h12 = engine.ComputeFull(b)
 	}
 
 	// Weekly: aggregate from daily (simple: take every 5th bar as weekly candle)
@@ -415,6 +430,9 @@ func (h *Handler) computeCTAState(ctx context.Context, mapping *domain.PriceSymb
 		h4:         h4,
 		h1:         h1,
 		m15:        m15,
+		m30:        m30,
+		h6:         h6,
+		h12:        h12,
 		weekly:     weekly,
 		mtf:        mtf,
 		bars:       barsByTF,
@@ -433,6 +451,12 @@ func (h *Handler) getCTAResult(state *ctaState, tf string) *ta.FullResult {
 		return state.h1
 	case "15m":
 		return state.m15
+	case "30m":
+		return state.m30
+	case "6h":
+		return state.h6
+	case "12h":
+		return state.h12
 	case "weekly", "w":
 		return state.weekly
 	default:

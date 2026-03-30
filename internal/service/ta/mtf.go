@@ -35,15 +35,18 @@ type MTFRow struct {
 
 // tfWeights maps canonical timeframe names to their multi-timeframe weight.
 var tfWeights = map[string]float64{
-	"daily":  0.35,
-	"4h":     0.25,
-	"1h":     0.20,
-	"15m":    0.10,
-	"weekly": 0.10,
+	"daily": 0.30,
+	"12h":   0.15,
+	"6h":    0.10,
+	"4h":    0.20,
+	"1h":    0.10,
+	"30m":   0.05,
+	"15m":   0.05,
+	"weekly": 0.05,
 }
 
 // tfOrder defines the display order for the MTF matrix (longest → shortest).
-var tfOrder = []string{"weekly", "daily", "4h", "1h", "30m", "15m"}
+var tfOrder = []string{"weekly", "daily", "12h", "6h", "4h", "1h", "30m", "15m"}
 
 // ---------------------------------------------------------------------------
 // CalcMTF — Multi-Timeframe Alignment
