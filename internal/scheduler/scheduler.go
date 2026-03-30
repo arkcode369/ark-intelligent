@@ -719,6 +719,64 @@ func (s *Scheduler) jobIntradayPriceFetch(ctx context.Context) error {
 		}
 	}
 
+	// Compute synthetic cross pairs for intraday (XAUEUR, etc.)
+	for _, mapping := range domain.PriceOnlyMappings() {
+		cross, ok := pricesvc.SyntheticCrossDef(mapping.Currency)
+		if !ok {
+			continue
+		}
+		numMapping := domain.FindPriceMappingByCurrency(cross.NumeratorCurrency)
+		denMapping := domain.FindPriceMappingByCurrency(cross.DenominatorCurrency)
+		if numMapping == nil || denMapping == nil {
+			continue
+		}
+		numBars := byContract[numMapping.ContractCode]
+		denBars := byContract[denMapping.ContractCode]
+		if len(numBars) == 0 || len(denBars) == 0 {
+			continue
+		}
+
+		// Build lookup by timestamp for denominator
+		denByTS := make(map[time.Time]domain.IntradayBar)
+		for _, b := range denBars {
+			denByTS[b.Timestamp] = b
+		}
+
+		var crossBars []domain.IntradayBar
+		for _, numBar := range numBars {
+			denBar, ok := denByTS[numBar.Timestamp]
+			if !ok || denBar.Close == 0 {
+				continue
+			}
+			crossBars = append(crossBars, domain.IntradayBar{
+				ContractCode: mapping.ContractCode,
+				Interval:     numBar.Interval,
+				Timestamp:    numBar.Timestamp,
+				Open:         numBar.Open / denBar.Open,
+				High:         numBar.High / denBar.High,
+				Low:          numBar.Low / denBar.Low,
+				Close:        numBar.Close / denBar.Close,
+				Volume:       0,
+			})
+		}
+
+		if len(crossBars) > 0 {
+			// Aggregate cross bars to all timeframes
+			aggregatedCross := pricesvc.AggregateFromBase(crossBars)
+			for interval, bars := range aggregatedCross {
+				if len(bars) > 0 {
+					if err := s.deps.IntradayRepo.SaveBars(ctx, bars); err != nil {
+						log.Warn().Err(err).Str("cross", mapping.Currency).Str("interval", interval).Msg("save cross intraday failed")
+						continue
+					}
+					totalSaved += len(bars)
+					savedByInterval[interval] += len(bars)
+				}
+			}
+			log.Info().Str("cross", mapping.Currency).Int("base_bars", len(crossBars)).Msg("synthetic cross intraday computed")
+		}
+	}
+
 	// Log per-interval breakdown
 	for _, iv := range []string{"15m", "30m", "1h", "4h", "6h", "12h"} {
 		if n := savedByInterval[iv]; n > 0 {

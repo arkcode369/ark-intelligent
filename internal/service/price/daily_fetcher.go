@@ -98,6 +98,63 @@ func (f *Fetcher) FetchAllDaily(ctx context.Context, days int) ([]domain.DailyPr
 		}
 	}
 
+	// Compute synthetic cross pairs (XAUEUR, XAUGBP, etc.) from existing daily data.
+	// Build a lookup of daily closes by contractCode → date → DailyPrice
+	closeLookup := make(map[string]map[string]domain.DailyPrice) // code → dateStr → record
+	for _, r := range allRecords {
+		dateKey := r.Date.Format("2006-01-02")
+		if _, ok := closeLookup[r.ContractCode]; !ok {
+			closeLookup[r.ContractCode] = make(map[string]domain.DailyPrice)
+		}
+		closeLookup[r.ContractCode][dateKey] = r
+	}
+
+	for _, mapping := range domain.PriceOnlyMappings() {
+		cross, ok := SyntheticCrossDef(mapping.Currency)
+		if !ok {
+			continue
+		}
+		numMapping := domain.FindPriceMappingByCurrency(cross.NumeratorCurrency)
+		denMapping := domain.FindPriceMappingByCurrency(cross.DenominatorCurrency)
+		if numMapping == nil || denMapping == nil {
+			continue
+		}
+		numDates := closeLookup[numMapping.ContractCode]
+		denDates := closeLookup[denMapping.ContractCode]
+		if numDates == nil || denDates == nil {
+			continue
+		}
+
+		var crossRecords []domain.DailyPrice
+		for dateKey, numRec := range numDates {
+			denRec, ok := denDates[dateKey]
+			if !ok || denRec.Close == 0 {
+				continue
+			}
+			crossRecords = append(crossRecords, domain.DailyPrice{
+				ContractCode: mapping.ContractCode,
+				Symbol:       mapping.Currency,
+				Date:         numRec.Date,
+				Open:         numRec.Open / denRec.Open,
+				High:         numRec.High / denRec.High,
+				Low:          numRec.Low / denRec.Low,
+				Close:        numRec.Close / denRec.Close,
+				Volume:       0,
+				Source:       "synthetic",
+			})
+		}
+		if len(crossRecords) > 0 {
+			allRecords = append(allRecords, crossRecords...)
+			report.Results = append(report.Results, ContractFetchResult{
+				Currency: mapping.Currency,
+				Source:   "synthetic",
+				Records:  len(crossRecords),
+			})
+			report.Success++
+			log.Info().Str("cross", mapping.Currency).Int("records", len(crossRecords)).Msg("synthetic cross daily computed")
+		}
+	}
+
 	report.Duration = time.Since(start)
 
 	if len(allRecords) == 0 && lastErr != nil {

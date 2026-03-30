@@ -231,7 +231,7 @@ func (f *Fetcher) FetchWeekly(ctx context.Context, mapping domain.PriceSymbolMap
 	}
 
 	// Final fallback: synthetic cross pair calculation (e.g. XAU/EUR = XAU/USD ÷ EUR/USD)
-	if cross, ok := syntheticCrossDef(mapping.Currency); ok {
+	if cross, ok := SyntheticCrossDef(mapping.Currency); ok {
 		records, err := f.fetchSyntheticCross(ctx, mapping, cross, weeks)
 		if err == nil && len(records) > 0 {
 			return records, nil
@@ -541,19 +541,20 @@ func (f *Fetcher) fetchYahoo(ctx context.Context, mapping domain.PriceSymbolMapp
 
 // --- Synthetic Cross Pairs ---
 
-// crossDef defines components for computing a synthetic cross pair.
-type crossDef struct {
-	numeratorCurrency   string // e.g. "XAU" → fetched as XAU/USD (GC=F)
-	denominatorCurrency string // e.g. "EUR" → fetched as EUR/USD (EURUSD=X)
+// CrossDef defines components for computing a synthetic cross pair.
+// CrossDef defines components for computing a synthetic cross pair.
+type CrossDef struct {
+	NumeratorCurrency   string // e.g. "XAU" → fetched as XAU/USD (GC=F)
+	DenominatorCurrency string // e.g. "EUR" → fetched as EUR/USD (EURUSD=X)
 }
 
-// syntheticCrossDef returns the cross definition for a synthetic cross pair.
-func syntheticCrossDef(currency string) (crossDef, bool) {
-	defs := map[string]crossDef{
-		"XAUEUR": {numeratorCurrency: "XAU", denominatorCurrency: "EUR"},
-		"XAUGBP": {numeratorCurrency: "XAU", denominatorCurrency: "GBP"},
-		"XAGEUR": {numeratorCurrency: "XAG", denominatorCurrency: "EUR"},
-		"XAGGBP": {numeratorCurrency: "XAG", denominatorCurrency: "GBP"},
+// SyntheticCrossDef returns the cross definition for a synthetic cross pair.
+func SyntheticCrossDef(currency string) (CrossDef, bool) {
+	defs := map[string]CrossDef{
+		"XAUEUR": {NumeratorCurrency: "XAU", DenominatorCurrency: "EUR"},
+		"XAUGBP": {NumeratorCurrency: "XAU", DenominatorCurrency: "GBP"},
+		"XAGEUR": {NumeratorCurrency: "XAG", DenominatorCurrency: "EUR"},
+		"XAGGBP": {NumeratorCurrency: "XAG", DenominatorCurrency: "GBP"},
 	}
 	d, ok := defs[currency]
 	return d, ok
@@ -562,20 +563,20 @@ func syntheticCrossDef(currency string) (crossDef, bool) {
 // fetchSyntheticCross computes a cross pair from two USD-based price series.
 // E.g. XAU/EUR = XAU/USD ÷ EUR/USD
 // Uses ISO-week matching since different Yahoo symbols have slightly different timestamps.
-func (f *Fetcher) fetchSyntheticCross(ctx context.Context, mapping domain.PriceSymbolMapping, cross crossDef, weeks int) ([]domain.PriceRecord, error) {
-	numMapping := domain.FindPriceMappingByCurrency(cross.numeratorCurrency)
-	denMapping := domain.FindPriceMappingByCurrency(cross.denominatorCurrency)
+func (f *Fetcher) fetchSyntheticCross(ctx context.Context, mapping domain.PriceSymbolMapping, cross CrossDef, weeks int) ([]domain.PriceRecord, error) {
+	numMapping := domain.FindPriceMappingByCurrency(cross.NumeratorCurrency)
+	denMapping := domain.FindPriceMappingByCurrency(cross.DenominatorCurrency)
 	if numMapping == nil || denMapping == nil {
-		return nil, fmt.Errorf("synthetic cross: missing mapping for %s or %s", cross.numeratorCurrency, cross.denominatorCurrency)
+		return nil, fmt.Errorf("synthetic cross: missing mapping for %s or %s", cross.NumeratorCurrency, cross.DenominatorCurrency)
 	}
 
 	numRecords, err := f.FetchWeekly(ctx, *numMapping, weeks)
 	if err != nil {
-		return nil, fmt.Errorf("synthetic cross numerator %s: %w", cross.numeratorCurrency, err)
+		return nil, fmt.Errorf("synthetic cross numerator %s: %w", cross.NumeratorCurrency, err)
 	}
 	denRecords, err := f.FetchWeekly(ctx, *denMapping, weeks)
 	if err != nil {
-		return nil, fmt.Errorf("synthetic cross denominator %s: %w", cross.denominatorCurrency, err)
+		return nil, fmt.Errorf("synthetic cross denominator %s: %w", cross.DenominatorCurrency, err)
 	}
 
 	// Build ISO-week-indexed map for denominator (handles different Yahoo timestamps)
