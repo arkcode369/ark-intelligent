@@ -730,11 +730,11 @@ def compute_meanrevert(df, symbol, timeframe, params, chart_path=None):
         hurst_interp = "🔀 Random Walk — tidak ada edge clear"
 
     if adf_p < 0.01:
-        adf_interp = "✅ Stationary (p<0.01) — mean reversion kuat"
+        adf_interp = "✅ Stationary (p≤0.01) — mean reversion kuat"
     elif adf_p < 0.05:
-        adf_interp = "✅ Stationary (p<0.05) — mean reversion moderate"
+        adf_interp = "✅ Stationary (p≤0.05) — mean reversion moderate"
     elif adf_p < 0.10:
-        adf_interp = "⚠️ Marginal (p<0.10) — weak evidence"
+        adf_interp = "⚠️ Marginal (p≤0.10) — weak evidence"
     else:
         adf_interp = "❌ Non-Stationary — trending/random walk"
 
@@ -776,20 +776,30 @@ def compute_meanrevert(df, symbol, timeframe, params, chart_path=None):
         save_chart(fig, chart_path)
 
     z_current = zscore.iloc[-1] if len(zscore) > 0 else 0
+
+    if z_current > 2:
+        z_interp = "🔴 Overbought — reversal probability tinggi"
+    elif z_current < -2:
+        z_interp = "🟢 Oversold — bounce probability tinggi"
+    else:
+        z_interp = "🟡 Normal range"
+
+    ret_stationary = "✅ stationary" if adf_ret_p < 0.05 else "❌ non-stationary"
+
     text = f"""🔄 <b>Mean Reversion Test: {symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 <b>ADF Test (Augmented Dickey-Fuller):</b>
   Price: stat={adf_stat:.3f}, p={adf_p:.4f}
   → {adf_interp}
-  Returns: p={adf_ret_p:.4f} {"✅ stationary" if adf_ret_p < 0.05 else "❌"}
+  Returns: p={adf_ret_p:.4f} {ret_stationary}
 
 📈 <b>Hurst Exponent: {hurst:.3f}</b>
   → {hurst_interp}
-  (0.5=random walk, <0.5=mean-revert, >0.5=trending)
+  (0.5=random walk, &lt;0.5=mean-revert, &gt;0.5=trending)
 
 📉 <b>Z-Score (current): {z_current:+.2f}</b>
-  {"🔴 Overbought (>2σ) — reversal probability tinggi" if z_current > 2 else "🟢 Oversold (<-2σ) — bounce probability tinggi" if z_current < -2 else "🟡 Normal range"}"""
+  {z_interp}"""
 
     if half_life is not None:
         text += f"\n\n⏱️ <b>Half-life: {half_life:.1f} bar</b>\n  → Mean revert dalam ~{half_life:.0f} bar"
@@ -909,6 +919,7 @@ def compute_granger(df, symbol, timeframe, params, multi_asset, chart_path=None)
 
 def compute_arima(df, symbol, timeframe, params, chart_path=None):
     from statsmodels.tsa.arima.model import ARIMA
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
     close = df["Close"]
     n = len(close)
@@ -917,12 +928,12 @@ def compute_arima(df, symbol, timeframe, params, chart_path=None):
 
     horizon = params.get("forecast_horizon", 5)
 
-    # Auto-select ARIMA order (simplified: try common orders)
+    # Strategy 1: ARIMA on prices (traditional)
     best_aic = np.inf
     best_order = (1, 1, 1)
     best_res = None
 
-    orders = [(1,1,0), (0,1,1), (1,1,1), (2,1,1), (1,1,2), (2,1,2)]
+    orders = [(1,1,0), (0,1,1), (1,1,1), (2,1,1), (1,1,2), (2,1,2), (3,1,1), (1,1,3)]
     for order in orders:
         try:
             model = ARIMA(close, order=order)
@@ -934,21 +945,53 @@ def compute_arima(df, symbol, timeframe, params, chart_path=None):
         except Exception:
             continue
 
-    if best_res is None:
+    # Strategy 2: Exponential Smoothing (Holt-Winters) — captures trend better
+    ets_forecast = None
+    ets_label = None
+    try:
+        ets_model = ExponentialSmoothing(close, trend="add", damped_trend=True,
+                                         seasonal=None, initialization_method="estimated")
+        ets_res = ets_model.fit(optimized=True)
+        ets_forecast = ets_res.forecast(horizon)
+        ets_label = "Holt-Winters (damped)"
+    except Exception:
+        pass
+
+    if best_res is None and ets_forecast is None:
         return output("arima", symbol, False, {}, "", error="ARIMA fitting gagal")
 
-    # Forecast
-    fcast = best_res.get_forecast(steps=horizon)
-    fc_mean = fcast.predicted_mean
-    fc_ci = fcast.conf_int(alpha=0.05)
+    # Use ARIMA as primary
+    if best_res is not None:
+        fcast = best_res.get_forecast(steps=horizon)
+        fc_mean = fcast.predicted_mean
+        fc_ci = fcast.conf_int(alpha=0.05)
+    else:
+        fc_mean = ets_forecast
+        fc_ci = None
+
+    # If ARIMA forecast is essentially flat (all values within 0.01% of current),
+    # prefer ETS forecast which captures trend
+    arima_is_flat = best_res is not None and all(
+        abs(v - close.iloc[-1]) / close.iloc[-1] < 0.0001 for v in fc_mean.values
+    )
+
+    primary_label = f"ARIMA{best_order}"
+    if arima_is_flat and ets_forecast is not None:
+        # ARIMA is flat (random walk), use ETS instead
+        fc_mean = ets_forecast
+        fc_ci = None  # ETS doesn't provide CI easily
+        primary_label = ets_label
+        best_order = "ETS"
 
     result = {
-        "order": list(best_order),
-        "aic": safe_float(best_aic),
+        "order": list(best_order) if isinstance(best_order, tuple) else str(best_order),
+        "model_label": primary_label,
+        "aic": safe_float(best_aic) if isinstance(best_order, tuple) else None,
         "forecast": [safe_float(v) for v in fc_mean.values],
-        "conf_lower": [safe_float(v) for v in fc_ci.iloc[:, 0].values],
-        "conf_upper": [safe_float(v) for v in fc_ci.iloc[:, 1].values],
+        "conf_lower": [safe_float(v) for v in fc_ci.iloc[:, 0].values] if fc_ci is not None else None,
+        "conf_upper": [safe_float(v) for v in fc_ci.iloc[:, 1].values] if fc_ci is not None else None,
         "current_price": safe_float(close.iloc[-1]),
+        "arima_was_flat": arima_is_flat,
     }
 
     # Expected return
@@ -957,7 +1000,7 @@ def compute_arima(df, symbol, timeframe, params, chart_path=None):
     # Chart
     if chart_path:
         fig, ax = plt.subplots(figsize=(14, 7))
-        fig.suptitle(f"{symbol} — ARIMA{best_order} Forecast — {timeframe}", color=TEXT_COLOR, fontsize=13, fontweight="bold")
+        fig.suptitle(f"{symbol} — {primary_label} Forecast — {timeframe}", color=TEXT_COLOR, fontsize=13, fontweight="bold")
 
         # Last 60 bars
         recent = close.iloc[-60:]
@@ -967,8 +1010,9 @@ def compute_arima(df, symbol, timeframe, params, chart_path=None):
         last_date = close.index[-1]
         fc_dates = pd.date_range(start=last_date, periods=horizon+1, freq="B")[1:]
         ax.plot(fc_dates, fc_mean.values, color=ACCENT2, linewidth=2, linestyle="--", label="Forecast", marker="o", markersize=4)
-        ax.fill_between(fc_dates, fc_ci.iloc[:, 0].values, fc_ci.iloc[:, 1].values,
-                        alpha=0.15, color=ACCENT2, label="95% CI")
+        if fc_ci is not None:
+            ax.fill_between(fc_dates, fc_ci.iloc[:, 0].values, fc_ci.iloc[:, 1].values,
+                            alpha=0.15, color=ACCENT2, label="95% CI")
 
         ax.axvline(last_date, color=GRID_COLOR, linestyle=":", linewidth=0.8)
         ax.set_ylabel("Price")
@@ -979,21 +1023,28 @@ def compute_arima(df, symbol, timeframe, params, chart_path=None):
         save_chart(fig, chart_path)
 
     direction = "📈 NAIK" if expected_return > 0.001 else ("📉 TURUN" if expected_return < -0.001 else "➡️ FLAT")
-    text = f"""📉 <b>ARIMA Forecast: {symbol}</b>
+
+    aic_str = f" (AIC: {best_aic:.1f})" if isinstance(best_order, tuple) else ""
+    flat_note = "\n⚠️ ARIMA murni menghasilkan flat — switched ke Holt-Winters." if arima_is_flat else ""
+
+    text = f"""📉 <b>Forecast: {symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-Model: ARIMA{best_order} (AIC: {best_aic:.1f})
+Model: {primary_label}{aic_str}{flat_note}
 
 📊 <b>Forecast ({horizon} bar):</b>
   Current: {close.iloc[-1]:.4f}
 """
     for i in range(horizon):
-        text += f"  Bar +{i+1}: {fc_mean.iloc[i]:.4f} [{fc_ci.iloc[i, 0]:.4f} — {fc_ci.iloc[i, 1]:.4f}]\n"
+        fc_val = fc_mean.iloc[i]
+        if fc_ci is not None:
+            text += f"  Bar +{i+1}: {fc_val:.4f} [{fc_ci.iloc[i, 0]:.4f} — {fc_ci.iloc[i, 1]:.4f}]\n"
+        else:
+            text += f"  Bar +{i+1}: {fc_val:.4f}\n"
 
     text += f"""
 🎯 <b>Expected: {direction} {expected_return*100:+.2f}%</b>
 
-⚠️ ARIMA limitations: linear model, poor for volatility regimes.
-Best combined with regime detection & vol models."""
+⚠️ Forecast limitations: linear model, best combined with regime + vol models."""
 
     return output("arima", symbol, True, result, text, chart_path=chart_path or "")
 

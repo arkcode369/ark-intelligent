@@ -361,12 +361,12 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 		tf = "daily"
 	}
 
-	// Convert bars (newest-first → oldest-first)
+	// Convert bars (newest-first → oldest-first) — use date-only format for alignment
 	n := len(bars)
 	chartBars := make([]chartBar, n)
 	for i, b := range bars {
 		chartBars[n-1-i] = chartBar{
-			Date:   b.Date.Format(time.RFC3339),
+			Date:   b.Date.Format("2006-01-02"),
 			Open:   b.Open,
 			High:   b.High,
 			Low:    b.Low,
@@ -480,7 +480,7 @@ func (h *Handler) fetchMultiAssetCloses(excludeSymbol string, tf string) (map[st
 		for i, r := range records {
 			// records are newest-first, reverse for Python
 			closes[len(records)-1-i] = quantAssetClose{
-				Date:  r.Date.Format(time.RFC3339),
+				Date:  r.Date.Format("2006-01-02"),
 				Close: r.Close,
 			}
 		}
