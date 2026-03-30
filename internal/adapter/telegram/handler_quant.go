@@ -259,6 +259,7 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 	validModes := map[string]bool{
 		"stats": true, "garch": true, "corr": true, "regime": true,
 		"arima": true, "meanrevert": true, "granger": true,
+		"coint": true, "pca": true, "var": true, "risk": true, "full": true,
 	}
 
 	mode := action
@@ -268,6 +269,9 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 	}
 	if mode == "mr" {
 		mode = "meanrevert"
+	}
+	if mode == "coint" {
+		mode = "cointegration"
 	}
 
 	if !validModes[action] {
@@ -383,8 +387,8 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 		},
 	}
 
-	// Multi-asset data for correlation/granger
-	needsMultiAsset := mode == "correlation" || mode == "granger"
+	// Multi-asset data for correlation/granger/cointegration/pca/var/full
+	needsMultiAsset := mode == "correlation" || mode == "granger" || mode == "cointegration" || mode == "pca" || mode == "var" || mode == "full"
 	if needsMultiAsset {
 		multiAsset, maErr := h.fetchMultiAssetCloses(state.symbol, tf)
 		if maErr == nil && len(multiAsset) > 0 {

@@ -938,6 +938,15 @@ func (kb *KeyboardBuilder) QuantMenu() ports.InlineKeyboard {
 			},
 			{
 				{Text: "🎭 Regime (HMM)", CallbackData: "quant:regime"},
+				{Text: "🔗 Cointegration", CallbackData: "quant:coint"},
+			},
+			{
+				{Text: "🧬 PCA", CallbackData: "quant:pca"},
+				{Text: "🌐 VAR", CallbackData: "quant:var"},
+				{Text: "⚠️ Risk", CallbackData: "quant:risk"},
+			},
+			{
+				{Text: "📋 Full Report", CallbackData: "quant:full"},
 			},
 			{
 				{Text: "⏰ 1H", CallbackData: "quant:tf:1h"},
