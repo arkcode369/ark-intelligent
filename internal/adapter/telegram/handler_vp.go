@@ -169,7 +169,9 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
 				"⏰ Session expired — ketik /vp lagi.", h.kb.VPMenu())
 		}
-		return h.vpRunMode(ctx, chatID, msgID, state, "profile")
+		summary := fmt.Sprintf("📊 <b>Volume Profile: %s — %s</b>\n\nPilih mode analisis:",
+			html.EscapeString(state.symbol), state.timeframe)
+		return h.bot.EditWithKeyboard(ctx, chatID, msgID, summary, h.kb.VPMenu())
 	}
 
 	if action == "refresh" {
@@ -340,7 +342,7 @@ func (h *Handler) vpRunMode(ctx context.Context, chatID string, msgID int, state
 	if textToSend == "" {
 		textToSend = fmt.Sprintf("📊 Volume Profile: %s — %s\n(No output)", state.symbol, tf)
 	}
-	_, sendErr := h.bot.SendWithKeyboard(ctx, chatID, textToSend, h.kb.VPDetailMenu())
+	_, sendErr := h.bot.SendWithKeyboard(ctx, chatID, textToSend, h.kb.VPMenu())
 	return sendErr
 }
 
