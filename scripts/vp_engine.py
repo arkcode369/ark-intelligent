@@ -2075,6 +2075,65 @@ def _find_single_prints(df, vp):
     return singles[:10]
 
 
+def _build_daily_vps_from_daily_bars(df, daily_vps):
+    """
+    For daily timeframe: build rolling-window pseudo VPs per day.
+    Uses 20-bar rolling window to get POC/VAH/VAL context for each day.
+    """
+    import pandas as pd
+    window = 20
+    for i in range(window, len(df)):
+        window_df = df.iloc[i-window:i+1]
+        vp = compute_volume_profile(window_df, n_bins=40, va_pct=0.70)
+        if vp:
+            d = df.index[i].date() if hasattr(df.index[i], 'date') else df.index[i]
+            daily_vps[d] = vp
+
+
+def _analyze_close_location_daily(df, vp):
+    """Analyze yesterday's daily bar close relative to overall VP."""
+    if len(df) < 2 or vp is None:
+        return None
+
+    yesterday = df.iloc[-2]
+    close = yesterday["Close"]
+    poc = vp["poc_price"]
+    vah = vp["vah"]
+    val = vp["val"]
+
+    if close > vah:
+        location = "ABOVE_VAH"
+        implication = "Bullish — closed above value area, initiative buying"
+        follow_bias = "BULLISH"
+    elif close < val:
+        location = "BELOW_VAL"
+        implication = "Bearish — closed below value area, initiative selling"
+        follow_bias = "BEARISH"
+    elif abs(close - poc) / poc < 0.001:
+        location = "AT_POC"
+        implication = "Neutral — closed at fair value"
+        follow_bias = "NEUTRAL"
+    elif close > poc:
+        location = "UPPER_VA"
+        implication = "Mildly bullish — closed in upper value area"
+        follow_bias = "MILD_BULLISH"
+    else:
+        location = "LOWER_VA"
+        implication = "Mildly bearish — closed in lower value area"
+        follow_bias = "MILD_BEARISH"
+
+    return {
+        "location": location,
+        "implication": implication,
+        "follow_bias": follow_bias,
+        "close": float(close),
+        "poc": float(poc),
+        "vah": float(vah),
+        "val": float(val),
+        "position": float((close - val) / (vah - val)) if vah != val else 0.5,
+    }
+
+
 def compute_auction(df, symbol, timeframe, params, chart_path=None):
     """Advanced Auction Market Theory — Institutional Grade."""
     n = len(df)
@@ -2086,6 +2145,9 @@ def compute_auction(df, symbol, timeframe, params, chart_path=None):
     current_price = df["Close"].iloc[-1]
     pip = pip_value(symbol)
 
+    # Determine if this is intraday (multiple bars per day) or daily/higher
+    is_intraday = timeframe.lower() not in ("daily", "weekly", "monthly", "1d", "1w", "1m")
+
     # --- Overall VP ---
     vp = compute_volume_profile(df, va_pct=0.70)
     if vp is None:
@@ -2096,64 +2158,92 @@ def compute_auction(df, symbol, timeframe, params, chart_path=None):
     vah = vp["vah"]
     val = vp["val"]
 
-    # --- Split into trading days ---
-    days = _split_by_trading_day(df)
-    sorted_dates = sorted(days.keys())
-
-    # --- Per-day VP ---
+    # --- Split into trading days (only useful for intraday) ---
+    days = {}
+    sorted_dates = []
     daily_vps = {}
-    for d, day_df in days.items():
-        dvp = compute_volume_profile(day_df, n_bins=40, va_pct=0.70)
-        if dvp:
-            daily_vps[d] = dvp
 
-    # --- Module 1: Day Type Classification (last 5 days) ---
+    if is_intraday:
+        days = _split_by_trading_day(df)
+        sorted_dates = sorted(days.keys())
+        for d, day_df in days.items():
+            dvp = compute_volume_profile(day_df, n_bins=40, va_pct=0.70)
+            if dvp:
+                daily_vps[d] = dvp
+    else:
+        # For daily TF: treat each bar as a "day" for migration analysis
+        # Build pseudo daily_vps using rolling windows
+        _build_daily_vps_from_daily_bars(df, daily_vps)
+        sorted_dates = sorted(daily_vps.keys())
+
+    # --- Module 1: Day Type Classification (INTRADAY ONLY) ---
     day_types = []
-    for i, d in enumerate(sorted_dates[-5:]):
-        prev_vp = daily_vps.get(sorted_dates[sorted_dates.index(d)-1]) if sorted_dates.index(d) > 0 else None
-        dtype = _classify_day_type(days[d], prev_vp)
-        dtype["date"] = str(d)
-        day_types.append(dtype)
+    today_type = {"type": "N/A", "desc": "Day Type requires intraday data (15m/30m/1h)"}
+    if is_intraday and sorted_dates:
+        for i, d in enumerate(sorted_dates[-5:]):
+            prev_vp = daily_vps.get(sorted_dates[sorted_dates.index(d)-1]) if sorted_dates.index(d) > 0 else None
+            dtype = _classify_day_type(days[d], prev_vp)
+            dtype["date"] = str(d)
+            day_types.append(dtype)
+        today_type = day_types[-1] if day_types else today_type
 
-    today_type = day_types[-1] if day_types else {"type": "UNKNOWN", "desc": "N/A"}
-
-    # --- Module 2: Opening Type (today vs yesterday's VA) ---
-    opening = {"type": "UNKNOWN", "desc": "Insufficient data", "emoji": "❓", "implication": "N/A"}
-    if len(sorted_dates) >= 2:
+    # --- Module 2: Opening Type (INTRADAY ONLY) ---
+    opening = None
+    if is_intraday and len(sorted_dates) >= 2:
         today_date = sorted_dates[-1]
         yesterday_date = sorted_dates[-2]
         if yesterday_date in daily_vps and today_date in days:
             yest_vp = daily_vps[yesterday_date]
             opening = _classify_opening_type(days[today_date], yest_vp["vah"], yest_vp["val"])
 
-    # --- Module 3: Rotation Factor (today) ---
+    # --- Module 3: Rotation Factor (INTRADAY ONLY) ---
     today_rf = 0
-    today_character = "UNKNOWN"
-    if sorted_dates and sorted_dates[-1] in days and sorted_dates[-1] in daily_vps:
+    today_character = None
+    if is_intraday and sorted_dates and sorted_dates[-1] in days and sorted_dates[-1] in daily_vps:
         today_poc = daily_vps[sorted_dates[-1]]["poc_price"]
         today_rf, today_character = _compute_rotation_factor(days[sorted_dates[-1]], today_poc)
 
-    # --- Module 4: Close Location (yesterday) ---
+    # --- Module 4: Close Location ---
     close_analysis = None
-    if len(sorted_dates) >= 2:
+    if is_intraday and len(sorted_dates) >= 2:
         yest_date = sorted_dates[-2]
         if yest_date in daily_vps and yest_date in days:
             close_analysis = _analyze_close_location(days[yest_date], daily_vps[yest_date])
+    elif not is_intraday and len(df) >= 2:
+        # For daily: analyze yesterday's bar relative to overall VP
+        close_analysis = _analyze_close_location_daily(df, vp)
 
-    # Follow-through tracking (last 5 days)
+    # Follow-through tracking
     follow_through = []
-    for i in range(max(0, len(sorted_dates)-6), len(sorted_dates)-1):
-        d = sorted_dates[i]
-        next_d = sorted_dates[i+1]
-        if d in daily_vps and next_d in days:
-            cl = _analyze_close_location(days[d], daily_vps[d])
-            if cl:
-                next_open = days[next_d]["Open"].iloc[0]
-                next_close = days[next_d]["Close"].iloc[-1]
-                followed = (cl["follow_bias"] == "BULLISH" and next_close > next_open) or \
-                           (cl["follow_bias"] == "BEARISH" and next_close < next_open) or \
-                           (cl["follow_bias"] in ("MILD_BULLISH", "MILD_BEARISH") and True)
-                follow_through.append({"date": str(d), "bias": cl["follow_bias"], "followed": followed})
+    if is_intraday:
+        for i in range(max(0, len(sorted_dates)-6), len(sorted_dates)-1):
+            d = sorted_dates[i]
+            next_d = sorted_dates[i+1]
+            if d in daily_vps and next_d in days:
+                cl = _analyze_close_location(days[d], daily_vps[d])
+                if cl:
+                    next_open = days[next_d]["Open"].iloc[0]
+                    next_close = days[next_d]["Close"].iloc[-1]
+                    followed = (cl["follow_bias"] == "BULLISH" and next_close > next_open) or \
+                               (cl["follow_bias"] == "BEARISH" and next_close < next_open) or \
+                               (cl["follow_bias"] in ("MILD_BULLISH", "MILD_BEARISH") and True)
+                    follow_through.append({"date": str(d), "bias": cl["follow_bias"], "followed": followed})
+    else:
+        # Daily: track bar-to-bar follow-through using rolling VP context
+        for i in range(max(0, len(df)-11), len(df)-1):
+            bar = df.iloc[i]
+            next_bar = df.iloc[i+1]
+            if bar["Close"] > vah:
+                bias = "BULLISH"
+            elif bar["Close"] < val:
+                bias = "BEARISH"
+            else:
+                bias = "NEUTRAL"
+            if bias != "NEUTRAL":
+                followed = (bias == "BULLISH" and next_bar["Close"] > next_bar["Open"]) or \
+                           (bias == "BEARISH" and next_bar["Close"] < next_bar["Open"])
+                follow_through.append({"date": str(df.index[i].date() if hasattr(df.index[i], 'date') else i),
+                                       "bias": bias, "followed": followed})
 
     follow_rate = sum(1 for ft in follow_through if ft["followed"]) / len(follow_through) if follow_through else 0
 
@@ -2234,34 +2324,38 @@ def compute_auction(df, symbol, timeframe, params, chart_path=None):
 Activity: {activity} (last 10: {bars_in} in VA, {bars_above} above, {bars_below} below)
 """
 
-    # Day Type
-    text += f"""
+    # Day Type (intraday only)
+    if is_intraday:
+        text += f"""
 <b>📅 Day Type: {today_type['type']}</b>
 {today_type['desc']}
 """
-    if len(day_types) > 1:
-        text += "History: " + " → ".join(dt["type"].replace("_", " ") for dt in day_types) + "\n"
+        if len(day_types) > 1:
+            text += "History: " + " → ".join(dt["type"].replace("_", " ") for dt in day_types) + "\n"
 
-    # Opening
-    text += f"""
+    # Opening (intraday only)
+    if is_intraday and opening:
+        text += f"""
 <b>{opening.get('emoji','❓')} Opening: {opening['type']}</b>
 {opening['desc']}
 💡 {opening.get('implication', 'N/A')}
 """
 
-    # Rotation
-    rf_emoji = "⚖️" if today_character in ("VERY_BALANCED", "BALANCED") else "📈"
-    text += f"""
+    # Rotation (intraday only)
+    if is_intraday and today_character:
+        rf_emoji = "⚖️" if today_character in ("VERY_BALANCED", "BALANCED") else "📈"
+        text += f"""
 <b>🔄 Rotation Factor: {today_rf} ({today_character})</b>
 {rf_emoji} {'Balanced day — fade extremes' if today_rf >= 4 else 'Directional — follow momentum' if today_rf <= 1 else 'Moderate rotation'}
 """
 
     # Close Analysis
     if close_analysis:
+        close_label = "Yesterday Close" if is_intraday else "Previous Bar Close"
         text += f"""
-<b>🌙 Yesterday Close: {close_analysis['location']}</b>
+<b>🌙 {close_label}: {close_analysis['location']}</b>
 {close_analysis['implication']}
-Follow-through rate: {follow_rate*100:.0f}% (last {len(follow_through)} days)
+Follow-through rate: {follow_rate*100:.0f}% (last {len(follow_through)} bars)
 """
 
     # Value Migration
