@@ -10,37 +10,16 @@
 |---|---|---|
 | **Research** | `agents/research` | Riset rotating focus, buat task spec, kirim laporan ke Telegram |
 | **Dev-A** | `agents/dev-a` | Implementasi + Senior Reviewer (merge PR Dev-B & Dev-C) |
-| **Dev-B** | `agents/dev-b` | Implementasi task dari queue |
-| **Dev-C** | `agents/dev-c` | Implementasi task dari queue |
+| **Dev-B** | `agents/dev-b` | Pure implementor |
+| **Dev-C** | `agents/dev-c` | Pure implementor |
 
-## Research: Rotating Focus
-
-Research Agent TIDAK mengerjakan semua sekaligus. Setiap siklus punya **satu fokus**:
-
-| Siklus | Fokus | Output |
-|---|---|---|
-| 1 | UX/UI improvement | 3-5 task UX |
-| 2 | Data & integrasi baru (gratis) | 3-5 task data |
-| 3 | Fitur baru (ICT, SMC, Quant, dll) | 3-5 task fitur |
-| 4 | Bug hunting & tech debt | 3-5 task fix/refactor |
-| 5 | Review & optimasi yang sudah ada | 3-5 task improvement |
-| → rotate kembali ke siklus 1 | | |
-
-Referensi riset: baca `.agents/FEATURE_INDEX.md`, `.agents/UX_AUDIT.md`, `.agents/DATA_SOURCES_AUDIT.md`
-
-## Dev-A: Senior Reviewer
-
-Dev-A mengerjakan task seperti Dev-B dan Dev-C, **ditambah**:
-- Review PR dari Dev-B dan Dev-C setelah selesai implement task
-- Merge PR ke `agents/main` kalau build clean dan logic benar
-- Kalau ada issue → comment di PR + buat task fix di `pending/` dengan tag `[BLOCKING]`
-- Dev-A TIDAK review PR-nya sendiri
+---
 
 ## Hierarki Branch
 
 ```
 main                  ← HANYA owner yang merge ke sini
-└── agents/main       ← branch integrasi semua agent
+└── agents/main       ← branch integrasi semua agent (selalu harus build clean)
     ├── agents/research
     ├── agents/dev-a
     ├── agents/dev-b
@@ -52,32 +31,110 @@ main                  ← HANYA owner yang merge ke sini
 - ❌ Tidak ada yang merge ke `main` — itu hak owner
 - ✅ Semua PR diarahkan ke `agents/main`
 - ✅ Sebelum kerja, selalu `git pull origin agents/main`
+- ✅ `agents/main` harus selalu dalam kondisi `go build ./...` sukses
 
 ---
 
-## Workflow Task Queue
+## Research Agent — Rotating Focus
 
-### Research Agent
+Research TIDAK mengerjakan semua sekaligus. Setiap siklus punya **satu fokus**:
+
+| Siklus | Fokus | Referensi |
+|---|---|---|
+| 1 | UX/UI improvement | `.agents/UX_AUDIT.md` |
+| 2 | Data & integrasi baru (gratis) | `.agents/DATA_SOURCES_AUDIT.md` |
+| 3 | Fitur baru (ICT, SMC, Quant, Wyckoff, dll) | `.agents/FEATURE_INDEX.md` |
+| 4 | Technical refactor & tech debt | `.agents/TECH_REFACTOR_PLAN.md` |
+| 5 | Bug hunting & edge cases | Codebase + log analysis |
+| → rotate ke siklus 1 | | |
+
+**Loop Research (setiap 30-45 menit):**
 1. `git pull origin agents/main`
-2. Analisis codebase + merged PR terbaru
-3. Tulis task spec ke `.agents/tasks/pending/TASK-XXX-nama.md`
-4. Tulis hasil riset ke `.agents/research/YYYY-MM-DD-topik.md`
-5. Commit + push ke `agents/research`
-6. Kirim ringkasan ke Telegram owner (chat_id: **1476273971**)
+2. Tentukan fokus siklus ini (cek siklus terakhir di STATUS.md)
+3. Baca referensi dokumen sesuai fokus
+4. Riset mendalam sesuai topik
+5. Tulis hasil ke `.agents/research/YYYY-MM-DD-HH-topik.md`
+6. Buat **3-5 task spec** di `.agents/tasks/pending/TASK-XXX-nama.md`
 7. Update `.agents/STATUS.md`
-8. Tunggu interval berikutnya → ulangi
+8. Commit + push ke `agents/research`
+9. Kirim laporan ke Telegram owner
+10. Tunggu → ulangi dengan fokus berikutnya
 
-### Dev Agent (A / B / C)
+**Aturan Research:**
+- Jangan buat PR ke `agents/main` — cukup push ke `agents/research`
+- Jangan review atau merge PR — itu tugas Dev-A
+- Nomor TASK sequential — cek task terakhir di `pending/` + `done/`
+- Jangan duplikasi task yang sudah ada
+
+---
+
+## Dev-A — Senior Developer + Reviewer
+
+**Loop Dev-A:**
+1. Ambil + implementasi task dari queue (sama seperti Dev-B/C)
+2. Setelah selesai implement, cek open PR dari Dev-B dan Dev-C:
+   ```bash
+   gh pr list --base agents/main
+   ```
+3. Review setiap PR:
+   - `go build ./...` harus clean
+   - `go vet ./...` harus clean
+   - Logic sesuai task spec (baca acceptance criteria)
+   - Tidak ada conflict dengan PR lain
+4. Kalau oke → merge: `gh pr merge <number> --merge --delete-branch`
+5. Kalau ada issue → comment di PR + buat task `[BLOCKING-XXX]` di `pending/`
+6. Update STATUS.md
+7. Push ke `agents/dev-a`
+
+**Aturan Dev-A:**
+- TIDAK review PR-nya sendiri
+- Kalau PR-nya sendiri selesai → tunggu owner review, atau minta Dev-B/C yang review (exceptional)
+- Prioritaskan review PR yang sudah lama pending
+
+---
+
+## Dev-B & Dev-C — Pure Implementor
+
+**Loop Dev-B/C (terus-menerus):**
 1. `git pull origin agents/main`
-2. Cek `.agents/tasks/pending/` — ambil 1 task
-3. "Claim" task: pindah file ke `.agents/tasks/claimed/TASK-XXX-nama.DEV-X.md`
-4. Commit claim ke branch agent sendiri
-5. Buat feature branch: `git checkout -b feat/TASK-XXX-nama` dari `agents/main`
-6. Implement
-7. Commit + push feature branch
-8. Buat PR ke `agents/main`
-9. Pindah task ke `.agents/tasks/done/`
-10. Ambil task berikutnya → ulangi
+2. Cek `.agents/tasks/pending/` — pilih 1 task (high > medium > low)
+   - Hindari task yang sudah diclaim di `claimed/`
+3. Claim task:
+   ```bash
+   cp .agents/tasks/pending/TASK-XXX.md .agents/tasks/claimed/TASK-XXX.DEV-B.md
+   rm .agents/tasks/pending/TASK-XXX.md
+   git add -A && git commit -m "chore: claim TASK-XXX [Dev-B]"
+   git push origin agents/dev-b
+   ```
+4. Buat feature branch dari `agents/main`:
+   ```bash
+   git checkout agents/main && git pull origin agents/main
+   git checkout -b feat/TASK-XXX-nama
+   ```
+5. Implement sesuai acceptance criteria
+6. Build + vet:
+   ```bash
+   go build ./... && go vet ./...
+   ```
+7. Commit + push + PR ke `agents/main`:
+   ```bash
+   git push origin feat/TASK-XXX-nama
+   gh pr create --base agents/main --title "feat(TASK-XXX): nama" --body "Closes TASK-XXX"
+   ```
+8. Pindah task ke done + update STATUS.md:
+   ```bash
+   mv .agents/tasks/claimed/TASK-XXX.DEV-B.md .agents/tasks/done/
+   git checkout agents/dev-b
+   git add -A && git commit -m "chore: done TASK-XXX [Dev-B]"
+   git push origin agents/dev-b
+   ```
+9. Langsung ambil task berikutnya
+
+**Aturan Dev-B/C:**
+- Kalau build gagal → fix dulu, jangan PR
+- Kalau tidak ada task di pending → tunggu 5 menit, cek lagi
+- Jangan edit file yang sama dengan agent lain secara bersamaan
+- JANGAN BERHENTI — terus ambil task selagi pending queue ada isinya
 
 ---
 
@@ -89,66 +146,75 @@ File: `.agents/tasks/pending/TASK-XXX-nama-singkat.md`
 # TASK-XXX: Nama Task
 
 **Priority:** high / medium / low
-**Estimated:** S / M / L (Small <2h, Medium 2-4h, Large 4h+)
+**Type:** feature / refactor / fix / ux / data
+**Estimated:** S / M / L (S=<2h, M=2-4h, L=4h+)
 **Area:** internal/service | internal/adapter | pkg | docs
 **Created by:** Research Agent
-**Created at:** YYYY-MM-DD HH:MM
+**Created at:** YYYY-MM-DD HH:MM WIB
+**Siklus:** UX / Data / Fitur / Refactor / BugHunt
 
 ## Deskripsi
 [Apa yang perlu dilakukan]
 
 ## Konteks
-[Mengapa ini penting, hasil riset terkait]
+[Mengapa ini penting — referensi ke dokumen riset]
 
 ## Acceptance Criteria
-- [ ] ...
-- [ ] ...
+- [ ] go build ./... sukses
+- [ ] go vet ./... sukses
+- [ ] ...kriteria spesifik task...
 
 ## File yang Kemungkinan Diubah
 - `path/to/file.go`
 
 ## Referensi
-- [link atau nama file riset terkait]
+- `.agents/research/YYYY-MM-DD-topik.md`
+- `.agents/TECH_REFACTOR_PLAN.md#TECH-XXX` (untuk refactor tasks)
 ```
 
 ---
 
 ## Format Laporan Research ke Telegram
 
-Setiap selesai siklus riset, Research agent kirim ke Telegram:
-
 ```
 🔬 [RESEARCH REPORT]
 
-📌 Topik: <nama topik>
-🕐 Waktu: <timestamp WIB>
+📌 Fokus Siklus: <UX/Data/Fitur/Refactor/BugHunt>
+📖 Topik: <nama topik spesifik>
+🕐 <timestamp WIB>
 
-📊 Temuan:
-<ringkasan 3-5 poin temuan utama>
+📊 Temuan Utama:
+• <poin 1>
+• <poin 2>
+• <poin 3>
 
 📋 Task Dibuat:
-- TASK-XXX: <nama task> [priority]
-- TASK-YYY: <nama task> [priority]
+• TASK-XXX: <nama> [high/medium/low]
+• TASK-YYY: <nama> [high/medium/low]
 
-🔗 Detail: .agents/research/YYYY-MM-DD-topik.md
+🔗 Detail: .agents/research/YYYY-MM-DD-HH-topik.md
 ```
 
 ---
 
 ## Git Identity per Agent
 
-Setiap agent HARUS set git identity sebelum commit:
-
-| Agent | name | email |
-|---|---|---|
-| Research | `Agent Research` | `research@ark-intelligent.ai` |
-| Dev-A | `Agent Dev-A` | `dev-a@ark-intelligent.ai` |
-| Dev-B | `Agent Dev-B` | `dev-b@ark-intelligent.ai` |
-| Dev-C | `Agent Dev-C` | `dev-c@ark-intelligent.ai` |
-
 ```bash
+# Research
 git config user.name "Agent Research"
 git config user.email "research@ark-intelligent.ai"
+
+# Dev-A
+git config user.name "Agent Dev-A"
+git config user.email "dev-a@ark-intelligent.ai"
+
+# Dev-B
+git config user.name "Agent Dev-B"
+git config user.email "dev-b@ark-intelligent.ai"
+
+# Dev-C
+git config user.name "Agent Dev-C"
+git config user.email "dev-c@ark-intelligent.ai"
 ```
 
 ---
@@ -156,47 +222,64 @@ git config user.email "research@ark-intelligent.ai"
 ## Aturan Commit
 
 ```
-feat(TASK-XXX): deskripsi singkat
-fix(TASK-XXX): deskripsi singkat
-research: topik yang diriset
-chore: hal-hal maintenance
+feat(TASK-XXX): deskripsi singkat       ← fitur baru
+fix(TASK-XXX): deskripsi singkat        ← bug fix
+refactor(TASK-XXX): deskripsi singkat   ← refactor (no behavior change)
+ux(TASK-XXX): deskripsi singkat         ← UX improvement
+research: topik yang diriset            ← dari Research agent
+chore: claim/done TASK-XXX [Dev-X]      ← task management
 ```
 
 ---
 
-## Konflik & Collision Prevention
+## Conflict Prevention
 
-- Satu task hanya boleh diklaim oleh satu agent
-- Claim dilakukan dengan atomic file rename (pindah ke `claimed/` + tambahkan `.DEV-X`)
-- Kalau dua agent claim task yang sama → yang duluan commit claim menang, yang lain batalkan
-- Jangan edit file yang sama di branch berbeda tanpa koordinasi di `.agents/STATUS.md`
+- Satu task = satu agent (atomic claim via file rename)
+- Kalau dua agent claim task yang sama → yang duluan commit claim menang
+- Untuk refactor file besar (formatter.go, handler.go): koordinasi via STATUS.md
+  - Tulis "Dev-B: working on formatter.go" sebelum mulai
+  - Dev lain hindari file tersebut sampai PR merged
 
 ---
 
-## STATUS.md
+## Dokumen Referensi
 
-Setiap agent update `.agents/STATUS.md` setelah setiap aksi:
+| File | Isi |
+|---|---|
+| `.agents/FEATURE_INDEX.md` | Semua fitur yang ada + area riset potensial |
+| `.agents/UX_AUDIT.md` | 14 UX improvement tasks |
+| `.agents/DATA_SOURCES_AUDIT.md` | Status API (free/paid), peluang Firecrawl |
+| `.agents/TECH_REFACTOR_PLAN.md` | 15 refactor items, phased execution |
+| `.agents/STATUS.md` | Status real-time semua agent |
+
+---
+
+## STATUS.md Template
 
 ```markdown
-# Agent Status
+# Agent Status — last updated: YYYY-MM-DD HH:MM WIB
 
 ## Research
+- **Siklus saat ini:** 1/5 (UX)
 - **Last run:** YYYY-MM-DD HH:MM WIB
 - **Current:** idle / researching <topik>
 - **Tasks created today:** N
 
 ## Dev-A
-- **Last run:** YYYY-MM-DD HH:MM WIB  
-- **Current:** idle / working on TASK-XXX
-- **PRs today:** N
+- **Last run:** YYYY-MM-DD HH:MM WIB
+- **Current:** idle / working on TASK-XXX / reviewing PR #N
+- **PRs merged today:** N
+- **PRs pending review:** N
 
 ## Dev-B
 - **Last run:** YYYY-MM-DD HH:MM WIB
 - **Current:** idle / working on TASK-XXX
+- **Files being edited:** path/to/file.go (tulis ini untuk prevent conflict)
 - **PRs today:** N
 
 ## Dev-C
 - **Last run:** YYYY-MM-DD HH:MM WIB
 - **Current:** idle / working on TASK-XXX
+- **Files being edited:** -
 - **PRs today:** N
 ```
