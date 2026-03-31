@@ -1059,3 +1059,52 @@ func (kb *KeyboardBuilder) VPDetailMenu() ports.InlineKeyboard {
 		},
 	}
 }
+
+// VPSymbolMenu builds a symbol selector for /vp (no argument).
+func (kb *KeyboardBuilder) VPSymbolMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			// FX Majors
+			{
+				{Text: "EUR", CallbackData: "vp:sym:EUR"},
+				{Text: "GBP", CallbackData: "vp:sym:GBP"},
+				{Text: "JPY", CallbackData: "vp:sym:JPY"},
+				{Text: "CHF", CallbackData: "vp:sym:CHF"},
+			},
+			{
+				{Text: "AUD", CallbackData: "vp:sym:AUD"},
+				{Text: "NZD", CallbackData: "vp:sym:NZD"},
+				{Text: "CAD", CallbackData: "vp:sym:CAD"},
+				{Text: "DXY", CallbackData: "vp:sym:USD"},
+			},
+			// Metals & Energy
+			{
+				{Text: "🥇 Gold", CallbackData: "vp:sym:XAU"},
+				{Text: "🥈 Silver", CallbackData: "vp:sym:XAG"},
+				{Text: "🛢 Oil", CallbackData: "vp:sym:OIL"},
+				{Text: "🔶 Copper", CallbackData: "vp:sym:COPPER"},
+			},
+			// Indices
+			{
+				{Text: "S&P500", CallbackData: "vp:sym:SPX500"},
+				{Text: "Nasdaq", CallbackData: "vp:sym:NDX"},
+				{Text: "Dow", CallbackData: "vp:sym:DJI"},
+				{Text: "Russell", CallbackData: "vp:sym:RUT"},
+			},
+			// Bonds & Crypto
+			{
+				{Text: "🏛 10Y", CallbackData: "vp:sym:BOND"},
+				{Text: "🏛 30Y", CallbackData: "vp:sym:BOND30"},
+				{Text: "₿ BTC", CallbackData: "vp:sym:BTC"},
+				{Text: "Ξ ETH", CallbackData: "vp:sym:ETH"},
+			},
+			// Energy & Crosses
+			{
+				{Text: "⛽ ULSD", CallbackData: "vp:sym:ULSD"},
+				{Text: "⛽ RBOB", CallbackData: "vp:sym:RBOB"},
+				{Text: "XAU/EUR", CallbackData: "vp:sym:XAUEUR"},
+				{Text: "XAU/GBP", CallbackData: "vp:sym:XAUGBP"},
+			},
+		},
+	}
+}

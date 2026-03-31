@@ -94,9 +94,10 @@ func (h *Handler) cmdVP(ctx context.Context, chatID string, userID int64, args s
 
 	parts := strings.Fields(strings.TrimSpace(strings.ToUpper(args)))
 	if len(parts) == 0 {
-		_, err := h.bot.SendHTML(ctx, chatID,
-			"Usage: <code>/vp EUR</code> atau <code>/vp XAU 4h</code>\n"+
-				"Timeframe: 15m, 30m, 1h, 4h, 6h, 12h, daily")
+		// Show symbol selector
+		_, err := h.bot.SendWithKeyboard(ctx, chatID,
+			"📊 <b>Volume Profile</b>\n\nPilih aset untuk analisis:",
+			h.kb.VPSymbolMenu())
 		return err
 	}
 
@@ -138,6 +139,31 @@ func (h *Handler) cmdVP(ctx context.Context, chatID string, userID int64, args s
 
 func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int, _ int64, data string) error {
 	action := strings.TrimPrefix(data, "vp:")
+
+	// Symbol selection from VPSymbolMenu
+	if strings.HasPrefix(action, "sym:") {
+		symAndTF := strings.TrimPrefix(action, "sym:")
+		parts := strings.SplitN(symAndTF, ":", 2)
+		currency := parts[0]
+		timeframe := "daily"
+		if len(parts) > 1 && parts[1] != "" {
+			timeframe = parts[1]
+		}
+		mapping := domain.FindPriceMappingByCurrency(currency)
+		if mapping == nil {
+			return nil
+		}
+		_ = h.bot.EditWithKeyboard(ctx, chatID, msgID,
+			fmt.Sprintf("⏳ Menghitung VP <b>%s</b> (%s)...",
+				html.EscapeString(currency), timeframe), h.kb.VPMenu())
+		state, err := h.computeVPState(ctx, mapping, timeframe)
+		if err != nil {
+			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
+				fmt.Sprintf("❌ %s", html.EscapeString(err.Error())), h.kb.VPMenu())
+		}
+		h.vpCache.set(chatID, state)
+		return h.vpRunMode(ctx, chatID, msgID, state, "profile")
+	}
 
 	// TF change
 	if strings.HasPrefix(action, "tf:") {
