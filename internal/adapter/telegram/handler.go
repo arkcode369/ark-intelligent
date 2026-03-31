@@ -250,6 +250,7 @@ func (h *Handler) sendHelp(ctx context.Context, chatID string, userID int64) err
 /cta — Classical TA dashboard · <code>/cta EUR</code> · <code>/cta EUR 4h</code>
 /ctabt — Backtest strategi Classical TA · <code>/ctabt EUR</code> · <code>/ctabt EUR 4h</code>
 /quant — Econometric/Statistical analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
+/vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
 
 <b>📊 Market Data</b>
 /cot — COT positioning · <code>/cot EUR</code>
@@ -273,10 +274,6 @@ func (h *Handler) sendHelp(ctx context.Context, chatID string, userID int64) err
 /sentiment — Sentiment surveys
 /seasonal — Seasonal patterns · <code>/seasonal EUR</code>
 
-<b>🔬 Quantitative</b>
-/intraday · /corr · /carry · /garch · /hurst · /regime
-<i>Gunakan dengan kode aset, misal: <code>/garch EUR</code></i>
-
 <b>⚙️ Settings</b>
 /settings · /membership · /clear
 `)
@@ -289,9 +286,9 @@ func (h *Handler) sendHelp(ctx context.Context, chatID string, userID int64) err
 	}
 
 	sb.WriteString(`
-<code>ARK v3.6.0</code>`)
+<code>ARK v3.7.0</code>`)
 
-	_, err := h.bot.SendHTML(ctx, chatID, sb.String())
+	_, err := h.bot.SendWithKeyboard(ctx, chatID, sb.String(), h.kb.MainMenu())
 	return err
 }
 
