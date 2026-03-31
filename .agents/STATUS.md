@@ -1,25 +1,22 @@
-# Agent Status — last updated: 2026-04-01 01:00 WIB
+# Agent Status — last updated: 2026-04-01 08:00 WIB
 
 ## Research
-- **Siklus saat ini:** 1/5 (UX)
 - **Last run:** 2026-04-01 01:00 WIB
-- **Current:** completed siklus 1 — next: siklus 2 (Data)
-- **Tasks created today:** 5 (TASK-001 s/d TASK-005)
+- **Current:** idle
+- **Tasks created today:** 5
 
 ## Dev-A
-- **Last run:** -
-- **Current:** not started
-- **PRs merged today:** 0
-- **PRs pending review:** 0
+- **Last run:** 2026-04-01
+- **Current:** working on TASK-001
+- **PRs today:** 0
 
 ## Dev-B
 - **Last run:** -
 - **Current:** not started
-- **Files being edited:** -
 - **PRs today:** 0
 
 ## Dev-C
-- **Last run:** -
-- **Current:** not started
-- **Files being edited:** -
+- **Last run:** 2026-04-01 08:00 WIB
+- **Current:** working on TASK-005 (user-friendly errors)
+- **Files being edited:** internal/adapter/telegram/errors.go (new), handler.go, handler_cta.go
 - **PRs today:** 0
