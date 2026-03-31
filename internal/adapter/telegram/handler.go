@@ -109,6 +109,13 @@ type Handler struct {
 	// quantCache stores per-chat Quant state with TTL.
 	quantCache *quantStateCache
 
+	// vp holds optional Volume Profile engine services.
+	// May be nil — /vp command disabled if not configured.
+	vp *VPServices
+
+	// vpCache stores per-chat VP state with TTL.
+	vpCache *vpStateCache
+
 	// ctabt holds optional CTA Backtest engine services.
 	// May be nil — /ctabt command disabled if not configured.
 	ctabt *CTABTServices

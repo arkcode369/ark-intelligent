@@ -1004,3 +1004,54 @@ func (kb *KeyboardBuilder) QuantDetailMenu() ports.InlineKeyboard {
 		},
 	}
 }
+
+// VPMenu builds the main /vp Volume Profile dashboard keyboard.
+func (kb *KeyboardBuilder) VPMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			// Analysis modes
+			{
+				{Text: "📊 Profile", CallbackData: "vp:profile"},
+				{Text: "🕐 Session", CallbackData: "vp:session"},
+				{Text: "📐 Shape", CallbackData: "vp:shape"},
+			},
+			{
+				{Text: "🔀 Composite", CallbackData: "vp:composite"},
+				{Text: "📏 VWAP", CallbackData: "vp:vwap"},
+				{Text: "⏱ TPO", CallbackData: "vp:tpo"},
+			},
+			{
+				{Text: "📈 Delta", CallbackData: "vp:delta"},
+				{Text: "🏛 Auction", CallbackData: "vp:auction"},
+				{Text: "🎯 Confluence", CallbackData: "vp:confluence"},
+			},
+			{
+				{Text: "📋 Full Report", CallbackData: "vp:full"},
+			},
+			// TF selector
+			{
+				{Text: "15m", CallbackData: "vp:tf:15m"},
+				{Text: "30m", CallbackData: "vp:tf:30m"},
+				{Text: "1H", CallbackData: "vp:tf:1h"},
+				{Text: "4H", CallbackData: "vp:tf:4h"},
+			},
+			{
+				{Text: "6H", CallbackData: "vp:tf:6h"},
+				{Text: "12H", CallbackData: "vp:tf:12h"},
+				{Text: "📅 Daily", CallbackData: "vp:tf:daily"},
+				{Text: "🔄 Refresh", CallbackData: "vp:refresh"},
+			},
+		},
+	}
+}
+
+// VPDetailMenu builds the back-navigation keyboard for VP detail views.
+func (kb *KeyboardBuilder) VPDetailMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "<< Kembali ke Dashboard", CallbackData: "vp:back"},
+			},
+		},
+	}
+}

@@ -374,6 +374,14 @@ func main() {
 		}
 		handler.WithQuant(quantServices)
 		log.Info().Msg("Quant commands registered (/quant)")
+
+		// Wire Volume Profile services
+		vpServices := tgbot.VPServices{
+			DailyPriceRepo: dailyPriceRepo,
+			IntradayRepo:   intradayRepo,
+		}
+		handler.WithVP(vpServices)
+		log.Info().Msg("Volume Profile commands registered (/vp)")
 	}
 
 	// Register free-text handler for chatbot mode
