@@ -94,10 +94,24 @@ func (h *Handler) cmdVP(ctx context.Context, chatID string, userID int64, args s
 
 	parts := strings.Fields(strings.TrimSpace(strings.ToUpper(args)))
 	if len(parts) == 0 {
-		// Show symbol selector
+		// Show symbol selector with description
 		_, err := h.bot.SendWithKeyboard(ctx, chatID,
-			"📊 <b>Volume Profile</b>\n\nPilih aset untuk analisis:",
-			h.kb.VPSymbolMenu())
+			`📊 <b>Volume Profile — Institutional Analysis</b>
+
+10 mode analisis volume-at-price:
+
+📊 <b>Profile</b> — POC, VAH/VAL, HVN/LVN zones
+🕐 <b>Session</b> — Asian/London/NY split + Naked POC
+📐 <b>Shape</b> — P/b/D/B classification
+🔀 <b>Composite</b> — Multi-window merged VP
+📏 <b>VWAP</b> — VWAP + σ bands + anchored VWAP
+⏱ <b>TPO</b> — Time vs Volume POC divergence
+📈 <b>Delta</b> — Simulated buy/sell pressure
+🏛 <b>Auction</b> — Initiative/Responsive state
+🎯 <b>Confluence</b> — Multi-TF level overlap (★★★★★)
+📋 <b>Full Report</b> — Decision signal synthesis
+
+Pilih aset:`, h.kb.VPSymbolMenu())
 		return err
 	}
 

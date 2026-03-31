@@ -110,11 +110,32 @@ func (h *Handler) cmdQuant(ctx context.Context, chatID string, _ int64, args str
 	}
 
 	parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
-	symbol := "EUR"
-	timeframe := "daily"
-	if len(parts) > 0 && parts[0] != "" {
-		symbol = parts[0]
+	if len(parts) == 0 {
+		// Show symbol selector with description
+		_, err := h.bot.SendWithKeyboard(ctx, chatID,
+			`🔬 <b>Quant Engine — Econometric Analysis</b>
+
+Analisis statistik & ekonometrik institutional:
+
+📊 <b>Stats</b> — Distribusi return, VaR, Sharpe, QQ plot
+📈 <b>GARCH</b> — Volatility clustering & forecast
+🔗 <b>Correlation</b> — Heatmap multi-asset
+🎭 <b>Regime</b> — Hidden Markov Model (bull/bear/transition)
+📅 <b>Seasonal</b> — Day-of-week & month patterns
+🔄 <b>Mean Revert</b> — ADF, Hurst, half-life
+⚡ <b>Granger</b> — Kausalitas antar aset
+🔗 <b>Cointegration</b> — Pair trading analysis
+🧬 <b>PCA</b> — Factor analysis multi-asset
+🌐 <b>VAR</b> — Multi-asset forecast
+⚠️ <b>Risk</b> — VaR/CVaR historical + parametric
+📋 <b>Full Report</b> — Semua model → LONG/SHORT/FLAT
+
+Pilih aset:`, h.kb.QuantSymbolMenu())
+		return err
 	}
+
+	symbol := parts[0]
+	timeframe := "daily"
 	if len(parts) > 1 {
 		timeframe = strings.ToLower(parts[1])
 	}
@@ -226,6 +247,12 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 		return nil
 	}
 	action := parts[1]
+
+	// Symbol selection from QuantSymbolMenu (before state check)
+	if strings.HasPrefix(action, "sym:") {
+		sym := strings.TrimPrefix(action, "sym:")
+		return h.cmdQuant(ctx, chatID, 0, sym)
+	}
 
 	state := h.quantCache.get(chatID)
 	if state == nil {

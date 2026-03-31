@@ -1108,3 +1108,63 @@ func (kb *KeyboardBuilder) VPSymbolMenu() ports.InlineKeyboard {
 		},
 	}
 }
+
+// CTASymbolMenu builds a symbol selector for /cta.
+func (kb *KeyboardBuilder) CTASymbolMenu() ports.InlineKeyboard {
+	return kb.buildSymbolMenu("cta")
+}
+
+// CTABTSymbolMenu builds a symbol selector for /ctabt.
+func (kb *KeyboardBuilder) CTABTSymbolMenu() ports.InlineKeyboard {
+	return kb.buildSymbolMenu("ctabt")
+}
+
+// QuantSymbolMenu builds a symbol selector for /quant.
+func (kb *KeyboardBuilder) QuantSymbolMenu() ports.InlineKeyboard {
+	return kb.buildSymbolMenu("quant")
+}
+
+// buildSymbolMenu creates a reusable symbol selector grid.
+func (kb *KeyboardBuilder) buildSymbolMenu(prefix string) ports.InlineKeyboard {
+	p := func(sym string) string { return prefix + ":sym:" + sym }
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "EUR", CallbackData: p("EUR")},
+				{Text: "GBP", CallbackData: p("GBP")},
+				{Text: "JPY", CallbackData: p("JPY")},
+				{Text: "CHF", CallbackData: p("CHF")},
+			},
+			{
+				{Text: "AUD", CallbackData: p("AUD")},
+				{Text: "NZD", CallbackData: p("NZD")},
+				{Text: "CAD", CallbackData: p("CAD")},
+				{Text: "DXY", CallbackData: p("USD")},
+			},
+			{
+				{Text: "🥇 Gold", CallbackData: p("XAU")},
+				{Text: "🥈 Silver", CallbackData: p("XAG")},
+				{Text: "🛢 Oil", CallbackData: p("OIL")},
+				{Text: "🔶 Copper", CallbackData: p("COPPER")},
+			},
+			{
+				{Text: "S&P500", CallbackData: p("SPX500")},
+				{Text: "Nasdaq", CallbackData: p("NDX")},
+				{Text: "Dow", CallbackData: p("DJI")},
+				{Text: "Russell", CallbackData: p("RUT")},
+			},
+			{
+				{Text: "🏛 10Y", CallbackData: p("BOND")},
+				{Text: "🏛 30Y", CallbackData: p("BOND30")},
+				{Text: "₿ BTC", CallbackData: p("BTC")},
+				{Text: "Ξ ETH", CallbackData: p("ETH")},
+			},
+			{
+				{Text: "⛽ ULSD", CallbackData: p("ULSD")},
+				{Text: "⛽ RBOB", CallbackData: p("RBOB")},
+				{Text: "XAU/EUR", CallbackData: p("XAUEUR")},
+				{Text: "XAU/GBP", CallbackData: p("XAUGBP")},
+			},
+		},
+	}
+}

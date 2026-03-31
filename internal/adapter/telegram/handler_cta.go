@@ -124,10 +124,25 @@ func (h *Handler) cmdCTA(ctx context.Context, chatID string, _ int64, args strin
 	}
 
 	parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
-	symbol := "EUR"
-	if len(parts) > 0 && parts[0] != "" {
-		symbol = parts[0]
+	if len(parts) == 0 {
+		_, err := h.bot.SendWithKeyboard(ctx, chatID,
+			`📈 <b>CTA — Classical Technical Analysis</b>
+
+Multi-timeframe TA dashboard dengan 6 tools:
+
+📊 <b>Chart</b> — Candlestick + indikator per TF (15m-daily)
+🏯 <b>Ichimoku</b> — Cloud, Tenkan/Kijun, signal
+📐 <b>Fibonacci</b> — Swing levels + Golden Zone
+🕯 <b>Patterns</b> — Candlestick pattern detection
+⚡ <b>Confluence</b> — Multi-indicator agreement score
+📱 <b>Multi-TF</b> — Alignment semua timeframe
+🎯 <b>Zones</b> — Entry/SL/TP otomatis
+
+Pilih aset:`, h.kb.CTASymbolMenu())
+		return err
 	}
+
+	symbol := parts[0]
 
 	// Resolve symbol to contract code
 	mapping := h.resolveCTAMapping(symbol)
@@ -198,6 +213,13 @@ func (h *Handler) cmdCTA(ctx context.Context, chatID string, _ int64, args strin
 
 func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID int, _ int64, data string) error {
 	action := strings.TrimPrefix(data, "cta:")
+
+	// Symbol selection from CTASymbolMenu (before state check)
+	if strings.HasPrefix(action, "sym:") {
+		sym := strings.TrimPrefix(action, "sym:")
+		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
+		return h.cmdCTA(ctx, chatID, 0, sym)
+	}
 
 	// Get or recompute state
 	state := h.ctaCache.get(chatID)

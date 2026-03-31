@@ -62,13 +62,24 @@ func (h *Handler) cmdCTABT(ctx context.Context, chatID string, _ int64, args str
 	// Parse args: [SYMBOL] [TIMEFRAME] [GRADE]
 	parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
 
-	symbol := "EUR"
+	if len(parts) == 0 {
+		_, err := h.bot.SendWithKeyboard(ctx, chatID,
+			`📊 <b>CTA Backtest — Strategi Backtest</b>
+
+Backtest strategi CTA di semua timeframe:
+
+📊 <b>7 Timeframe:</b> 15m, 30m, 1h, 4h, 6h, 12h, daily
+📈 <b>Grade Filter:</b> A (best), B, C (all trades)
+📋 <b>Detail Trades:</b> Entry/exit/PnL setiap trade
+🎯 <b>Metrics:</b> Win rate, Sharpe, drawdown, profit factor
+
+Pilih aset:`, h.kb.CTABTSymbolMenu())
+		return err
+	}
+
+	symbol := parts[0]
 	timeframe := "daily"
 	grade := "C"
-
-	if len(parts) > 0 && parts[0] != "" {
-		symbol = parts[0]
-	}
 	if len(parts) > 1 {
 		timeframe = normalizeTimeframe(parts[1])
 	}
@@ -88,6 +99,13 @@ func (h *Handler) cmdCTABT(ctx context.Context, chatID string, _ int64, args str
 
 func (h *Handler) handleCTABTCallback(ctx context.Context, chatID string, msgID int, _ int64, data string) error {
 	action := strings.TrimPrefix(data, "ctabt:")
+
+	// Symbol selection from CTABTSymbolMenu (before any other processing)
+	if strings.HasPrefix(action, "sym:") {
+		sym := strings.TrimPrefix(action, "sym:")
+		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
+		return h.cmdCTABT(ctx, chatID, 0, sym)
+	}
 
 	// Default params (symbol from last run isn't cached, use EUR)
 	symbol := "EUR"
