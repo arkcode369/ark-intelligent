@@ -1362,6 +1362,10 @@ func (h *Handler) cbQuickCommand(ctx context.Context, chatID string, msgID int, 
 	case "corr", "carry", "intraday", "garch", "hurst", "regime", "factors", "wfopt":
 		// These are now handled by /quant
 		return h.cmdQuant(ctx, chatID, userID, args)
+	case "quant":
+		return h.cmdQuant(ctx, chatID, userID, args)
+	case "vp":
+		return h.cmdVP(ctx, chatID, userID, args)
 	default:
 		return nil
 	}

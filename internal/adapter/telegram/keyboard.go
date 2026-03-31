@@ -744,6 +744,10 @@ func (kb *KeyboardBuilder) MainMenu() ports.InlineKeyboard {
 			{
 				{Text: "⚡ Alpha Engine", CallbackData: "alpha:back"},
 			},
+			{
+				{Text: "🔬 Quant", CallbackData: "cmd:quant"},
+				{Text: "📊 Volume Profile", CallbackData: "cmd:vp"},
+			},
 		},
 	}
 }
