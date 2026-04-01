@@ -130,6 +130,8 @@ type IndicatorSnapshot struct {
 	CCI          *CCIResult         // nil if insufficient data
 	MFI          *MFIResult         // nil if insufficient data
 
+	Killzone     *KillzoneResult    // Current ICT killzone/session info
+
 	// Advanced indicators (nil if insufficient data or file not yet available)
 	Ichimoku   *IchimokuResult    // nil if insufficient data
 	SuperTrend *SuperTrendResult  // nil if insufficient data
