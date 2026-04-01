@@ -710,11 +710,13 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	// Find the script path relative to the binary
 	scriptPath := findCTAScript()
 
-	// Execute Python script
-	cmd := exec.CommandContext(ctx, "python3", scriptPath, inputPath, outputPath)
+	// Execute Python script with 90s timeout to prevent goroutine leaks if Python hangs.
+	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("chart renderer failed: %w", err)
+		return nil, fmt.Errorf("chart renderer failed (timeout 90s): %w", err)
 	}
 
 	// Read output PNG
