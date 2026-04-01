@@ -15,6 +15,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	regimesvc "github.com/arkcode369/ark-intelligent/internal/service/regime"
 )
 
 // CTAServices — dependencies for the /cta command
@@ -43,6 +44,7 @@ type ctaState struct {
 	mtf        *ta.MTFResult
 	bars       map[string][]ta.OHLCV // timeframe -> bars
 	chartData  map[string][]byte     // timeframe -> PNG bytes (lazy-generated)
+	overlay    *regimesvc.RegimeOverlay // optional regime header (nil = not computed)
 	computedAt time.Time
 }
 
@@ -462,7 +464,7 @@ func (h *Handler) computeCTAState(ctx context.Context, mapping *domain.PriceSymb
 		displaySymbol = mapping.TwelveData
 	}
 
-	return &ctaState{
+	st := &ctaState{
 		symbol:     displaySymbol,
 		currency:   mapping.Currency,
 		daily:      daily,
@@ -477,7 +479,16 @@ func (h *Handler) computeCTAState(ctx context.Context, mapping *domain.PriceSymb
 		bars:       barsByTF,
 		chartData:  make(map[string][]byte),
 		computedAt: time.Now(),
-	}, nil
+	}
+
+	// Compute regime overlay (best-effort, non-fatal).
+	if h.regimeEngine != nil {
+		if ov, ovErr := h.regimeEngine.ComputeOverlay(ctx, *mapping, "daily"); ovErr == nil {
+			st.overlay = ov
+		}
+	}
+
+	return st, nil
 }
 
 func (h *Handler) getCTAResult(state *ctaState, tf string) *ta.FullResult {

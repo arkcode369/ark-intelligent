@@ -19,6 +19,7 @@ import (
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	regimesvc "github.com/arkcode369/ark-intelligent/internal/service/regime"
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
@@ -43,6 +44,7 @@ type quantState struct {
 	bars      map[string][]ta.OHLCV // tf → bars
 	volCone   *pricesvc.VolCone     // cached vol cone result
 	createdAt time.Time
+	overlay   *regimesvc.RegimeOverlay // optional regime header
 }
 
 var quantStateTTL = config.QuantStateTTL
@@ -221,14 +223,23 @@ func (h *Handler) computeQuantState(ctx context.Context, mapping *domain.PriceSy
 	// Compute volatility cone (cached in state, TTL via quantStateTTL)
 	volCone := pricesvc.ComputeVolCone(dailyRecords)
 
-	return &quantState{
+	st := &quantState{
 		symbol:    mapping.Currency,
 		currency:  mapping.Currency,
 		timeframe: timeframe,
 		bars:      barsByTF,
 		volCone:   volCone,
 		createdAt: time.Now(),
-	}, nil
+	}
+
+	// Compute regime overlay (best-effort, non-fatal).
+	if h.regimeEngine != nil {
+		if ov, ovErr := h.regimeEngine.ComputeOverlay(ctx, *mapping, timeframe); ovErr == nil {
+			st.overlay = ov
+		}
+	}
+
+	return st, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -240,10 +251,14 @@ func (h *Handler) formatQuantDashboard(state *quantState) string {
 	if state.volCone != nil {
 		volConeSection = "\n" + h.fmt.FormatVolCone(state.volCone)
 	}
+	overlayHeader := ""
+	if state.overlay != nil {
+		overlayHeader = html.EscapeString(state.overlay.Description) + "\n"
+	}
 
 	return fmt.Sprintf(`📊 <b>QUANT DASHBOARD: %s</b>
 📅 %s — %s
-%s
+%s%s
 Pilih model analisis di bawah.
 Setiap model akan menghasilkan chart + analisis detail.
 
@@ -261,6 +276,7 @@ Klik tombol untuk mulai analisis.`,
 		time.Now().Format("02 Jan 2006"),
 		state.timeframe,
 		volConeSection,
+		overlayHeader,
 	)
 }
 

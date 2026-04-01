@@ -15,7 +15,12 @@ func formatCTASummary(state *ctaState) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("<b>⚡ Technical Analysis: %s</b>\n", html.EscapeString(state.symbol)))
-	sb.WriteString(fmt.Sprintf("📅 <i>%s</i>\n\n", state.computedAt.UTC().Format("02 Jan 2006 15:04 UTC")))
+	sb.WriteString(fmt.Sprintf("📅 <i>%s</i>\n", state.computedAt.UTC().Format("02 Jan 2006 15:04 UTC")))
+	// Regime overlay header (prepended if available)
+	if state.overlay != nil {
+		sb.WriteString(html.EscapeString(state.overlay.Description) + "\n")
+	}
+	sb.WriteString("\n")
 
 	d := state.daily
 	if d == nil || d.Confluence == nil {
