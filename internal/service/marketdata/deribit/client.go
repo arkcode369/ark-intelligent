@@ -134,6 +134,12 @@ func (c *Client) GetBookSummary(ctx context.Context, currency string) ([]BookSum
 // instrument name like "BTC-28MAR25-80000-C". The expiry is at 08:00 UTC
 // on the given date per Deribit convention.
 func parseExpiryFromInstrument(name string) (time.Time, error) {
+	return ParseExpiryFromInstrument(name)
+}
+
+// ParseExpiryFromInstrument is the exported version of parseExpiryFromInstrument,
+// used by other packages (e.g. gex) to parse expiry from instrument names.
+func ParseExpiryFromInstrument(name string) (time.Time, error) {
 	parts := strings.SplitN(name, "-", 4)
 	if len(parts) < 4 {
 		return time.Time{}, fmt.Errorf("invalid instrument name: %s", name)
@@ -166,6 +172,24 @@ func (c *Client) GetTicker(ctx context.Context, instrument string) (*Ticker, err
 func (c *Client) GetIndexPrice(ctx context.Context, currency string) (float64, error) {
 	// Deribit index names are lowercase: btc_usd, eth_usd, etc.
 	indexName := strings.ToLower(currency) + "_usd"
+	params := url.Values{
+		"index_name": {indexName},
+	}
+	var result indexPriceResult
+	if err := c.get(ctx, "get_index_price", params, &result); err != nil {
+		return 0, fmt.Errorf("deribit: get_index_price %s: %w", indexName, err)
+	}
+	if result.Result.IndexPrice <= 0 {
+		return 0, fmt.Errorf("deribit: invalid index price (%.4f) for %s", result.Result.IndexPrice, indexName)
+	}
+	log.Debug().Str("index", indexName).Float64("price", result.Result.IndexPrice).Msg("index price fetched")
+	return result.Result.IndexPrice, nil
+}
+
+// GetIndexPriceByName returns the current Deribit index price for an explicit
+// index name (e.g. "btc_usd", "sol_usdc"). This is useful for USDC-settled
+// altcoin options where the index name differs from the simple currency_usd pattern.
+func (c *Client) GetIndexPriceByName(ctx context.Context, indexName string) (float64, error) {
 	params := url.Values{
 		"index_name": {indexName},
 	}

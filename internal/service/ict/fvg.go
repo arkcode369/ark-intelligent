@@ -4,64 +4,77 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
-// DetectFVG scans a bar slice (newest-first) and returns all Fair Value Gap zones.
-// Bullish FVG: bars[i+2].High < bars[i].Low  → gap between candle i-2 and candle i
-// Bearish FVG: bars[i+2].Low  > bars[i].High → gap between candle i-2 and candle i
+// DetectFVG detects Fair Value Gaps from a newest-first bar slice.
 //
-// We work on a chronological copy internally. The returned FVGZone.BarIndex
-// refers to the middle candle in the chronological order.
-//
-// After detecting gaps we check which ones have been (partially) filled by
-// subsequent price action. A gap is filled when a later candle's range
-// overlaps with the gap zone.
+// When the slice contains ≥20 bars the detection is delegated to the
+// canonical ta.CalcICT implementation (single source of truth).
+// For smaller slices (3-19 bars) a lightweight scan is used so that
+// callers with limited data still get results.
 func DetectFVG(bars []ta.OHLCV) []FVGZone {
 	n := len(bars)
 	if n < 3 {
 		return nil
 	}
 
-	// Build chronological slice.
-	chron := make([]ta.OHLCV, n)
-	for i, b := range bars {
-		chron[n-1-i] = b
+	atr := ta.CalcATR(bars, 14)
+	if atr <= 0 {
+		atr = estimateATR(bars)
+		if atr <= 0 {
+			return nil
+		}
 	}
 
+	// Prefer the canonical implementation when data is sufficient.
+	if n >= 20 {
+		if taResult := ta.CalcICT(bars, atr); taResult != nil {
+			return convertFVGs(taResult.FairValueGaps)
+		}
+	}
+
+	// Fallback: lightweight scan for small datasets.
+	return detectFVGSimple(bars, atr)
+}
+
+// detectFVGSimple performs a minimal FVG scan without the full CalcICT
+// machinery. It mirrors the three-candle gap logic used by ta/ict.go.
+func detectFVGSimple(bars []ta.OHLCV, atr float64) []FVGZone {
+	n := len(bars)
+	minSize := atr * 0.1
 	var zones []FVGZone
 
-	// i is the index of the MIDDLE candle (index 0 = oldest).
-	// The "left" candle is i-1, the "right" candle is i+1.
-	// Classic 3-candle FVG: gap between candle[i-1] and candle[i+1].
+	// bars is newest-first; i is the middle candle index.
 	for i := 1; i < n-1; i++ {
-		left := chron[i-1]
-		right := chron[i+1]
-		mid := chron[i]
+		prev := bars[i+1] // older
+		next := bars[i-1] // newer
 
-		// Bullish FVG: right candle's low > left candle's high
-		if right.Low > left.High {
-			zone := FVGZone{
-				Kind:      "BULLISH",
-				Top:       right.Low,
-				Bottom:    left.High,
-				CreatedAt: mid.Date,
-				BarIndex:  i,
+		// Bullish FVG: gap between prev.High and next.Low
+		if prev.High < next.Low {
+			gap := next.Low - prev.High
+			if gap >= minSize {
+				zones = append(zones, FVGZone{
+					Kind:     "BULLISH",
+					Top:      next.Low,
+					Bottom:   prev.High,
+					BarIndex: i,
+				})
 			}
-			zones = append(zones, zone)
 		}
 
-		// Bearish FVG: right candle's high < left candle's low
-		if right.High < left.Low {
-			zone := FVGZone{
-				Kind:      "BEARISH",
-				Top:       left.Low,
-				Bottom:    right.High,
-				CreatedAt: mid.Date,
-				BarIndex:  i,
+		// Bearish FVG: gap between next.High and prev.Low
+		if next.High < prev.Low {
+			gap := prev.Low - next.High
+			if gap >= minSize {
+				zones = append(zones, FVGZone{
+					Kind:     "BEARISH",
+					Top:      prev.Low,
+					Bottom:   next.High,
+					BarIndex: i,
+				})
 			}
-			zones = append(zones, zone)
 		}
 	}
 
-	// Mark filled / compute fill percentage using subsequent bars.
+	// Check fill status using subsequent (newer) bars.
 	for z := range zones {
 		fvg := &zones[z]
 		gapSize := fvg.Top - fvg.Bottom
@@ -70,31 +83,22 @@ func DetectFVG(bars []ta.OHLCV) []FVGZone {
 			fvg.FillPct = 100
 			continue
 		}
-
-		maxPenetration := 0.0
-		// Bars after the FVG middle candle (chronologically later).
-		for i := fvg.BarIndex + 2; i < n; i++ {
-			bar := chron[i]
-			if fvg.Kind == "BULLISH" {
-				// Price fills from the top down.
-				if bar.Low < fvg.Top {
-					pen := fvg.Top - bar.Low
-					if pen > maxPenetration {
-						maxPenetration = pen
-					}
+		maxPen := 0.0
+		for j := 0; j < fvg.BarIndex; j++ {
+			b := bars[j]
+			if fvg.Kind == "BULLISH" && b.Low < fvg.Top {
+				pen := fvg.Top - b.Low
+				if pen > maxPen {
+					maxPen = pen
 				}
-			} else {
-				// Bearish: price fills from the bottom up.
-				if bar.High > fvg.Bottom {
-					pen := bar.High - fvg.Bottom
-					if pen > maxPenetration {
-						maxPenetration = pen
-					}
+			} else if fvg.Kind == "BEARISH" && b.High > fvg.Bottom {
+				pen := b.High - fvg.Bottom
+				if pen > maxPen {
+					maxPen = pen
 				}
 			}
 		}
-
-		pct := (maxPenetration / gapSize) * 100
+		pct := (maxPen / gapSize) * 100
 		if pct > 100 {
 			pct = 100
 		}
@@ -102,9 +106,20 @@ func DetectFVG(bars []ta.OHLCV) []FVGZone {
 		fvg.Filled = pct >= 100
 	}
 
-	// Return only the most recent N zones to keep output manageable.
 	if len(zones) > 10 {
 		zones = zones[len(zones)-10:]
 	}
 	return zones
+}
+
+// estimateATR provides a simple average-range fallback when CalcATR returns 0.
+func estimateATR(bars []ta.OHLCV) float64 {
+	if len(bars) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, b := range bars {
+		sum += b.High - b.Low
+	}
+	return sum / float64(len(bars))
 }
