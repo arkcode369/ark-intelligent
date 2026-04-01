@@ -1,4 +1,4 @@
-# Agent Status — last updated: 2026-04-01 08:05 WIB
+# Agent Status — last updated: 2026-04-01 08:06 WIB
 
 ## Research
 - **Last run:** 2026-04-01 01:00 WIB
@@ -16,7 +16,7 @@
 - **PRs today:** 0
 
 ## Dev-C
-- **Last run:** 2026-04-01 08:05 WIB
-- **Current:** TASK-005 done, PR #2 open, looking for next task
-- **Files being edited:** -
+- **Last run:** 2026-04-01 08:06 WIB
+- **Current:** working on TASK-003 (typing indicator feedback)
+- **Files being edited:** internal/adapter/telegram/bot.go, handler.go, handler_cta.go
 - **PRs today:** 1 (PR #2 — TASK-005)
