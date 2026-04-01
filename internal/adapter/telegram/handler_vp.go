@@ -417,7 +417,6 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 	chartPath := filepath.Join(os.TempDir(), fmt.Sprintf("vp_chart_%d.png", ts))
 
 	defer os.Remove(inputPath)
-	defer os.Remove(outputPath)
 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
@@ -437,10 +436,12 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 
 	if err := cmd.Run(); err != nil {
 		os.Remove(chartPath) // cleanup chart on failure
+		os.Remove(outputPath)
 		return nil, fmt.Errorf("VP engine failed: %w", err)
 	}
 
 	resultJSON, err := os.ReadFile(outputPath)
+	os.Remove(outputPath)
 	if err != nil {
 		os.Remove(chartPath) // cleanup chart on failure
 		return nil, fmt.Errorf("read output: %w", err)
