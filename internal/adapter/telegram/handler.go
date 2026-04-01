@@ -1139,6 +1139,12 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 		prefs.PreferredModel = "claude"
 	case "model_gemini":
 		prefs.PreferredModel = "gemini"
+	case "output_mode_toggle":
+		if prefs.OutputMode == domain.OutputFull {
+			prefs.OutputMode = domain.OutputCompact
+		} else {
+			prefs.OutputMode = domain.OutputFull
+		}
 	case "impact_high_only":
 		prefs.AlertImpacts = []string{"High"}
 	case "impact_high_med":
