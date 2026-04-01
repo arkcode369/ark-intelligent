@@ -34,6 +34,15 @@ func NewBot(token, defaultChatID string) *Bot {
 		}
 	}
 
+	// Worker pool concurrency: configurable via HANDLER_CONCURRENCY env var.
+	const defaultConcurrency = 20
+	concurrency := defaultConcurrency
+	if envVal := strings.TrimSpace(os.Getenv("HANDLER_CONCURRENCY")); envVal != "" {
+		if parsed, err := strconv.Atoi(envVal); err == nil && parsed > 0 {
+			concurrency = parsed
+		}
+	}
+
 	return &Bot{
 		token:     token,
 		defaultID: defaultChatID,
@@ -45,5 +54,6 @@ func NewBot(token, defaultChatID string) *Bot {
 		commands:    make(map[string]CommandHandler),
 		callbacks:   make(map[string]CallbackHandler),
 		userLimiter: newUserRateLimiter(),
+		workerSem:   make(chan struct{}, concurrency),
 	}
 }
