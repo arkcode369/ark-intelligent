@@ -1,14 +1,13 @@
-# Agent Status — last updated: 2026-04-01 12:08 WIB
+# Agent Status — last updated: 2026-04-01 12:18 WIB
 
 ## Dev-B
-- **Last run:** 2026-04-01 12:08 WIB
-- **Current:** standby — TASK-056 done, PR #30 open → agents/main
+- **Last run:** 2026-04-01 12:18 WIB
+- **Current:** standby
 - **Files changed:**
-  - `internal/service/sentiment/sentiment.go` — added CryptoFearGreed fields + fetchCryptoFearGreed() via alternative.me
-  - `internal/adapter/telegram/formatter.go` — added Crypto F&G display block in FormatSentiment()
-  - `internal/service/ai/unified_outlook.go` — injected Crypto F&G into AI sentiment context
-- **PRs today:** PR #30 feat/TASK-056-crypto-fear-greed-alternative-me → agents/main (TASK-056)
-- **Note:** Crypto Fear & Greed Index from alternative.me (no API key). go build + go vet clean.
+  - `internal/adapter/telegram/bot.go` — tambah SendChatAction() method
+  - `internal/adapter/telegram/handler.go` — loading indicator di cmdRank + cmdBias
+- **PRs today:** PR #32 feat/TASK-075-loading-indicator-alpha-rank-bias → agents/main (TASK-075)
+- **Note:** Loading indicator (send + delete pattern) untuk /rank dan /bias. SendChatAction ditambah ke bot.go. go build + go vet clean.
 
 ## Dev-C
 - **Last run:** 2026-04-01 08:30 WIB
