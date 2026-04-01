@@ -258,6 +258,10 @@ func NewHandler(
 	bot.RegisterCommand("/history", h.cmdHistory)
 	bot.RegisterCommand("/h", h.cmdHistory)
 
+	// Daily briefing command (TASK-029)
+	bot.RegisterCommand("/briefing", h.cmdBriefing)
+	bot.RegisterCommand("/br", h.cmdBriefing) // short alias
+
 	// Multi-word command+arg aliases for power users (TASK-203)
 	// These combine command + default argument for the most common workflows.
 	bot.RegisterCommand("/ce", h.cmdCOT)            // /ce EUR = /cot EUR
@@ -281,8 +285,9 @@ func NewHandler(
 	bot.RegisterCallback("help:", h.cbHelp)
 	bot.RegisterCallback("share:", h.cbShare)
 	bot.RegisterCallback("adm_cf:", h.cbAdminConfirm)
+	bot.RegisterCallback("briefing:", h.cbBriefingRefresh)
 
-	log.Info().Int("commands", 48).Int("callbacks", 10).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 50).Int("callbacks", 11).Msg("registered commands and callback prefixes")
 	return h
 }
 // ---------------------------------------------------------------------------

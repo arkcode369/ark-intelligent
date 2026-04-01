@@ -1515,6 +1515,7 @@ var relatedCommands = map[string][]struct {
 	"seasonal":    {{Label: "📉 COT", Callback: "cot"}, {Label: "📊 Backtest", Callback: "backtest"}, {Label: "📈 Bias", Callback: "bias"}},
 	"backtest":    {{Label: "📊 Quant", Callback: "quant"}, {Label: "🎯 CTA", Callback: "cta"}, {Label: "📈 Seasonal", Callback: "seasonal"}},
 	"intermarket": {{Label: "🌐 Macro", Callback: "macro"}, {Label: "📈 Price", Callback: "price"}, {Label: "📊 Sentiment", Callback: "sentiment"}},
+	"briefing":    {{Label: "📅 Calendar", Callback: "calendar"}, {Label: "🎯 COT Bias", Callback: "bias"}, {Label: "🌐 Macro", Callback: "macro"}},
 }
 
 // RelatedCommandsRow returns a keyboard row with 2–3 related command buttons.
@@ -1545,4 +1546,26 @@ func (kb *KeyboardBuilder) RelatedCommandsKeyboard(command, currency string) por
 	if len(row) == 0 {
 		return ports.InlineKeyboard{}
 	}
-	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{row}}}
+	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{row}}
+}
+
+// ---------------------------------------------------------------------------
+// Briefing Keyboard
+// ---------------------------------------------------------------------------
+
+// BriefingMenu returns the inline keyboard for the /briefing command.
+// Provides quick refresh and deep-dive shortcuts.
+func (kb *KeyboardBuilder) BriefingMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "🔄 Refresh", CallbackData: "briefing:refresh"},
+				{Text: "📅 Calendar", CallbackData: "cmd:calendar"},
+			},
+			{
+				{Text: "📊 COT Detail", CallbackData: "cmd:cot"},
+				{Text: "🏠 Home", CallbackData: "cmd:help"},
+			},
+		},
+	}
+}
