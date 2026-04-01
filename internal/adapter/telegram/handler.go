@@ -2389,6 +2389,10 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
 	case "GLOBAL":
 		htmlMsg := h.fmt.FormatMacroGlobal(composites, data)
+		// Append World Bank annual fundamentals (best-effort; non-blocking on error)
+		if wbData, wbErr := fred.GetWorldBankCachedOrFetch(ctx); wbErr == nil && wbData != nil {
+			htmlMsg += h.fmt.FormatWorldBankFundamentals(wbData)
+		}
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
 	case "LABOR":
@@ -2473,6 +2477,10 @@ func (h *Handler) cbMacro(ctx context.Context, chatID string, msgID int, userID 
 
 	case "global":
 		htmlMsg := h.fmt.FormatMacroGlobal(composites, macroData)
+		// Append World Bank annual fundamentals (best-effort; non-blocking on error)
+		if wbData, wbErr := fred.GetWorldBankCachedOrFetch(ctx); wbErr == nil && wbData != nil {
+			htmlMsg += h.fmt.FormatWorldBankFundamentals(wbData)
+		}
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 

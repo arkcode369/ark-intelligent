@@ -154,6 +154,11 @@ type Bot struct {
 
 	// Authorization middleware (tiered access control + quotas)
 	middleware *Middleware
+
+	// Worker pool semaphore: limits concurrent handleUpdate goroutines.
+	// Buffered channel used as semaphore; capacity = max concurrent handlers.
+	// Configured via HANDLER_CONCURRENCY env var (default 20).
+	workerSem chan struct{}
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +209,18 @@ func (b *Bot) StartPolling(ctx context.Context) error {
 
 		for _, update := range updates {
 			b.offset = update.UpdateID + 1
-			go b.handleUpdate(ctx, update)
+			// Acquire a worker slot before spawning the goroutine.
+			// The select ensures the polling loop exits immediately on context
+			// cancellation even when all slots are occupied.
+			select {
+			case b.workerSem <- struct{}{}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			go func(u Update) {
+				defer func() { <-b.workerSem }()
+				b.handleUpdate(ctx, u)
+			}(update)
 		}
 	}
 }
@@ -373,7 +389,28 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 			metrics.RecordCallback(cb.Data, userID, cbElapsed, cbErr)
 
 			if cbErr != nil {
-				_ = b.AnswerCallback(ctx, cb.ID, "Error processing request")
+				log.Error().
+					Err(cbErr).
+					Str("callback_data", cb.Data).
+					Int64("user_id", userID).
+					Msg("callback handler error")
+
+				friendly := callbackFriendlyError(cbErr)
+				// Telegram AnswerCallbackQuery text must be ≤200 chars.
+				// callbackFriendlyError guarantees this, but guard defensively.
+				const maxToastLen = 200
+				toast := []rune(friendly)
+				if len(toast) > maxToastLen {
+					toast = toast[:maxToastLen]
+				}
+				_ = b.AnswerCallback(ctx, cb.ID, string(toast))
+
+				// If we have a message to edit, also update it with the full
+				// user-friendly error so the user can read it at their own pace.
+				if chatID != "" && msgID != 0 {
+					fullFriendly := userFriendlyError(cbErr, "")
+					_ = b.EditMessage(ctx, chatID, msgID, fullFriendly)
+				}
 				return
 			}
 			_ = b.AnswerCallback(ctx, cb.ID, "")
