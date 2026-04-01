@@ -375,6 +375,10 @@ func (h *Handler) vpRunMode(ctx context.Context, chatID string, msgID int, state
 				strings.ToUpper(mode), html.EscapeString(state.symbol), tf)
 			_, _ = h.bot.SendPhoto(ctx, chatID, chartData, caption)
 			_ = os.Remove(result.ChartPath)
+		} else if readErr != nil {
+			log.Warn().Err(readErr).Str("chart_path", result.ChartPath).
+				Str("symbol", state.symbol).Str("timeframe", tf).
+				Msg("vp: chart file unreadable")
 		}
 	}
 
