@@ -221,6 +221,7 @@ func NewHandler(
 	bot.RegisterCommand("/levels", h.cmdLevels)           // Support/resistance levels + position sizing
 	bot.RegisterCommand("/intermarket", h.cmdIntermarket) // Intermarket correlation signals
 	bot.RegisterCommand("/treasury", h.cmdTreasury)     // US Treasury auction results
+	bot.RegisterCommand("/onchain", h.cmdOnChain)    // On-chain exchange flow metrics (CoinMetrics)
 
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
