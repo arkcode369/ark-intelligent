@@ -375,6 +375,10 @@ func (h *Handler) vpRunMode(ctx context.Context, chatID string, msgID int, state
 				strings.ToUpper(mode), html.EscapeString(state.symbol), tf)
 			_, _ = h.bot.SendPhoto(ctx, chatID, chartData, caption)
 			_ = os.Remove(result.ChartPath)
+		} else if readErr != nil {
+			log.Warn().Err(readErr).Str("chart_path", result.ChartPath).
+				Str("symbol", state.symbol).Str("timeframe", tf).
+				Msg("vp: chart file unreadable")
 		}
 	}
 
@@ -417,7 +421,6 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 	chartPath := filepath.Join(os.TempDir(), fmt.Sprintf("vp_chart_%d.png", ts))
 
 	defer os.Remove(inputPath)
-	defer os.Remove(outputPath)
 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
@@ -437,10 +440,12 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 
 	if err := cmd.Run(); err != nil {
 		os.Remove(chartPath) // cleanup chart on failure
+		os.Remove(outputPath)
 		return nil, fmt.Errorf("VP engine failed: %w", err)
 	}
 
 	resultJSON, err := os.ReadFile(outputPath)
+	os.Remove(outputPath)
 	if err != nil {
 		os.Remove(chartPath) // cleanup chart on failure
 		return nil, fmt.Errorf("read output: %w", err)
