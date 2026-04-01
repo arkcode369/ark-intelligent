@@ -967,6 +967,13 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 		b.WriteString(fmt.Sprintf("<code>[AI] Claude Variant : %s</code>\n", claudeVariant))
 	}
 
+	// Output format mode
+	outputDisplay := "Compact 📊"
+	if prefs.OutputMode == domain.OutputFull {
+		outputDisplay = "Full Detail 📖"
+	}
+	b.WriteString(fmt.Sprintf("<code>[UI] Format Output: %s</code>\n", outputDisplay))
+
 	// Alert minutes display
 	if len(prefs.AlertMinutes) > 0 {
 		parts := make([]string, len(prefs.AlertMinutes))
