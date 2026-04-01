@@ -108,6 +108,11 @@ func (f *SentimentFetcher) Fetch(ctx context.Context) (*SentimentData, error) {
 		log.Debug().Err(err).Msg("sentiment: crypto F&G circuit breaker rejected or source unavailable")
 	}
 
+	// Myfxbook Community Outlook — best-effort, no circuit breaker
+	if os.Getenv("FIRECRAWL_API_KEY") != "" {
+		data.Myfxbook = FetchMyfxbook(ctx)
+	}
+
 	return data, nil
 }
 
@@ -141,6 +146,9 @@ type SentimentData struct {
 	CryptoFearGreed          float64 // 0-100 (0=Extreme Fear, 100=Extreme Greed)
 	CryptoFearGreedLabel     string  // "Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed"
 	CryptoFearGreedAvailable bool
+
+	// Myfxbook Community Outlook — retail positioning (contrarian indicator)
+	Myfxbook *MyfxbookData // nil if FIRECRAWL_API_KEY not set or fetch failed
 
 	FetchedAt time.Time
 }
