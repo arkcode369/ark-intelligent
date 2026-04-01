@@ -1,7 +1,7 @@
 package telegram
 
-// chart_cta.go — CTA data computation and chart generation helpers.
-// Extracted from handler_cta.go as part of TASK-040 separation of concerns.
+// chart_cta.go — CTA chart generation (extracted from handler_cta.go)
+// Chart types, Python chart renderer, and data-preparation utilities.
 
 import (
 	"context"
@@ -11,169 +11,33 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
-	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 )
 
-// ---------------------------------------------------------------------------
-// Data Fetching & Computation
-// ---------------------------------------------------------------------------
-
-func (h *Handler) computeCTAState(ctx context.Context, mapping *domain.PriceSymbolMapping) (*ctaState, error) {
-	code := mapping.ContractCode
-	barsByTF := make(map[string][]ta.OHLCV)
-
-	// Fetch daily bars
-	dailyRecords, err := h.cta.DailyPriceRepo.GetDailyHistory(ctx, code, 300)
-	if err != nil || len(dailyRecords) < 20 {
-		return nil, fmt.Errorf("insufficient daily data for %s (%d bars)", mapping.Currency, len(dailyRecords))
-	}
-	dailyBars := ta.DailyPricesToOHLCV(dailyRecords)
-	barsByTF["daily"] = dailyBars
-
-	// Fetch intraday bars (best-effort, non-fatal)
-	if h.cta.IntradayRepo != nil {
-		for _, spec := range []struct {
-			interval string
-			count    int
-		}{
-			{"15m", 500},
-			{"30m", 312},
-			{"1h", 200},
-			{"4h", 312},
-			{"6h", 200},
-			{"12h", 200},
-		} {
-			intradayBars, iErr := h.cta.IntradayRepo.GetHistory(ctx, code, spec.interval, spec.count)
-			if iErr == nil && len(intradayBars) > 10 {
-				barsByTF[spec.interval] = ta.IntradayBarsToOHLCV(intradayBars)
-			}
-		}
-	}
-
-	engine := h.cta.TAEngine
-
-	// Compute FullResult per timeframe
-	var daily, h4, h1, m15, m30, h6, h12, weekly *ta.FullResult
-
-	daily = engine.ComputeFull(barsByTF["daily"])
-	if b, ok := barsByTF["4h"]; ok {
-		h4 = engine.ComputeFull(b)
-	}
-	if b, ok := barsByTF["1h"]; ok {
-		h1 = engine.ComputeFull(b)
-	}
-	if b, ok := barsByTF["15m"]; ok {
-		m15 = engine.ComputeFull(b)
-	}
-	if b, ok := barsByTF["30m"]; ok {
-		m30 = engine.ComputeFull(b)
-	}
-	if b, ok := barsByTF["6h"]; ok {
-		h6 = engine.ComputeFull(b)
-	}
-	if b, ok := barsByTF["12h"]; ok {
-		h12 = engine.ComputeFull(b)
-	}
-
-	// Weekly: aggregate from daily (simple: take every 5th bar as weekly candle)
-	// For now, skip weekly — not enough data typically
-	_ = weekly
-
-	// Compute MTF
-	mtfBars := make(map[string][]ta.OHLCV)
-	for tf, bars := range barsByTF {
-		mtfBars[tf] = bars
-	}
-	mtf := engine.ComputeMTF(mtfBars)
-
-	// Determine display symbol
-	displaySymbol := mapping.Currency
-	if mapping.TwelveData != "" {
-		displaySymbol = mapping.TwelveData
-	}
-
-	return &ctaState{
-		symbol:     displaySymbol,
-		currency:   mapping.Currency,
-		daily:      daily,
-		h4:         h4,
-		h1:         h1,
-		m15:        m15,
-		m30:        m30,
-		h6:         h6,
-		h12:        h12,
-		weekly:     weekly,
-		mtf:        mtf,
-		bars:       barsByTF,
-		chartData:  make(map[string][]byte),
-		computedAt: time.Now(),
-	}, nil
-}
-
-func (h *Handler) getCTAResult(state *ctaState, tf string) *ta.FullResult {
-	switch tf {
-	case "daily", "d":
-		return state.daily
-	case "4h":
-		return state.h4
-	case "1h":
-		return state.h1
-	case "15m":
-		return state.m15
-	case "30m":
-		return state.m30
-	case "6h":
-		return state.h6
-	case "12h":
-		return state.h12
-	case "weekly", "w":
-		return state.weekly
-	default:
-		return state.daily
-	}
-}
-
-// getCTAChart returns cached chart or generates it.
-func (h *Handler) getCTAChart(state *ctaState, tf string) ([]byte, error) {
-	if data, ok := state.chartData[tf]; ok && len(data) > 0 {
-		return data, nil
-	}
-	data, err := h.generateCTAChart(state, tf)
-	if err != nil {
-		return nil, err
-	}
-	state.chartData[tf] = data
-	return data, nil
-}
-
-// ---------------------------------------------------------------------------
-// Chart Types
+// Chart Generation
 // ---------------------------------------------------------------------------
 
 // chartInput is the JSON structure passed to the Python chart renderer.
 type chartInput struct {
-	Symbol     string          `json:"symbol"`
-	Timeframe  string          `json:"timeframe"`
-	Mode       string          `json:"mode,omitempty"`
-	Bars       []chartBar      `json:"bars"`
-	Indicators chartIndicators `json:"indicators"`
-	Fibonacci  chartFib        `json:"fibonacci"`
-	Patterns   []chartPattern  `json:"patterns"`
-	Ichimoku   *chartIchimoku  `json:"ichimoku,omitempty"`
-	Zones      *chartZones     `json:"zones,omitempty"`
+	Symbol     string            `json:"symbol"`
+	Timeframe  string            `json:"timeframe"`
+	Mode       string            `json:"mode,omitempty"`
+	Bars       []chartBar        `json:"bars"`
+	Indicators chartIndicators   `json:"indicators"`
+	Fibonacci  chartFib          `json:"fibonacci"`
+	Patterns   []chartPattern    `json:"patterns"`
+	Ichimoku   *chartIchimoku    `json:"ichimoku,omitempty"`
+	Zones      *chartZones       `json:"zones,omitempty"`
 }
 
 type chartIchimoku struct {
-	TenkanSen   []float64 `json:"tenkan_sen"`
-	KijunSen    []float64 `json:"kijun_sen"`
+	TenkanSen  []float64 `json:"tenkan_sen"`
+	KijunSen   []float64 `json:"kijun_sen"`
 	SenkouSpanA []float64 `json:"senkou_span_a"`
 	SenkouSpanB []float64 `json:"senkou_span_b"`
-	ChikouSpan  []float64 `json:"chikou_span"`
+	ChikouSpan []float64 `json:"chikou_span"`
 }
 
 type chartZones struct {
@@ -227,10 +91,6 @@ type chartPattern struct {
 	Direction string `json:"direction"`
 }
 
-// ---------------------------------------------------------------------------
-// Chart Generation
-// ---------------------------------------------------------------------------
-
 func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, error) {
 	ctx := context.Background()
 	bars, ok := state.bars[timeframe]
@@ -257,6 +117,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	// Build indicator arrays
 	ind := chartIndicators{}
 
+	// Compute indicator series from bars
 	// EMA series
 	closes := make([]float64, n)
 	for i, b := range bars {
@@ -288,7 +149,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	if result != nil && result.Snapshot != nil && result.Snapshot.SuperTrend != nil {
 		st := result.Snapshot.SuperTrend
 		if st.Series != nil {
-			ind.SuperTrend = reverseToOldestFirst(st.Series)
+			ind.SuperTrend = reverseToOldestFirst(st.Series) // NaN sanitized by reverseToOldestFirst
 		}
 		if st.DirectionSeries != nil {
 			ind.SuperTrendDir = reverseStringsToOldestFirst(st.DirectionSeries)
@@ -312,6 +173,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	// Fibonacci levels
 	fibData := chartFib{}
 	if result != nil && result.Snapshot != nil && result.Snapshot.Fibonacci != nil {
+		// Sanitize Fibonacci levels (remove NaN/Inf)
 		sanitizedLevels := make(map[string]float64)
 		for k, v := range result.Snapshot.Fibonacci.Levels {
 			if !math.IsNaN(v) && !math.IsInf(v, 0) {
@@ -333,6 +195,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 		}
 	}
 
+	// Build input JSON
 	input := chartInput{
 		Symbol:     state.symbol,
 		Timeframe:  timeframe,
@@ -347,6 +210,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 		return nil, fmt.Errorf("marshal chart input: %w", err)
 	}
 
+	// Write to temp file
 	tmpDir := os.TempDir()
 	inputPath := filepath.Join(tmpDir, fmt.Sprintf("cta_input_%d.json", time.Now().UnixNano()))
 	outputPath := filepath.Join(tmpDir, fmt.Sprintf("cta_output_%d.png", time.Now().UnixNano()))
@@ -357,6 +221,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	defer os.Remove(inputPath)
 	defer os.Remove(outputPath)
 
+	// Find the script path relative to the binary
 	scriptPath := findCTAScript()
 
 	// Execute Python script with 90s timeout to prevent goroutine leaks if Python hangs.
@@ -368,6 +233,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 		return nil, fmt.Errorf("chart renderer failed (timeout 90s): %w", err)
 	}
 
+	// Read output PNG
 	pngData, err := os.ReadFile(outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("read chart output: %w", err)
@@ -500,6 +366,7 @@ func findCTAScript() string {
 		"/home/mulerun/.openclaw/workspace/ark-intelligent/scripts/cta_chart.py",
 	}
 
+	// Check relative to current working dir
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			abs, _ := filepath.Abs(c)
@@ -507,6 +374,7 @@ func findCTAScript() string {
 		}
 	}
 
+	// Check relative to executable
 	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
 		rel := filepath.Join(execDir, "scripts", "cta_chart.py")
@@ -520,6 +388,7 @@ func findCTAScript() string {
 		}
 	}
 
+	// Fallback
 	return "scripts/cta_chart.py"
 }
 
@@ -557,8 +426,4 @@ func reverseStringsToOldestFirst(s []string) []string {
 	return out
 }
 
-// Ensure pricesvc import is used (referenced via CTAServices in handler_cta.go).
-var _ pricesvc.DailyPriceStore
-
-// Unused import guard
-var _ = strings.ToUpper
+// ---------------------------------------------------------------------------
