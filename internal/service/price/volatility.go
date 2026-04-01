@@ -64,7 +64,7 @@ func ComputeNormalizedATR(prices []domain.PriceRecord, period int) float64 {
 //   - CONTRACTING: currentATR < avgATR * 0.75
 //   - NORMAL:      otherwise
 func ClassifyVolatilityRegime(currentATR, avgATR float64) string {
-	if avgATR <= 0 {
+	if avgATR <= 0 || currentATR <= 0 {
 		return VolatilityNormal
 	}
 	ratio := currentATR / avgATR
