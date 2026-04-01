@@ -126,6 +126,14 @@ type Handler struct {
 	// May be nil — /ict command disabled if not configured.
 	ict      *ICTServices
 	ictCache *ictStateCache
+
+	// gex holds the GEX engine for /gex command.
+	// May be nil — /gex command disabled if not configured.
+	gex *GEXServices
+
+	// wyckoff holds optional Wyckoff analysis engine services.
+	// May be nil — /wyckoff command disabled if not configured.
+	wyckoff *WyckoffServices
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
@@ -205,6 +213,20 @@ func NewHandler(
 	bot.RegisterCommand("/ban", h.cmdBan)
 	bot.RegisterCommand("/unban", h.cmdUnban)
 
+	// Short aliases for power users (mobile-friendly)
+	bot.RegisterCommand("/c", h.cmdCOT)
+	bot.RegisterCommand("/cal", h.cmdCalendar)
+	bot.RegisterCommand("/out", h.cmdOutlook)
+	bot.RegisterCommand("/m", h.cmdMacro)
+	bot.RegisterCommand("/b", h.cmdBias)
+	bot.RegisterCommand("/q", h.cmdQuant)
+	bot.RegisterCommand("/bt", h.cmdBacktest)
+	bot.RegisterCommand("/r", h.cmdRank)
+	bot.RegisterCommand("/s", h.cmdSentiment)
+	bot.RegisterCommand("/p", h.cmdPrice)
+	bot.RegisterCommand("/l", h.cmdLevels)
+
+
 	// Register callback handlers
 	bot.RegisterCallback("cot:", h.cbCOTDetail)
 	bot.RegisterCallback("alert:", h.cbAlertToggle)
@@ -219,7 +241,7 @@ func NewHandler(
 	bot.RegisterCallback("nav:", h.cbNav)
 	bot.RegisterCallback("help:", h.cbHelp)
 
-	log.Info().Int("commands", 37).Int("callbacks", 10).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 48).Int("callbacks", 10).Msg("registered commands and callback prefixes")
 	return h
 }
 
@@ -394,6 +416,8 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /ctabt — Backtest Classical TA · <code>/ctabt EUR</code> · <code>/ctabt EUR 4h</code>
 /quant — Econometric analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
 /vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
+/ict — ICT/SMC Smart Money Concepts · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
+/gex — Gamma Exposure (crypto options) · <code>/gex BTC</code> · <code>/gex ETH</code>
 /backtest — Backtest dashboard (17 sub-views)
 /accuracy — Win rate summary
 /report — Weekly signal performance`
@@ -1215,8 +1239,12 @@ func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, ar
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdBias(ctx context.Context, chatID string, userID int64, args string) error {
+	loadingID, _ := h.bot.SendHTML(ctx, chatID, "🎯 Mendeteksi directional bias... ⏳")
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
+		if loadingID > 0 {
+			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+		}
 		_, err = h.bot.SendHTML(ctx, chatID, "No COT data available for bias detection.")
 		return err
 	}
@@ -1261,6 +1289,9 @@ func (h *Handler) cmdBias(ctx context.Context, chatID string, userID int64, args
 	}
 
 	html := h.fmt.FormatBiasHTML(signals, filterCurrency)
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
@@ -1775,8 +1806,12 @@ func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, 
 // cmdRank handles the /rank command — weekly currency strength ranking.
 // Ranks 8 major currencies by COT SentimentScore and shows conviction scores (COT + FRED + Calendar).
 func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args string) error {
+	loadingID, _ := h.bot.SendHTML(ctx, chatID, "📈 Menghitung currency strength ranking... ⏳")
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
+		if loadingID > 0 {
+			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+		}
 		_, err = h.bot.SendHTML(ctx, chatID,
 			"No COT data available for ranking. Data is fetched from CFTC every Friday.")
 		return err
@@ -1840,6 +1875,9 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 		}
 	}
 
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
