@@ -4,6 +4,7 @@ package telegram
 //   /cta [SYMBOL] [TIMEFRAME]  — TA dashboard with chart + inline keyboard
 
 import (
+	"github.com/arkcode369/ark-intelligent/internal/config"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -54,7 +55,7 @@ type ctaState struct {
 	computedAt time.Time
 }
 
-const ctaStateTTL = 120 * time.Second
+var ctaStateTTL = config.CTAStateTTL
 
 // ctaStateCache stores per-chat CTA state with TTL.
 type ctaStateCache struct {
@@ -255,7 +256,7 @@ func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID in
 		txt := formatCTAIchimoku(state)
 		kb := h.kb.CTADetailMenu()
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
-		chartPNG, chartErr := h.generateCTADetailChart(state, "daily", "ichimoku")
+		chartPNG, chartErr := h.generateCTADetailChart(ctx, state, "daily", "ichimoku")
 		if chartErr == nil && len(chartPNG) > 0 {
 			shortCaption := fmt.Sprintf("🏯 Ichimoku Cloud — %s", html.EscapeString(state.symbol))
 			_, _ = h.bot.SendPhoto(ctx, chatID, chartPNG, shortCaption)
@@ -267,7 +268,7 @@ func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID in
 		txt := formatCTAFibonacci(state)
 		kb := h.kb.CTADetailMenu()
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
-		chartPNG, chartErr := h.generateCTADetailChart(state, "daily", "fibonacci")
+		chartPNG, chartErr := h.generateCTADetailChart(ctx, state, "daily", "fibonacci")
 		if chartErr == nil && len(chartPNG) > 0 {
 			shortCaption := fmt.Sprintf("📐 Fibonacci — %s", html.EscapeString(state.symbol))
 			_, _ = h.bot.SendPhoto(ctx, chatID, chartPNG, shortCaption)
@@ -300,7 +301,7 @@ func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID in
 		txt := formatCTAZones(state)
 		kb := h.kb.CTADetailMenu()
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
-		chartPNG, chartErr := h.generateCTADetailChart(state, "daily", "zones")
+		chartPNG, chartErr := h.generateCTADetailChart(ctx, state, "daily", "zones")
 		if chartErr == nil && len(chartPNG) > 0 {
 			shortCaption := fmt.Sprintf("🎯 Trade Setup — %s", html.EscapeString(state.symbol))
 			_, _ = h.bot.SendPhoto(ctx, chatID, chartPNG, shortCaption)
@@ -709,11 +710,13 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 	// Find the script path relative to the binary
 	scriptPath := findCTAScript()
 
-	// Execute Python script
-	cmd := exec.CommandContext(ctx, "python3", scriptPath, inputPath, outputPath)
+	// Execute Python script with 90s timeout to prevent goroutine leaks if Python hangs.
+	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("chart renderer failed: %w", err)
+		return nil, fmt.Errorf("chart renderer failed (timeout 90s): %w", err)
 	}
 
 	// Read output PNG
@@ -726,7 +729,7 @@ func (h *Handler) generateCTAChart(state *ctaState, timeframe string) ([]byte, e
 }
 
 // runChartScript marshals input to JSON, runs cta_chart.py, and returns PNG bytes.
-func runChartScript(input interface{}) ([]byte, error) {
+func runChartScript(ctx context.Context, input interface{}) ([]byte, error) {
 	jsonData, err := json.Marshal(input)
 	if err != nil {
 		return nil, fmt.Errorf("marshal chart input: %w", err)
@@ -743,7 +746,9 @@ func runChartScript(input interface{}) ([]byte, error) {
 	defer os.Remove(outputPath)
 
 	scriptPath := findCTAScript()
-	cmd := exec.CommandContext(context.Background(), "python3", scriptPath, inputPath, outputPath)
+	cmdCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("chart renderer failed: %w", err)
@@ -753,7 +758,7 @@ func runChartScript(input interface{}) ([]byte, error) {
 }
 
 // generateCTADetailChart creates a mode-specific chart (ichimoku, fibonacci, zones).
-func (h *Handler) generateCTADetailChart(state *ctaState, timeframe string, mode string) ([]byte, error) {
+func (h *Handler) generateCTADetailChart(ctx context.Context, state *ctaState, timeframe string, mode string) ([]byte, error) {
 	bars, ok := state.bars[timeframe]
 	if !ok || len(bars) == 0 {
 		// Fallback to daily
@@ -836,7 +841,7 @@ func (h *Handler) generateCTADetailChart(state *ctaState, timeframe string, mode
 		}
 	}
 
-	return runChartScript(input)
+	return runChartScript(ctx, input)
 }
 
 // findCTAScript locates the cta_chart.py script.

@@ -671,7 +671,9 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 		}
 	}
 
-	// Record price impact for the Event Impact Database (non-blocking)
+	// Record price impact for the Event Impact Database (non-blocking).
+	// Use context.Background() so a scheduler ctx cancellation (restart/shutdown)
+	// does not prevent past-horizon impact records from being persisted.
 	if s.impactRecorder != nil && hasActual {
 		go func() {
 			defer func() {
@@ -679,7 +681,7 @@ func (s *Scheduler) onNewRelease(ctx context.Context, ev domain.NewsEvent) {
 					schedLog.Error().Interface("panic", r).Str("event", ev.Event).Msg("PANIC in RecordImpact goroutine")
 				}
 			}()
-			s.impactRecorder.RecordImpact(ctx, ev, ev.SurpriseScore, []string{"15m", "30m", "1h", "4h"})
+			s.impactRecorder.RecordImpact(context.Background(), ev, ev.SurpriseScore, []string{"15m", "30m", "1h", "4h"})
 		}()
 	}
 

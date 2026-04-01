@@ -485,15 +485,21 @@ func CalcBollinger(bars []OHLCV, period int, stddev float64) *BollingerResult {
 		pctB = (bars[0].Close - l0) / denom
 	}
 
-	// Squeeze detection: bandwidth < 75% of period-bar average bandwidth
+	// Squeeze detection: current bandwidth < 75% of recent average bandwidth.
+	// Collect bandwidth values from the most recent valid bars (newest-first slice).
 	squeeze := false
-	bwSeries := make([]float64, 0)
+	bwSeries := make([]float64, 0, period)
 	for i := 0; i < len(upper) && i < period; i++ {
 		if !math.IsNaN(upper[i]) && !math.IsNaN(middle[i]) && !math.IsNaN(lower[i]) && middle[i] != 0 {
 			bwSeries = append(bwSeries, (upper[i]-lower[i])/middle[i]*100)
 		}
 	}
-	if len(bwSeries) >= period {
+	// Require at least half the period for a meaningful average (fixes always-false bug).
+	minSamples := period / 2
+	if minSamples < 2 {
+		minSamples = 2
+	}
+	if len(bwSeries) >= minSamples {
 		avgBW := 0.0
 		for _, v := range bwSeries {
 			avgBW += v
@@ -790,11 +796,18 @@ func CalcOBV(bars []OHLCV) *OBVResult {
 				}
 			}
 		}
-	} else if len(series) >= 5 {
-		// With fewer bars, use a simple linear regression slope approximation
-		// Compare the average of the newest 2 vs oldest 2 OBV values
-		newestAvg := (series[0] + series[1]) / 2
-		oldestAvg := (series[len(series)-1] + series[len(series)-2]) / 2
+	} else if len(series) >= 2 {
+		// Fallback: compare newest vs oldest OBV values.
+		// For 5+ bars, average the 2 newest and 2 oldest for smoothing.
+		// For 2-4 bars, compare single newest vs oldest (no panic on short slices).
+		var newestAvg, oldestAvg float64
+		if len(series) >= 5 {
+			newestAvg = (series[0] + series[1]) / 2
+			oldestAvg = (series[len(series)-1] + series[len(series)-2]) / 2
+		} else {
+			newestAvg = series[0]
+			oldestAvg = series[len(series)-1]
+		}
 		if newestAvg > oldestAvg*1.01 {
 			trend = "RISING"
 		} else if newestAvg < oldestAvg*0.99 {

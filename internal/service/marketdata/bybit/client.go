@@ -161,16 +161,40 @@ func (c *Client) GetOrderbook(ctx context.Context, category, symbol string, limi
 		if len(b) < 2 {
 			continue
 		}
-		p, _ := strconv.ParseFloat(b[0], 64)
-		q, _ := strconv.ParseFloat(b[1], 64)
+		p, errP := strconv.ParseFloat(b[0], 64)
+		q, errQ := strconv.ParseFloat(b[1], 64)
+		if errP != nil {
+			log.Warn().Str("raw_price", b[0]).Msg("orderbook bid: parse price failed, skipping level")
+			continue
+		}
+		if errQ != nil {
+			log.Warn().Str("raw_qty", b[1]).Msg("orderbook bid: parse qty failed, skipping level")
+			continue
+		}
+		if p == 0 || q == 0 {
+			log.Warn().Float64("price", p).Float64("qty", q).Msg("orderbook bid: zero price or qty, skipping level")
+			continue
+		}
 		ob.Bids = append(ob.Bids, OrderbookLevel{Price: p, Quantity: q})
 	}
 	for _, a := range resp.Result.A {
 		if len(a) < 2 {
 			continue
 		}
-		p, _ := strconv.ParseFloat(a[0], 64)
-		q, _ := strconv.ParseFloat(a[1], 64)
+		p, errP := strconv.ParseFloat(a[0], 64)
+		q, errQ := strconv.ParseFloat(a[1], 64)
+		if errP != nil {
+			log.Warn().Str("raw_price", a[0]).Msg("orderbook ask: parse price failed, skipping level")
+			continue
+		}
+		if errQ != nil {
+			log.Warn().Str("raw_qty", a[1]).Msg("orderbook ask: parse qty failed, skipping level")
+			continue
+		}
+		if p == 0 || q == 0 {
+			log.Warn().Float64("price", p).Float64("qty", q).Msg("orderbook ask: zero price or qty, skipping level")
+			continue
+		}
 		ob.Asks = append(ob.Asks, OrderbookLevel{Price: p, Quantity: q})
 	}
 	return ob, nil
@@ -220,9 +244,25 @@ func (c *Client) GetRecentTrades(ctx context.Context, category, symbol string, l
 
 	trades := make([]Trade, 0, len(resp.Result.List))
 	for _, t := range resp.Result.List {
-		p, _ := strconv.ParseFloat(t.Price, 64)
-		q, _ := strconv.ParseFloat(t.Size, 64)
-		ts, _ := strconv.ParseInt(t.Time, 10, 64)
+		p, errP := strconv.ParseFloat(t.Price, 64)
+		if errP != nil {
+			log.Warn().Str("raw_price", t.Price).Str("symbol", t.Symbol).Msg("trade: parse price failed, skipping entry")
+			continue
+		}
+		if p == 0 {
+			log.Warn().Str("symbol", t.Symbol).Msg("trade: zero price, skipping entry")
+			continue
+		}
+		q, errQ := strconv.ParseFloat(t.Size, 64)
+		if errQ != nil {
+			log.Warn().Str("raw_qty", t.Size).Str("symbol", t.Symbol).Msg("trade: parse qty failed, skipping entry")
+			continue
+		}
+		ts, errTs := strconv.ParseInt(t.Time, 10, 64)
+		if errTs != nil {
+			log.Warn().Str("raw_time", t.Time).Str("symbol", t.Symbol).Msg("trade: parse timestamp failed, skipping entry")
+			continue
+		}
 		trades = append(trades, Trade{
 			Symbol:     t.Symbol,
 			Price:      p,
@@ -424,9 +464,21 @@ func (c *Client) GetLongShortRatio(ctx context.Context, category, symbol, period
 
 	ratios := make([]LongShortRatio, 0, len(resp.Result.List))
 	for _, r := range resp.Result.List {
-		buy, _ := strconv.ParseFloat(r.BuyRatio, 64)
-		sell, _ := strconv.ParseFloat(r.SellRatio, 64)
-		ts, _ := strconv.ParseInt(r.Timestamp, 10, 64)
+		buy, errB := strconv.ParseFloat(r.BuyRatio, 64)
+		if errB != nil {
+			log.Warn().Str("raw_buy_ratio", r.BuyRatio).Str("symbol", r.Symbol).Msg("long-short: parse buyRatio failed, skipping entry")
+			continue
+		}
+		sell, errS := strconv.ParseFloat(r.SellRatio, 64)
+		if errS != nil {
+			log.Warn().Str("raw_sell_ratio", r.SellRatio).Str("symbol", r.Symbol).Msg("long-short: parse sellRatio failed, skipping entry")
+			continue
+		}
+		ts, errTs := strconv.ParseInt(r.Timestamp, 10, 64)
+		if errTs != nil {
+			log.Warn().Str("raw_timestamp", r.Timestamp).Str("symbol", r.Symbol).Msg("long-short: parse timestamp failed, skipping entry")
+			continue
+		}
 		ratios = append(ratios, LongShortRatio{
 			Symbol:    r.Symbol,
 			BuyRatio:  buy,
@@ -477,8 +529,16 @@ func (c *Client) GetOpenInterestHistory(ctx context.Context, category, symbol, i
 
 	data := make([]OIData, 0, len(resp.Result.List))
 	for _, r := range resp.Result.List {
-		oi, _ := strconv.ParseFloat(r.OpenInterest, 64)
-		ts, _ := strconv.ParseInt(r.Timestamp, 10, 64)
+		oi, errOI := strconv.ParseFloat(r.OpenInterest, 64)
+		if errOI != nil {
+			log.Warn().Str("raw_oi", r.OpenInterest).Str("symbol", resp.Result.Symbol).Msg("open-interest: parse openInterest failed, skipping entry")
+			continue
+		}
+		ts, errTs := strconv.ParseInt(r.Timestamp, 10, 64)
+		if errTs != nil {
+			log.Warn().Str("raw_timestamp", r.Timestamp).Str("symbol", resp.Result.Symbol).Msg("open-interest: parse timestamp failed, skipping entry")
+			continue
+		}
 		data = append(data, OIData{
 			Symbol:       resp.Result.Symbol,
 			OpenInterest: oi,
@@ -516,7 +576,6 @@ func truncate(s string, n int) string {
 // Ensure unexported helpers are referenced to avoid "declared and not used" errors.
 // sign and nowMs are reserved for future private endpoint use.
 var (
-	_ = log
 	_ = defaultRecvWindow
 )
 
