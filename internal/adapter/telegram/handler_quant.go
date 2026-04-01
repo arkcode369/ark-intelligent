@@ -448,6 +448,12 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	}
 	defer os.Remove(inputPath)
 	defer os.Remove(outputPath)
+	chartAssigned := false
+	defer func() {
+		if !chartAssigned {
+			os.Remove(chartPath)
+		}
+	}()
 
 	scriptPath := findQuantScript()
 
@@ -458,26 +464,24 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		os.Remove(chartPath) // cleanup chart on failure
 		return nil, fmt.Errorf("quant engine failed: %w", err)
 	}
 
 	// Read output
 	outData, err := os.ReadFile(outputPath)
 	if err != nil {
-		os.Remove(chartPath) // cleanup chart on failure
 		return nil, fmt.Errorf("read quant output: %w", err)
 	}
 
 	var result quantEngineResult
 	if err := json.Unmarshal(outData, &result); err != nil {
-		os.Remove(chartPath) // cleanup chart on failure
 		return nil, fmt.Errorf("parse quant output: %w", err)
 	}
 
 	// Check if chart was actually generated
 	if _, err := os.Stat(chartPath); err == nil {
 		result.ChartPath = chartPath
+		chartAssigned = true
 	}
 
 	return &result, nil
