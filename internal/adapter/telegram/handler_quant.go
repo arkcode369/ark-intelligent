@@ -104,7 +104,7 @@ func (h *Handler) registerQuantCommands() {
 // /quant — Main command
 // ---------------------------------------------------------------------------
 
-func (h *Handler) cmdQuant(ctx context.Context, chatID string, _ int64, args string) error {
+func (h *Handler) cmdQuant(ctx context.Context, chatID string, userID int64, args string) error {
 	if h.quant == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "⚙️ Quant Engine not configured.")
 		return err
@@ -112,9 +112,14 @@ func (h *Handler) cmdQuant(ctx context.Context, chatID string, _ int64, args str
 
 	parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
 	if len(parts) == 0 {
-		// Show symbol selector with description
-		_, err := h.bot.SendWithKeyboard(ctx, chatID,
-			`🔬 <b>Quant Engine — Econometric Analysis</b>
+		// Auto-reload last currency when no args provided
+		if lc := h.getLastCurrency(ctx, userID); lc != "" {
+			parts = []string{lc}
+			_, _ = h.bot.SendHTML(ctx, chatID, fmt.Sprintf("🔄 Loading <b>%s</b> (last viewed)...", html.EscapeString(lc)))
+		} else {
+			// Show symbol selector with description
+			_, err := h.bot.SendWithKeyboard(ctx, chatID,
+				`🔬 <b>Quant Engine — Econometric Analysis</b>
 
 Analisis statistik & ekonometrik institutional:
 
@@ -132,7 +137,8 @@ Analisis statistik & ekonometrik institutional:
 📋 <b>Full Report</b> — Semua model → LONG/SHORT/FLAT
 
 Pilih aset:`, h.kb.QuantSymbolMenu())
-		return err
+			return err
+		}
 	}
 
 	symbol := parts[0]
@@ -162,6 +168,7 @@ Pilih aset:`, h.kb.QuantSymbolMenu())
 	}
 
 	h.quantCache.set(chatID, state)
+	h.saveLastCurrency(ctx, userID, mapping.Currency)
 
 	if loadingID > 0 {
 		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)

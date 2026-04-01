@@ -608,6 +608,15 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 		}
 	}
 
+	// Auto-reload last currency when no args provided
+	if len(parts) == 0 {
+		if lc := h.getLastCurrency(ctx, userID); lc != "" {
+			_, _ = h.bot.SendHTML(ctx, chatID, fmt.Sprintf("🔄 Loading <b>%s</b> (last viewed)...", html.EscapeString(lc)))
+			contractCode := currencyToContractCode(lc)
+			return h.sendCOTDetail(ctx, chatID, contractCode, lc, false, 0)
+		}
+	}
+
 	// Overview: all currencies
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil {
