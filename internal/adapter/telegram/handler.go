@@ -321,6 +321,8 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 		}
 
 		if code != "" {
+			// COT detail includes AI analysis + FRED fetch — show typing indicator.
+			h.bot.SendTyping(ctx, chatID)
 			contractCode := currencyToContractCode(code)
 			return h.sendCOTDetail(ctx, chatID, contractCode, code, isRaw, 0)
 		}
@@ -993,6 +995,8 @@ func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, ar
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdBias(ctx context.Context, chatID string, userID int64, args string) error {
+	// Bias builds history maps for all currencies + runs signal detector — show typing.
+	h.bot.SendTyping(ctx, chatID)
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
 		_, err = h.bot.SendHTML(ctx, chatID, "No COT data available for bias detection.")
@@ -1433,8 +1437,14 @@ func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, 
 // cmdRank handles the /rank command — weekly currency strength ranking.
 // Ranks 8 major currencies by COT SentimentScore and shows conviction scores (COT + FRED + Calendar).
 func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args string) error {
+	// Rank involves FRED fetch + conviction scoring for all currencies — show loading.
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📊 Menghitung currency strength ranking... ⏳")
+
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
+		if loadingID > 0 {
+			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+		}
 		_, err = h.bot.SendHTML(ctx, chatID,
 			"No COT data available for ranking. Data is fetched from CFTC every Friday.")
 		return err
@@ -1498,6 +1508,9 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 		}
 	}
 
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }

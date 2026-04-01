@@ -16,6 +16,9 @@ func (h *Handler) cmdReport(ctx context.Context, chatID string, userID int64, ar
 		return err
 	}
 
+	// Report generation reads and aggregates signal history — show typing.
+	h.bot.SendTyping(ctx, chatID)
+
 	gen := backtestsvc.NewReportGenerator(h.signalRepo)
 	report, err := gen.GenerateWeeklyReport(ctx)
 	if err != nil {
@@ -45,6 +48,9 @@ func (h *Handler) cmdBacktest(ctx context.Context, chatID string, userID int64, 
 		_, err := h.bot.SendHTML(ctx, chatID, "Backtest data not available yet. Signal tracking is being initialized.")
 		return err
 	}
+
+	// Backtest stats computation can be slow — show typing while routing.
+	h.bot.SendTyping(ctx, chatID)
 
 	calc := backtestsvc.NewStatsCalculator(h.signalRepo)
 	args = strings.TrimSpace(strings.ToUpper(args))
