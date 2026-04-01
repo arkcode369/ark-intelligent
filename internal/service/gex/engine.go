@@ -91,6 +91,7 @@ func (e *Engine) Analyze(ctx context.Context, symbol string) (*GEXResult, error)
 	}
 	if spot <= 0 {
 		// Fallback: try mark prices from instruments around ATM
+		log.Warn().Str("symbol", sym).Msg("no UnderlyingPrice in book summaries, falling back to MarkPrice")
 		for _, s := range summaries {
 			if s.MarkPrice > 0 {
 				spot = s.MarkPrice * 1000 // rough proxy won't be used further
@@ -178,13 +179,21 @@ func (e *Engine) Analyze(ctx context.Context, symbol string) (*GEXResult, error)
 		return nil, fmt.Errorf("gex: no strikes with gamma data for %s", sym)
 	}
 
-	// 4. Calculate GEX profile
-	levels := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, contractSize, spot)
+	// 4. Validate spot price before calculation
+	if spot <= 0 {
+		return nil, fmt.Errorf("gex: invalid spot price (%.4f) for %s — no usable underlying or mark price from Deribit", spot, sym)
+	}
+
+	// 5. Calculate GEX profile
+	levels, err := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, contractSize, spot)
+	if err != nil {
+		return nil, fmt.Errorf("gex: calculate: %w", err)
+	}
 
 	// Filter to ±20% around spot for the display profile
 	nearStrikes := filterNearSpot(levels, spot, 0.20)
 
-	// 5. Aggregate stats
+	// 6. Aggregate stats
 	totalGEX := 0.0
 	for _, l := range levels {
 		totalGEX += l.NetGEX

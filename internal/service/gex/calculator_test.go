@@ -19,7 +19,10 @@ func TestCalculateGEX_BasicCallPut(t *testing.T) {
 	spot := 82000.0
 	contractSize := 1.0
 
-	levels := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, contractSize, spot)
+	levels, err := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, contractSize, spot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(levels) != 1 {
 		t.Fatalf("expected 1 level, got %d", len(levels))
 	}
@@ -47,7 +50,10 @@ func TestCalculateGEX_NegativeRegime(t *testing.T) {
 	putOI := map[float64]float64{78000: 5000}
 	spot := 82000.0
 
-	levels := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, 1.0, spot)
+	levels, err := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, 1.0, spot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(levels) != 1 {
 		t.Fatalf("expected 1 level, got %d", len(levels))
 	}
@@ -64,7 +70,10 @@ func TestCalculateGEX_ZeroGamma(t *testing.T) {
 	putGamma := map[float64]float64{80000: 0, 85000: 0}
 	putOI := map[float64]float64{80000: 1000, 85000: 500}
 
-	levels := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, 1.0, 82000)
+	levels, err := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, 1.0, 82000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	for _, l := range levels {
 		if l.NetGEX != 0 || l.CallGEX != 0 || l.PutGEX != 0 {
 			t.Errorf("expected all zero GEX at strike %.0f, got call=%.2f put=%.2f net=%.2f",
@@ -164,5 +173,35 @@ func TestRegimeAndImplication_Negative(t *testing.T) {
 	}
 	if impl == "" {
 		t.Error("expected non-empty implication")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// calculateGEX spot zero guard tests
+// ---------------------------------------------------------------------------
+
+func TestCalculateGEX_ZeroSpotReturnsError(t *testing.T) {
+	strikes := []float64{80000}
+	callGamma := map[float64]float64{80000: 0.0001}
+	callOI := map[float64]float64{80000: 1000}
+	putGamma := map[float64]float64{80000: 0.0001}
+	putOI := map[float64]float64{80000: 500}
+
+	_, err := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, 1.0, 0)
+	if err == nil {
+		t.Fatal("expected error for zero spot price, got nil")
+	}
+}
+
+func TestCalculateGEX_NegativeSpotReturnsError(t *testing.T) {
+	strikes := []float64{80000}
+	callGamma := map[float64]float64{80000: 0.0001}
+	callOI := map[float64]float64{80000: 1000}
+	putGamma := map[float64]float64{80000: 0.0001}
+	putOI := map[float64]float64{80000: 500}
+
+	_, err := calculateGEX(strikes, callGamma, callOI, putGamma, putOI, 1.0, -100)
+	if err == nil {
+		t.Fatal("expected error for negative spot price, got nil")
 	}
 }
