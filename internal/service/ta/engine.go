@@ -82,6 +82,12 @@ func (e *Engine) ComputeSnapshot(bars []OHLCV) *IndicatorSnapshot {
 	snap.SuperTrend = CalcSuperTrend(bars, 10, 3.0)
 	snap.Fibonacci = CalcFibonacci(bars, 50)
 
+	// SMC: Break of Structure + Premium/Discount zone
+	if len(bars) >= 15 {
+		smcResult := DetectStructureBreaks(bars)
+		snap.SMC = &smcResult
+	}
+
 	return snap
 }
 

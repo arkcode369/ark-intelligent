@@ -53,6 +53,8 @@ var defaultWeights = map[string]indicatorWeight{
 	// Volatility (10%)
 	"BOLLINGER":   {category: "volatility", weight: 0.06},
 	"WILLIAMS_R":  {category: "volatility", weight: 0.04},
+
+	"SMC": {category: "structure", weight: 0.15},
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +294,14 @@ func CalcConfluence(snap *IndicatorSnapshot) *ConfluenceResult {
 		raw["SUPERTREND"] = rawSig{stSig, stNote, true}
 	}
 
+	// SMC: Break of Structure / Change of Character signal (weight 0.15)
+	if snap.SMC != nil && len(snap.SMC.Breaks) > 0 {
+		smcSig, smcNote := signalSMC(snap.SMC)
+		if smcNote != "" {
+			raw["SMC"] = rawSig{smcSig, smcNote, true}
+		}
+	}
+
 	// Compute category totals for redistribution
 	catTotal := map[string]float64{}   // sum of default weights per category
 	catAvail := map[string]float64{}   // sum of available weights per category
@@ -477,4 +487,27 @@ func signalSuperTrendFromSnap(snap *IndicatorSnapshot) (float64, string) {
 	default:
 		return 0, "SuperTrend neutral"
 	}
+}
+
+// signalSMC derives a confluence signal from the most recent BOS/CHOCH event.
+//   BOS bullish  → +0.5 (continuation signal)
+//   BOS bearish  → -0.5 (continuation signal)
+//   CHOCH bullish → +1.0 (reversal signal — strong)
+//   CHOCH bearish → -1.0 (reversal signal — strong)
+func signalSMC(smc *SMCResult) (float64, string) {
+	if smc == nil || len(smc.Breaks) == 0 {
+		return 0, ""
+	}
+	latest := smc.Breaks[0]
+	switch {
+	case latest.Type == "CHOCH" && latest.Direction == "BULLISH":
+		return 1.0, fmt.Sprintf("SMC CHOCH ↑ bullish reversal @ %.5f", latest.Level)
+	case latest.Type == "CHOCH" && latest.Direction == "BEARISH":
+		return -1.0, fmt.Sprintf("SMC CHOCH ↓ bearish reversal @ %.5f", latest.Level)
+	case latest.Type == "BOS" && latest.Direction == "BULLISH":
+		return 0.5, fmt.Sprintf("SMC BOS ↑ bullish continuation @ %.5f", latest.Level)
+	case latest.Type == "BOS" && latest.Direction == "BEARISH":
+		return -0.5, fmt.Sprintf("SMC BOS ↓ bearish continuation @ %.5f", latest.Level)
+	}
+	return 0, ""
 }
