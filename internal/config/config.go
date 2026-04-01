@@ -233,7 +233,9 @@ func (c *Config) HasMassiveS3() bool {
 }
 
 // validate performs additional validation beyond required env vars.
+// Fatal = startup will abort. Warn = graceful degradation, feature disabled.
 func (c *Config) validate() {
+	// ── Interval sanity ─────────────────────────────────────────────────────
 	if c.COTHistoryWeeks < 4 {
 		log.Fatal().Msg("COT_HISTORY_WEEKS must be >= 4")
 	}
@@ -243,29 +245,107 @@ func (c *Config) validate() {
 	if c.ConfluenceCalcInterval < 1*time.Minute {
 		log.Fatal().Msg("CONFLUENCE_CALC_INTERVAL must be >= 1m")
 	}
+	if c.PriceFetchInterval <= 0 {
+		log.Fatal().Msg("PRICE_FETCH_INTERVAL must be > 0")
+	}
+	if c.IntradayFetchInterval <= 0 {
+		log.Fatal().Msg("INTRADAY_FETCH_INTERVAL must be > 0")
+	}
+	if c.AICacheTTL <= 0 {
+		log.Fatal().Msg("AI_CACHE_TTL must be > 0")
+	}
 
-	// Cross-field: Claude endpoint requires model to be set.
+	// ── Range sanity ─────────────────────────────────────────────────────────
+	if c.IntradayRetentionDays < 1 {
+		log.Fatal().Msg("INTRADAY_RETENTION_DAYS must be >= 1")
+	}
+	if c.PriceHistoryWeeks < 1 {
+		log.Fatal().Msg("PRICE_HISTORY_WEEKS must be >= 1")
+	}
+	if c.ChatHistoryLimit <= 0 {
+		log.Warn().Int("default", 50).Msg("CHAT_HISTORY_LIMIT <= 0, using default 50")
+		c.ChatHistoryLimit = 50
+	}
+	if c.ImpactBootstrapMonths < 1 {
+		log.Fatal().Msg("IMPACT_BOOTSTRAP_MONTHS must be >= 1")
+	}
+	if c.ClaudeMaxTokens <= 0 {
+		log.Fatal().Msg("CLAUDE_MAX_TOKENS must be > 0")
+	}
+
+	// ── AI quota advisory ────────────────────────────────────────────────────
+	if c.AIMaxRPM <= 0 {
+		log.Fatal().Msg("AI_MAX_RPM must be > 0")
+	}
+	if c.AIMaxDaily <= 0 {
+		log.Fatal().Msg("AI_MAX_DAILY must be > 0")
+	}
+	if c.AIMaxDaily < c.AIMaxRPM {
+		log.Warn().
+			Int("ai_max_daily", c.AIMaxDaily).
+			Int("ai_max_rpm", c.AIMaxRPM).
+			Msg("AI_MAX_DAILY < AI_MAX_RPM — quota may exhaust within the first minute")
+	}
+
+	// ── Cross-field consistency ───────────────────────────────────────────────
 	if c.ClaudeEndpoint != "" && c.ClaudeModel == "" {
 		log.Fatal().Msg("CLAUDE_MODEL must be set when CLAUDE_ENDPOINT is configured")
 	}
-
-	// Cross-field: Massive S3 credentials must be paired (both or neither).
 	hasS3Key := c.MassiveS3AccessKey != ""
 	hasS3Secret := c.MassiveS3SecretKey != ""
 	if hasS3Key != hasS3Secret {
 		log.Fatal().Msg("MASSIVE_S3_ACCESS_KEY and MASSIVE_S3_SECRET_KEY must both be set or both empty")
 	}
 
-	// DATA_DIR writable check — fail fast at startup rather than on first write.
+	// ── Storage check ────────────────────────────────────────────────────────
+	if _, err := os.Stat(c.DataDir); os.IsNotExist(err) {
+		log.Fatal().Str("dir", c.DataDir).Msg("DATA_DIR does not exist — create the directory before starting")
+	}
 	testFile := filepath.Join(c.DataDir, ".write_test")
 	if err := os.WriteFile(testFile, []byte("ok"), 0600); err != nil {
 		log.Fatal().Str("dir", c.DataDir).Err(err).Msg("DATA_DIR is not writable")
 	}
 	_ = os.Remove(testFile)
 
-	// Advisory: Gemini API key set but model left at default — warn only.
-	if c.GeminiAPIKey != "" && c.GeminiModel == "" {
-		log.Warn().Msg("GEMINI_API_KEY is set but GEMINI_MODEL is empty; using hardcoded default")
+	// ── Feature availability logging ─────────────────────────────────────────
+	// Logged at INFO so operators see which optional features are active on startup.
+	if c.GeminiAPIKey == "" {
+		log.Warn().Msg("GEMINI_API_KEY not set — AI analysis features disabled")
+	} else {
+		if c.GeminiModel == "" {
+			log.Warn().Msg("GEMINI_API_KEY is set but GEMINI_MODEL is empty; using hardcoded default")
+		}
+		log.Info().Str("model", c.GeminiModel).Msg("Gemini AI: ENABLED")
+	}
+	if !c.HasClaude() {
+		log.Warn().Msg("CLAUDE_ENDPOINT not set — Claude chatbot disabled")
+	} else {
+		log.Info().Str("model", c.ClaudeModel).Msg("Claude chatbot: ENABLED")
+	}
+	if !c.HasTwelveData() {
+		log.Warn().Msg("TWELVE_DATA_API_KEYS not set — price fetcher using Yahoo fallback only")
+	} else {
+		log.Info().Int("keys", len(c.TwelveDataAPIKeys)).Msg("TwelveData price API: ENABLED")
+	}
+	if !c.HasAlphaVantage() {
+		log.Warn().Msg("ALPHA_VANTAGE_API_KEYS not set — oil/treasury price data degraded")
+	} else {
+		log.Info().Int("keys", len(c.AlphaVantageAPIKeys)).Msg("AlphaVantage price API: ENABLED")
+	}
+	if !c.HasCoinGecko() {
+		log.Warn().Msg("COINGECKO_API_KEY not set — altcoin market cap features disabled")
+	} else {
+		log.Info().Msg("CoinGecko API: ENABLED")
+	}
+	if !c.HasMassive() {
+		log.Warn().Msg("MASSIVE_API_KEYS not set — historical research layer disabled")
+	} else {
+		log.Info().Int("keys", len(c.MassiveAPIKeys)).Msg("Massive research API: ENABLED")
+	}
+	if !c.HasBybit() {
+		log.Warn().Msg("BYBIT_API_KEY not set — crypto microstructure features disabled")
+	} else {
+		log.Info().Bool("testnet", c.BybitTestnet).Msg("Bybit microstructure API: ENABLED")
 	}
 }
 
