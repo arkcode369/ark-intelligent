@@ -35,6 +35,7 @@ import (
 	strategysvc "github.com/arkcode369/ark-intelligent/internal/service/strategy"
 	ta "github.com/arkcode369/ark-intelligent/internal/service/ta"
 	ictsvc "github.com/arkcode369/ark-intelligent/internal/service/ict"
+	gexsvc "github.com/arkcode369/ark-intelligent/internal/service/gex"
 	bybitpkg "github.com/arkcode369/ark-intelligent/internal/service/marketdata/bybit"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
@@ -392,6 +393,13 @@ func main() {
 		}
 		handler.WithICT(ictServices)
 		log.Info().Msg("ICT/SMC commands registered (/ict)")
+
+		// Wire GEX services (Gamma Exposure engine via Deribit public API)
+		gexServices := &tgbot.GEXServices{
+			Engine: gexsvc.NewEngine(),
+		}
+		handler.WithGEX(gexServices)
+		log.Info().Msg("GEX commands registered (/gex)")
 	}
 
 	// Register free-text handler for chatbot mode
