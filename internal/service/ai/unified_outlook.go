@@ -7,6 +7,7 @@ import (
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/service/bis"
+	"github.com/arkcode369/ark-intelligent/internal/service/marketdata/defillama"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
@@ -32,6 +33,7 @@ type UnifiedOutlookData struct {
 	CurrencyStrength   []pricesvc.CurrencyStrength
 	WorldBankData      *worldbank.WorldBankData
 	BISData            *bis.BISData
+	DeFiLlamaTVL       *defillama.TVLSummary
 	Language           string
 }
 
@@ -299,6 +301,18 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 			}
 			b.WriteString("\n")
 		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Section: DeFi TVL (DeFiLlama)
+	// -----------------------------------------------------------------------
+	if data.DeFiLlamaTVL != nil && data.DeFiLlamaTVL.Available {
+		vl := data.DeFiLlamaTVL
+		b.WriteString(fmt.Sprintf("=== %d. DEFI TVL (DeFiLlama) ===\n", section))
+		section++
+		b.WriteString(fmt.Sprintf("Total DeFi TVL: %s (%+.1f%% 7d, %+.1f%% 30d) — %s\n",
+			defillama.FormatTVLBillions(vl.Current), vl.Change7D, vl.Change30D, vl.Trend))
+		b.WriteString("\n")
 	}
 
 	// -----------------------------------------------------------------------
