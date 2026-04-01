@@ -261,7 +261,7 @@ func (h *Handler) runCTABacktest(ctx context.Context, chatID string, symbol, tim
 	}
 
 	// Generate chart
-	chartPNG, chartErr := h.generateBacktestChart(result, mapping.Currency, timeframe)
+	chartPNG, chartErr := h.generateBacktestChart(ctx, result, mapping.Currency, timeframe)
 	if chartErr != nil {
 		log.Warn().Err(chartErr).Str("symbol", symbol).Msg("backtest chart generation failed")
 	}
@@ -380,7 +380,7 @@ type backtestChartParams struct {
 	PF          float64 `json:"pf"`
 }
 
-func (h *Handler) generateBacktestChart(result *ta.BacktestResult, symbol, timeframe string) ([]byte, error) {
+func (h *Handler) generateBacktestChart(ctx context.Context, result *ta.BacktestResult, symbol, timeframe string) ([]byte, error) {
 	if result == nil {
 		return nil, fmt.Errorf("no backtest result")
 	}
@@ -469,10 +469,12 @@ func (h *Handler) generateBacktestChart(result *ta.BacktestResult, symbol, timef
 
 	scriptPath := findBacktestScript()
 
-	cmd := exec.CommandContext(context.Background(), "python3", scriptPath, inputPath, outputPath)
+	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("backtest chart renderer failed: %w", err)
+		return nil, fmt.Errorf("backtest chart renderer failed (timeout 90s): %w", err)
 	}
 
 	pngData, err := os.ReadFile(outputPath)
