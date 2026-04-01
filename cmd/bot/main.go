@@ -37,6 +37,7 @@ import (
 	ictsvc "github.com/arkcode369/ark-intelligent/internal/service/ict"
 	gexsvc "github.com/arkcode369/ark-intelligent/internal/service/gex"
 	bybitpkg "github.com/arkcode369/ark-intelligent/internal/service/marketdata/bybit"
+sentimentsvc "github.com/arkcode369/ark-intelligent/internal/service/sentiment"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
 
@@ -111,6 +112,9 @@ func main() {
 
 	log.Info().Msg("Storage layer initialized")
 	logStorageSize(db)
+
+	// Initialize sentiment disk cache so data survives restarts.
+	sentimentsvc.InitSentimentCache(db.Badger())
 
 	// -----------------------------------------------------------------------
 	// 3b. Health check endpoint
@@ -520,6 +524,9 @@ func main() {
 
 		initCancel()
 		logStorageSize(db)
+
+	// Initialize sentiment disk cache so data survives restarts.
+	sentimentsvc.InitSentimentCache(db.Badger())
 
 		// Send startup notification (non-blocking — bot is about to start polling)
 		go func() {
