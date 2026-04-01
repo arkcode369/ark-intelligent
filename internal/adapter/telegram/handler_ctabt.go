@@ -465,7 +465,6 @@ func (h *Handler) generateBacktestChart(ctx context.Context, result *ta.Backtest
 		return nil, fmt.Errorf("write chart input: %w", err)
 	}
 	defer os.Remove(inputPath)
-	defer os.Remove(outputPath)
 
 	scriptPath := findBacktestScript()
 
@@ -474,10 +473,12 @@ func (h *Handler) generateBacktestChart(ctx context.Context, result *ta.Backtest
 	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		os.Remove(outputPath)
 		return nil, fmt.Errorf("backtest chart renderer failed (timeout 90s): %w", err)
 	}
 
 	pngData, err := os.ReadFile(outputPath)
+	os.Remove(outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("read chart output: %w", err)
 	}

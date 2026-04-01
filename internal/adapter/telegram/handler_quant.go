@@ -447,7 +447,6 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 		return nil, fmt.Errorf("write quant input: %w", err)
 	}
 	defer os.Remove(inputPath)
-	defer os.Remove(outputPath)
 
 	scriptPath := findQuantScript()
 
@@ -459,11 +458,13 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 
 	if err := cmd.Run(); err != nil {
 		os.Remove(chartPath) // cleanup chart on failure
+		os.Remove(outputPath)
 		return nil, fmt.Errorf("quant engine failed: %w", err)
 	}
 
 	// Read output
 	outData, err := os.ReadFile(outputPath)
+	os.Remove(outputPath)
 	if err != nil {
 		os.Remove(chartPath) // cleanup chart on failure
 		return nil, fmt.Errorf("read quant output: %w", err)
