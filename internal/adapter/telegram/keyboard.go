@@ -36,7 +36,7 @@ func NewKeyboardBuilder() *KeyboardBuilder {
 // ---------------------------------------------------------------------------
 
 const (
-	// Navigation
+	// Navigation — generic
 	btnBack       = "◀ Kembali"
 	btnHome       = "🏠 Menu Utama"
 	btnPrevDay    = "◀ Kemarin"
@@ -45,6 +45,12 @@ const (
 	btnNextWeek   = "Minggu Depan ▶"
 	btnPrevMonth  = "◀ Bulan Lalu"
 	btnNextMonth  = "Bulan Depan ▶"
+
+	// Navigation — context-specific back buttons (Indonesian, per UX standard)
+	btnBackRingkasan = "◀ Ringkasan"   // back to summary/overview
+	btnBackDashboard = "◀ Dashboard"   // back to main section dashboard
+	btnBackKategori  = "◀ Kategori"    // back to category list
+	btnBackGrid      = "◀ Grid"        // back to seasonal grid overview
 
 	// Calendar
 	btnThisMonth = "Bulan Ini"
@@ -251,7 +257,7 @@ func (kb *KeyboardBuilder) MacroDetailMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "macro:summary"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackRingkasan, CallbackData: "macro:summary"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -267,7 +273,7 @@ func (kb *KeyboardBuilder) MacroDrillDownMenu() ports.InlineKeyboard {
 			},
 			{
 				{Text: "🧮 Composites", CallbackData: "macro:composites"},
-				{Text: btnBack, CallbackData: "macro:summary"},
+				{Text: btnBackRingkasan, CallbackData: "macro:summary"},
 				{Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
@@ -526,7 +532,7 @@ func (kb *KeyboardBuilder) COTDetailMenu(code string, isRaw bool) ports.InlineKe
 	rows = append(rows, kb.ShareRow(fmt.Sprintf("share:cot:%s", code)))
 
 	rows = append(rows, []ports.InlineButton{
-		{Text: btnBack, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
+		{Text: btnBackRingkasan, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
 	})
 
 	return ports.InlineKeyboard{Rows: rows}
@@ -621,7 +627,7 @@ func (kb *KeyboardBuilder) ImpactEventMenu(category string) ports.InlineKeyboard
 	}
 	// Add back button
 	rows = append(rows, []ports.InlineButton{
-		{Text: btnBack, CallbackData: "imp:back"}, {Text: btnHome, CallbackData: "nav:home"},
+		{Text: btnBackKategori, CallbackData: "imp:back"}, {Text: btnHome, CallbackData: "nav:home"},
 	})
 
 	return ports.InlineKeyboard{Rows: rows}
@@ -632,7 +638,7 @@ func (kb *KeyboardBuilder) ImpactBackMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "imp:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackKategori, CallbackData: "imp:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -763,7 +769,7 @@ func (kb *KeyboardBuilder) SeasonalDetailMenu(currency string) ports.InlineKeybo
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "cmd:seasonal"},
+				{Text: btnBackGrid, CallbackData: "cmd:seasonal"},
 				{Text: "💹 Price", CallbackData: fmt.Sprintf("cmd:price:%s", currency)},
 				{Text: btnHome, CallbackData: "nav:home"},
 			},
@@ -807,7 +813,7 @@ func (kb *KeyboardBuilder) COTDetailMenuWithBias(code string, isRaw bool, signal
 	rows = append(rows, kb.ShareRow(fmt.Sprintf("share:cot:%s", code)))
 
 	rows = append(rows, []ports.InlineButton{
-		{Text: btnBack, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
+		{Text: btnBackRingkasan, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
 	})
 
 	return ports.InlineKeyboard{Rows: rows}
@@ -870,7 +876,7 @@ func (kb *KeyboardBuilder) AlphaDetailMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "alpha:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackRingkasan, CallbackData: "alpha:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -888,7 +894,7 @@ func (kb *KeyboardBuilder) AlphaCryptoDetailMenu() ports.InlineKeyboard {
 				{Text: "🔶 BNB", CallbackData: "alpha:crypto:BNB"},
 			},
 			{
-				{Text: btnBack, CallbackData: "alpha:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackRingkasan, CallbackData: "alpha:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -935,7 +941,7 @@ func (kb *KeyboardBuilder) CTADetailMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "cta:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackRingkasan, CallbackData: "cta:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -957,7 +963,7 @@ func (kb *KeyboardBuilder) CTATimeframeMenu() ports.InlineKeyboard {
 				{Text: "📊 Daily", CallbackData: "cta:tf:daily"},
 			},
 			{
-				{Text: btnBack, CallbackData: "cta:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackRingkasan, CallbackData: "cta:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -1093,7 +1099,7 @@ func (kb *KeyboardBuilder) QuantDetailMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "quant:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackDashboard, CallbackData: "quant:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -1144,7 +1150,7 @@ func (kb *KeyboardBuilder) VPDetailMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "vp:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackDashboard, CallbackData: "vp:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -1206,7 +1212,7 @@ func (kb *KeyboardBuilder) HelpSubMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: btnBack, CallbackData: "help:back"}, {Text: btnHome, CallbackData: "nav:home"},
+				{Text: btnBackRingkasan, CallbackData: "help:back"}, {Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
