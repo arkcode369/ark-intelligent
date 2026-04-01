@@ -1312,6 +1312,63 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 		b.WriteString("<code>Data tidak tersedia</code>\n")
 	}
 
+
+	// --- Cross-Asset Volatility Suite (CBOE) ---
+	if data.VolSuiteAvail {
+		b.WriteString("\n<b>Vol Suite (CBOE)</b>\n")
+		if data.VolSKEW > 0 {
+			var skewEmoji string
+			switch {
+			case data.VolSKEW > 140:
+				skewEmoji = "🔴"
+			case data.VolSKEW > 130:
+				skewEmoji = "⚠️"
+			default:
+				skewEmoji = "✅"
+			}
+			b.WriteString(fmt.Sprintf("<code>SKEW  : %.1f %s</code>\n", data.VolSKEW, skewEmoji))
+		}
+		if data.VolOVX > 0 {
+			b.WriteString(fmt.Sprintf("<code>OVX   : %.1f</code>\n", data.VolOVX))
+		}
+		if data.VolGVZ > 0 {
+			b.WriteString(fmt.Sprintf("<code>GVZ   : %.1f</code>\n", data.VolGVZ))
+		}
+		if data.VolRVX > 0 {
+			var rvxEmoji string
+			if data.RVXVIXRatio > 1.3 {
+				rvxEmoji = " ⚠️"
+			}
+			b.WriteString(fmt.Sprintf("<code>RVX   : %.1f%s</code>\n", data.VolRVX, rvxEmoji))
+		}
+		if data.VolVIX9D > 0 {
+			var v9dEmoji string
+			if data.VIX9D30Ratio > 1.1 {
+				v9dEmoji = " ⚠️"
+			}
+			b.WriteString(fmt.Sprintf("<code>VIX9D : %.2f%s</code>\n", data.VolVIX9D, v9dEmoji))
+		}
+		if data.SKEWVIXRatio > 0 {
+			var ratioEmoji string
+			if data.SKEWVIXRatio > 8.0 {
+				ratioEmoji = " 🔴"
+			}
+			b.WriteString(fmt.Sprintf("<code>SKEW/VIX: %.1f%s</code>\n", data.SKEWVIXRatio, ratioEmoji))
+		}
+		if data.RVXVIXRatio > 0 {
+			b.WriteString(fmt.Sprintf("<code>RVX/VIX : %.2f</code>\n", data.RVXVIXRatio))
+		}
+		switch data.VolTailRisk {
+		case "EXTREME":
+			b.WriteString("<i>🔴 TAIL RISK EXTREME — SKEW/VIX historically dangerous.</i>\n")
+		case "ELEVATED":
+			b.WriteString("<i>⚠️ Tail risk elevated — SKEW tinggi vs VIX rendah.</i>\n")
+		}
+		for _, d := range data.VolDivergences {
+			b.WriteString(fmt.Sprintf("<i>📊 %s</i>\n", d))
+		}
+	}
+
 	// --- Composite reading ---
 	b.WriteString("\n<b>Pembacaan Gabungan</b>\n")
 	compositeWritten := false

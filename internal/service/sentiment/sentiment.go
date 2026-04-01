@@ -157,6 +157,20 @@ func (f *SentimentFetcher) Fetch(ctx context.Context) (*SentimentData, error) {
 			data.MOVEDivergence = ts.MOVE.Divergence
 			data.MOVEAvailable = true
 		}
+		// Cross-asset volatility suite
+		if ts.VolSuite != nil && ts.VolSuite.Available {
+			data.VolSKEW = ts.VolSuite.SKEW
+			data.VolOVX = ts.VolSuite.OVX
+			data.VolGVZ = ts.VolSuite.GVZ
+			data.VolRVX = ts.VolSuite.RVX
+			data.VolVIX9D = ts.VolSuite.VIX9D
+			data.SKEWVIXRatio = ts.VolSuite.SKEWVIXRatio
+			data.RVXVIXRatio = ts.VolSuite.RVXVIXRatio
+			data.VIX9D30Ratio = ts.VolSuite.VIX9D30Ratio
+			data.VolTailRisk = ts.VolSuite.TailRisk
+			data.VolDivergences = ts.VolSuite.Divergences
+			data.VolSuiteAvail = true
+		}
 		return nil
 	}); err != nil {
 		log.Debug().Str("source", "vix").Err(err).Msg("sentiment: VIX circuit breaker rejected or source unavailable")
@@ -237,6 +251,19 @@ type SentimentData struct {
 	VIXMOVERatio   float64 // VIX/MOVE — normal 0.15-0.30
 	MOVEDivergence string  // "EQUITY_FEAR", "BOND_STRESS", "SYSTEMIC_STRESS", "ALIGNED"
 	MOVEAvailable  bool
+
+	// Cross-Asset Volatility Suite (CBOE indices)
+	VolSKEW        float64  // S&P 500 tail risk index
+	VolOVX         float64  // Crude oil volatility
+	VolGVZ         float64  // Gold volatility
+	VolRVX         float64  // Russell 2000 volatility
+	VolVIX9D       float64  // 9-day VIX (event pricing)
+	SKEWVIXRatio   float64  // SKEW/VIX — >8 historically dangerous
+	RVXVIXRatio    float64  // RVX/VIX — >1.3 risk appetite declining
+	VIX9D30Ratio   float64  // VIX9D/VIX — >1 near-term event
+	VolTailRisk    string   // "NORMAL", "ELEVATED", "EXTREME"
+	VolDivergences []string // detected cross-asset divergences
+	VolSuiteAvail  bool
 
 	// Myfxbook Retail Positioning (Firecrawl)
 	MyfxbookPairs     []MyfxbookPairSentiment
