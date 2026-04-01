@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"bytes"
 	"github.com/arkcode369/ark-intelligent/internal/config"
 	"context"
 	"encoding/json"
@@ -435,10 +436,14 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath, chartPath)
-	cmd.Stderr = os.Stderr
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	cmd.Env = append(os.Environ(), "MPLBACKEND=Agg")
 
 	if err := cmd.Run(); err != nil {
+		log.Error().Err(err).
+			Str("stderr", stderr.String()).
+			Msg("VP engine subprocess failed")
 		os.Remove(chartPath) // cleanup chart on failure
 		os.Remove(outputPath)
 		return nil, fmt.Errorf("VP engine failed: %w", err)
@@ -462,8 +467,13 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 		return &result, fmt.Errorf("%s", result.Error)
 	}
 
-	if _, statErr := os.Stat(chartPath); statErr == nil {
-		result.ChartPath = chartPath
+	if fi, statErr := os.Stat(chartPath); statErr == nil {
+		if fi.Size() > 0 {
+			result.ChartPath = chartPath
+		} else {
+			log.Warn().Str("chart_path", chartPath).Msg("chart renderer produced 0-byte file, skipping")
+			os.Remove(chartPath)
+		}
 	}
 
 	return &result, nil

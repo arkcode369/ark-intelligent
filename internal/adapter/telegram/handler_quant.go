@@ -4,6 +4,7 @@ package telegram
 //   /quant [SYMBOL] [TIMEFRAME]  — Quant dashboard with inline keyboard
 
 import (
+	"bytes"
 	"github.com/arkcode369/ark-intelligent/internal/config"
 	"context"
 	"encoding/json"
@@ -466,9 +467,15 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	cmdCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath, chartPath)
-	cmd.Stderr = os.Stderr
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		log.Error().Err(err).
+			Str("stderr", stderr.String()).
+			Str("symbol", state.symbol).
+			Str("mode", mode).
+			Msg("quant engine subprocess failed")
 		os.Remove(chartPath) // cleanup chart on failure
 		os.Remove(outputPath)
 		return nil, fmt.Errorf("quant engine failed: %w", err)
@@ -489,8 +496,13 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	}
 
 	// Check if chart was actually generated
-	if _, err := os.Stat(chartPath); err == nil {
-		result.ChartPath = chartPath
+	if fi, err := os.Stat(chartPath); err == nil {
+		if fi.Size() > 0 {
+			result.ChartPath = chartPath
+		} else {
+			log.Warn().Str("chart_path", chartPath).Msg("chart renderer produced 0-byte file, skipping")
+			os.Remove(chartPath)
+		}
 	}
 
 	return &result, nil
