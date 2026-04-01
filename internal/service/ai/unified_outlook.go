@@ -265,17 +265,23 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 	}
 
 	// -----------------------------------------------------------------------
-	// Section 6: Market Sentiment (CNN Fear & Greed)
+	// Section 6: Market Sentiment (CNN Fear & Greed + CBOE Put/Call)
 	// -----------------------------------------------------------------------
 	if data.SentimentData != nil {
 		sd := data.SentimentData
-		if sd.CNNAvailable {
+		if sd.CNNAvailable || sd.PutCallAvailable {
 			b.WriteString(fmt.Sprintf("=== %d. MARKET SENTIMENT ===\n", section))
 			section++
-			b.WriteString(fmt.Sprintf("CNN Fear & Greed: %.0f/100 (%s)\n", sd.CNNFearGreed, sd.CNNFearGreedLabel))
+			if sd.CNNAvailable {
+				b.WriteString(fmt.Sprintf("CNN Fear & Greed: %.0f/100 (%s)\n", sd.CNNFearGreed, sd.CNNFearGreedLabel))
+			}
 			if sd.AAIIAvailable {
 				b.WriteString(fmt.Sprintf("AAII: Bull=%.1f%% Bear=%.1f%% Neutral=%.1f%% (B/B Ratio=%.2f)\n",
 					sd.AAIIBullish, sd.AAIIBearish, sd.AAIINeutral, sd.AAIIBullBear))
+			}
+			if sd.PutCallAvailable {
+				b.WriteString(fmt.Sprintf("CBOE P/C: Total=%.2f Equity=%.2f Index=%.2f Signal=%s\n",
+					sd.PutCallTotal, sd.PutCallEquity, sd.PutCallIndex, sd.PutCallSignal))
 			}
 			b.WriteString("\n")
 		}
