@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/service/fed"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
@@ -30,6 +31,7 @@ type UnifiedOutlookData struct {
 	BacktestStats      *domain.BacktestStats
 	CurrencyStrength   []pricesvc.CurrencyStrength
 	WorldBankData      *worldbank.WorldBankData
+	FedWatchData       *fed.FedWatchData
 	Language           string
 }
 
@@ -226,6 +228,25 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 			b.WriteString(fmt.Sprintf("DXY: %.1f (%s)\n", m.DXY, regime.USDStrength))
 		}
 		b.WriteString(fmt.Sprintf("Implied Bias: %s\n", regime.Bias))
+		b.WriteString("\n")
+	}
+
+	// -----------------------------------------------------------------------
+	// Section X: CME FedWatch Implied Probabilities
+	// -----------------------------------------------------------------------
+	if data.FedWatchData != nil && data.FedWatchData.Available {
+		b.WriteString(fmt.Sprintf("=== %d. CME FEDWATCH IMPLIED PROBABILITIES ===\n", section))
+		section++
+		fw := data.FedWatchData
+		meetingStr := ""
+		if fw.NextMeetingDate != "" {
+			meetingStr = " " + fw.NextMeetingDate
+		}
+		b.WriteString(fmt.Sprintf("Next FOMC%s: Hold=%.0f%% Cut25=%.0f%% Cut50=%.0f%% Hike25=%.0f%%\n",
+			meetingStr, fw.HoldProbability, fw.Cut25Probability, fw.Cut50Probability, fw.Hike25Probability))
+		if txt := fed.ImpliedCutsText(fw); txt != "" {
+			b.WriteString(txt + "\n")
+		}
 		b.WriteString("\n")
 	}
 
