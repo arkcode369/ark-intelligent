@@ -3,6 +3,7 @@
 // Currently supported:
 //   - CNN Fear & Greed Index (daily, 0-100 scale)
 //   - AAII Investor Sentiment Survey (weekly, bull/bear/neutral % via Firecrawl)
+//   - VIX Term Structure (CBOE free CSV — spot, M1, M2, VVIX, regime)
 //
 // CNN uses a public JSON endpoint. AAII is behind Imperva bot protection and
 // requires Firecrawl API to scrape. If FIRECRAWL_API_KEY is not set, AAII is
@@ -22,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arkcode369/ark-intelligent/internal/service/vix"
 	"github.com/arkcode369/ark-intelligent/pkg/circuitbreaker"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
@@ -36,6 +38,8 @@ type SentimentFetcher struct {
 	cbAAII     *circuitbreaker.Breaker
 	cbCBOE     *circuitbreaker.Breaker
 	cbCrypto   *circuitbreaker.Breaker
+	cbVIX      *circuitbreaker.Breaker
+	vixCache   *vix.Cache
 }
 
 // NewSentimentFetcher creates a SentimentFetcher with per-source circuit breakers.
@@ -47,6 +51,8 @@ func NewSentimentFetcher() *SentimentFetcher {
 		cbAAII:     circuitbreaker.New("sentiment-aaii", 3, 5*time.Minute),
 		cbCBOE:     circuitbreaker.New("sentiment-cboe", 3, 5*time.Minute),
 		cbCrypto:   circuitbreaker.New("sentiment-crypto-fg", 3, 5*time.Minute),
+		cbVIX:      circuitbreaker.New("sentiment-vix", 3, 10*time.Minute),
+		vixCache:   vix.NewCache(),
 	}
 }
 
