@@ -155,7 +155,7 @@ Pilih aset:`, h.kb.CTASymbolMenu())
 	}
 
 	// Send loading indicator
-	loadingID, _ := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("⚡ Computing TA for <b>%s</b>... ⏳", html.EscapeString(mapping.Currency)))
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf("⚡ Computing TA for <b>%s</b>... ⏳", html.EscapeString(mapping.Currency)))
 
 	// Compute CTA state
 	state, err := h.computeCTAState(ctx, mapping)
