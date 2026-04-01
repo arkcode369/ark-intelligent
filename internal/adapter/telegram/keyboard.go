@@ -1134,6 +1134,9 @@ func (kb *KeyboardBuilder) HelpCategoryMenu() ports.InlineKeyboard {
 				{Text: "⚙️ Settings", CallbackData: "help:settings"},
 				{Text: "🆕 What's New", CallbackData: "help:changelog"},
 			},
+			{
+				{Text: "⚡ Shortcuts", CallbackData: "help:shortcuts"},
+			},
 		},
 	}
 }
@@ -1156,6 +1159,7 @@ func (kb *KeyboardBuilder) HelpCategoryMenuWithAdmin() ports.InlineKeyboard {
 			},
 			{
 				{Text: "🆕 What's New", CallbackData: "help:changelog"},
+				{Text: "⚡ Shortcuts", CallbackData: "help:shortcuts"},
 			},
 		},
 	}

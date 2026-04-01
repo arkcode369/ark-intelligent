@@ -379,7 +379,7 @@ func (h *Handler) cmdHelp(ctx context.Context, chatID string, userID int64, args
 	category := strings.ToLower(strings.TrimSpace(args))
 	if category != "" {
 		switch category {
-		case "market", "research", "ai", "signals", "settings", "admin", "changelog":
+		case "market", "research", "ai", "signals", "settings", "admin", "changelog", "shortcuts":
 			return h.sendHelpSubCategory(ctx, chatID, userID, category, 0)
 		}
 	}
@@ -435,7 +435,11 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /quant — Econometric analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
 /vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
 /ict — ICT/SMC Smart Money Concepts · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
+/smc — SMC structure (BOS/CHoCH) · <code>/smc EURUSD</code>
+/wyckoff — Wyckoff phase analysis · <code>/wyckoff EURUSD</code>
+/elliott — Elliott Wave counter · <code>/elliott EURUSD</code>
 /gex — Gamma Exposure (crypto options) · <code>/gex BTC</code> · <code>/gex ETH</code>
+/intermarket — Cross-asset correlation signals
 /backtest — Backtest dashboard (17 sub-views)
 /accuracy — Win rate summary
 /report — Weekly signal performance`
@@ -447,7 +451,11 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /macro — FRED macro regime + asset performance
 /impact — Event impact database · <code>/impact NFP</code>
 /sentiment — Sentiment surveys (CNN F&amp;G, AAII, P/C)
-/seasonal — Seasonal patterns · <code>/seasonal EUR</code>`
+/seasonal — Seasonal patterns · <code>/seasonal EUR</code>
+/history — COT historical comparison (4-week)
+/xfactors — Cross-factor analysis · <code>/xfactors EUR</code>
+/transition — Macro regime transition signals
+/cryptoalpha — Crypto alpha dashboard`
 
 	case "signals":
 		text = `⚡ <b>Signals &amp; Alerts</b>
@@ -509,6 +517,20 @@ Use /settings to configure:
 			}
 			text = "🆕 <b>What's New</b>\n\n" + cl
 		}
+
+	case "shortcuts":
+		text = `⚡ <b>Shortcut Commands</b>
+
+<i>Alias cepat untuk power users:</i>
+
+<code>/c</code> → /cot · <code>/cal</code> → /calendar
+<code>/out</code> → /outlook · <code>/m</code> → /macro
+<code>/b</code> → /bias · <code>/q</code> → /quant
+<code>/bt</code> → /backtest · <code>/r</code> → /rank
+<code>/s</code> → /sentiment · <code>/p</code> → /price
+<code>/l</code> → /levels · <code>/h</code> → /history
+
+<i>💡 Semua alias menerima argument yang sama dengan command asli.</i>`
 
 	default:
 		return h.sendHelp(ctx, chatID, userID)
