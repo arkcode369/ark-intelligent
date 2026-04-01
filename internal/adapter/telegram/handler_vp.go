@@ -409,6 +409,14 @@ func (h *Handler) runVPEngine(input map[string]interface{}) (*vpEngineResult, er
 
 	defer os.Remove(inputPath)
 	defer os.Remove(outputPath)
+	// chartPath is cleaned up here on error paths; on success, caller owns it and
+	// must remove it after reading (see handler_vp.go caller which calls os.Remove).
+	chartOwned := false
+	defer func() {
+		if !chartOwned {
+			os.Remove(chartPath)
+		}
+	}()
 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
@@ -446,6 +454,7 @@ func (h *Handler) runVPEngine(input map[string]interface{}) (*vpEngineResult, er
 
 	if _, statErr := os.Stat(chartPath); statErr == nil {
 		result.ChartPath = chartPath
+		chartOwned = true // caller will remove after reading
 	}
 
 	return &result, nil
