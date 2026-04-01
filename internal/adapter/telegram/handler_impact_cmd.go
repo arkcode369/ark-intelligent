@@ -2,6 +2,13 @@ package telegram
 
 // /impact — Event Impact Database
 
+import (
+	"context"
+	"fmt"
+	"html"
+	"strings"
+)
+
 // ---------------------------------------------------------------------------
 // /impact — Event Impact Database
 // ---------------------------------------------------------------------------
@@ -69,29 +76,29 @@ func (h *Handler) cmdImpact(ctx context.Context, chatID string, _ int64, args st
 
 // eventAliases maps common abbreviations to full event names.
 var eventAliases = map[string]string{
-	"NFP":      "Non-Farm Employment Change",
-	"NONFARM":  "Non-Farm Employment Change",
-	"CPI":      "CPI m/m",
-	"CORE CPI": "Core CPI m/m",
-	"PPI":      "PPI m/m",
-	"FOMC":     "Federal Funds Rate",
-	"FED":      "Federal Funds Rate",
-	"BOE":      "Official Bank Rate",
-	"ECB":      "Main Refinancing Rate",
-	"BOJ":      "BOJ Policy Rate",
-	"RBA":      "Cash Rate",
-	"BOC":      "Overnight Rate",
-	"RBNZ":     "Official Cash Rate",
-	"SNB":      "SNB Policy Rate",
-	"GDP":      "GDP q/q",
-	"PMI":      "ISM Manufacturing PMI",
-	"RETAIL":   "Core Retail Sales m/m",
-	"CLAIMS":   "Unemployment Claims",
-	"JOBLESS":  "Unemployment Claims",
-	"PCE":      "Core PCE Price Index m/m",
-	"ISM":      "ISM Manufacturing PMI",
-	"ADP":      "ADP Non-Farm Employment Change",
-	"WAGES":    "Average Hourly Earnings m/m",
+	"NFP":         "Non-Farm Employment Change",
+	"NONFARM":     "Non-Farm Employment Change",
+	"CPI":         "CPI m/m",
+	"CORE CPI":    "Core CPI m/m",
+	"PPI":         "PPI m/m",
+	"FOMC":        "Federal Funds Rate",
+	"FED":         "Federal Funds Rate",
+	"BOE":         "Official Bank Rate",
+	"ECB":         "Main Refinancing Rate",
+	"BOJ":         "BOJ Policy Rate",
+	"RBA":         "Cash Rate",
+	"BOC":         "Overnight Rate",
+	"RBNZ":        "Official Cash Rate",
+	"SNB":         "SNB Policy Rate",
+	"GDP":         "GDP q/q",
+	"PMI":         "ISM Manufacturing PMI",
+	"RETAIL":      "Core Retail Sales m/m",
+	"CLAIMS":      "Unemployment Claims",
+	"JOBLESS":     "Unemployment Claims",
+	"PCE":         "Core PCE Price Index m/m",
+	"ISM":         "ISM Manufacturing PMI",
+	"ADP":         "ADP Non-Farm Employment Change",
+	"WAGES":       "Average Hourly Earnings m/m",
 	"CORE_CPI":    "Core CPI m/m",
 	"CB_CONSUMER": "CB Consumer Confidence Index",
 	"PRICE_EXP":   "Consumer Price Expectations",
@@ -165,4 +172,3 @@ func (h *Handler) cbImpact(ctx context.Context, chatID string, msgID int, userID
 
 	return nil
 }
-

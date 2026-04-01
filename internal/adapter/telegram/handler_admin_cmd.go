@@ -2,6 +2,14 @@ package telegram
 
 // /membership, Admin Commands
 
+import (
+	"context"
+	"fmt"
+	"html"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+)
 
 // ---------------------------------------------------------------------------
 // /membership — Tier comparison & upgrade info
@@ -273,4 +281,3 @@ func (h *Handler) notifyOwnerDebug(ctx context.Context, html string) {
 		_, _ = h.bot.SendHTML(ctx, fmt.Sprintf("%d", ownerID), html)
 	}()
 }
-

@@ -2,6 +2,20 @@ package telegram
 
 // /cot, /bias, /rank, /history — COT Positioning Domain
 
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/service/cot"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
+)
+
 // ---------------------------------------------------------------------------
 // /cot — COT positioning analysis
 // ---------------------------------------------------------------------------
@@ -251,7 +265,7 @@ func (h *Handler) cbCOTDetail(ctx context.Context, chatID string, msgID int, use
 		cbMacro, cbFredErr := fred.GetCachedOrFetch(ctx)
 		if cbFredErr == nil && cbMacro != nil {
 			cbComposites := fred.ComputeComposites(cbMacro)
-		cbRegime := fred.ClassifyMacroRegime(cbMacro, cbComposites)
+			cbRegime := fred.ClassifyMacroRegime(cbMacro, cbComposites)
 			var cbPriceCtxs map[string]*domain.PriceContext
 			if h.priceRepo != nil {
 				cbBuilder := pricesvc.NewContextBuilder(h.priceRepo)
@@ -427,7 +441,6 @@ func (h *Handler) cmdHistory(ctx context.Context, chatID string, userID int64, a
 	return err
 }
 
-
 // sparkLine generates a Unicode sparkline from a slice of values.
 func sparkLine(values []float64) string {
 	if len(values) == 0 {
@@ -481,7 +494,6 @@ func (h *Handler) resolveOrLastCurrency(ctx context.Context, userID int64, curre
 	}
 	return h.getLastCurrency(ctx, userID)
 }
-
 
 // cbViewToggle handles compact/full view toggle callbacks.
 // Callback data format: "view:<action>:<command>"
@@ -638,4 +650,3 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
-

@@ -2,6 +2,14 @@ package telegram
 
 // /settings — User Preferences
 
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+)
+
 // ---------------------------------------------------------------------------
 // /settings — User preferences
 // ---------------------------------------------------------------------------
@@ -137,4 +145,3 @@ func (h *Handler) cbAlertToggle(ctx context.Context, chatID string, msgID int, u
 
 	return nil
 }
-

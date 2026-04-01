@@ -2,6 +2,13 @@ package telegram
 
 // /sentiment — Sentiment Survey Dashboard
 
+import (
+	"context"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
+)
+
 // ---------------------------------------------------------------------------
 // /sentiment — Sentiment Survey Dashboard
 // ---------------------------------------------------------------------------
@@ -36,4 +43,3 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 	htmlMsg := h.fmt.FormatSentiment(data, h.currentMacroRegimeName(ctx))
 	return h.bot.EditMessage(ctx, chatID, placeholderID, htmlMsg)
 }
-

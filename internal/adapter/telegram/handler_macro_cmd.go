@@ -2,6 +2,16 @@ package telegram
 
 // /macro — FRED Macro Regime Dashboard
 
+import (
+	"context"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
+)
+
 // ---------------------------------------------------------------------------
 // P3.2 — /macro — FRED Macro Regime Dashboard
 // ---------------------------------------------------------------------------
@@ -289,4 +299,3 @@ func (h *Handler) renderMacroSummary(ctx context.Context, chatID string, userID 
 	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, htmlOut, kb)
 	return err
 }
-

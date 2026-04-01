@@ -2,6 +2,22 @@ package telegram
 
 // /outlook — AI Weekly Market Outlook
 
+import (
+	"context"
+	"fmt"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
+	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
+	"github.com/arkcode369/ark-intelligent/internal/service/bis"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
+	"github.com/arkcode369/ark-intelligent/internal/service/worldbank"
+	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
+)
+
 // ---------------------------------------------------------------------------
 // /outlook — AI weekly market outlook
 // ---------------------------------------------------------------------------
@@ -182,7 +198,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		MacroComposites:    macroComposites,
 		PriceContexts:      priceCtxs,
 		DailyPriceContexts: dailyPriceCtxs,
-		RiskContext:         riskCtx,
+		RiskContext:        riskCtx,
 		SentimentData:      sentimentData,
 		SeasonalData:       seasonalData,
 		BacktestStats:      backtestStats,
@@ -249,4 +265,3 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
-

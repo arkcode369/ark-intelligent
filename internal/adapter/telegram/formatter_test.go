@@ -194,7 +194,7 @@ func TestFormatCOTOverview_SingleCurrency(t *testing.T) {
 			NetPosition: 50000,
 			NetChange:   1000,
 			COTIndex:    72.5,
-			MomentumDir: domain.MomentumUp,
+			MomentumDir: domain.MomentumBuilding,
 		},
 	}
 	got := f.FormatCOTOverview(analyses, nil)

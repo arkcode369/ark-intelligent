@@ -3,27 +3,17 @@ package telegram
 // Handler — Core struct, interfaces, NewHandler, shared helpers
 
 import (
-	"github.com/arkcode369/ark-intelligent/internal/config"
 	"context"
-	"errors"
-	"fmt"
-	"html"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/arkcode369/ark-intelligent/internal/config"
+
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
-	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
-	"github.com/arkcode369/ark-intelligent/internal/service/cot"
-	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
-	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
-	"github.com/arkcode369/ark-intelligent/internal/service/worldbank"
-	"github.com/arkcode369/ark-intelligent/internal/service/bis"
-	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -211,7 +201,7 @@ func NewHandler(
 	bot.RegisterCommand("/impact", h.cmdImpact)
 	bot.RegisterCommand("/sentiment", h.cmdSentiment)
 	bot.RegisterCommand("/seasonal", h.cmdSeasonal)
-	bot.RegisterCommand("/price", h.cmdPrice) // Daily price context
+	bot.RegisterCommand("/price", h.cmdPrice)   // Daily price context
 	bot.RegisterCommand("/levels", h.cmdLevels) // Support/resistance levels + position sizing
 
 	// Membership & upgrade info
@@ -241,7 +231,6 @@ func NewHandler(
 	bot.RegisterCommand("/history", h.cmdHistory)
 	bot.RegisterCommand("/h", h.cmdHistory)
 
-
 	// Register callback handlers
 	bot.RegisterCallback("cot:", h.cbCOTDetail)
 	bot.RegisterCallback("alert:", h.cbAlertToggle)
@@ -259,7 +248,6 @@ func NewHandler(
 	log.Info().Int("commands", 48).Int("callbacks", 10).Msg("registered commands and callback prefixes")
 	return h
 }
-
 
 // ---------------------------------------------------------------------------
 // AI cooldown helper
@@ -336,4 +324,3 @@ func currencyToContractCode(currency string) string {
 	}
 	return currency // Return as-is if not mapped
 }
-

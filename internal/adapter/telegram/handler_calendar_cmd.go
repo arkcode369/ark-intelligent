@@ -2,6 +2,16 @@ package telegram
 
 // /calendar — Economic Calendar & Navigation
 
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
+)
 
 // ---------------------------------------------------------------------------
 // /calendar & Callbacks — Economic Calendar
@@ -323,4 +333,3 @@ func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, 
 	kb := h.kb.CalendarFilter("all", targetDateStr, true)
 	return h.sendCalendarChunked(ctx, chatID, msgID, html, kb)
 }
-

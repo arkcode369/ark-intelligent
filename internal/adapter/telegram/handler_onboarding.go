@@ -2,6 +2,16 @@ package telegram
 
 // /start, /help, /status — Onboarding & Core UI
 
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
+)
+
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdStart(ctx context.Context, chatID string, userID int64, args string) error {
@@ -289,9 +299,6 @@ func (h *Handler) cbHelp(ctx context.Context, chatID string, msgID int, userID i
 	return h.sendHelpSubCategory(ctx, chatID, userID, action, msgID)
 }
 
-	return nil
-}
-
 func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, args string) error {
 	now := timeutil.NowWIB()
 
@@ -326,4 +333,3 @@ func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, ar
 	_, err := h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
-
