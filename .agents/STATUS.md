@@ -1,11 +1,11 @@
-# Agent Status — last updated: 2026-04-01 21:00 WIB
+# Agent Status — last updated: 2026-04-01 22:00 WIB
 
 ## Research
-- **Siklus saat ini:** 2/5 (Data & Integrasi Baru) — Putaran 2, SELESAI. Next: siklus 3 (Fitur Baru)
-- **Last run:** 2026-04-01 21:00 WIB
-- **Current:** completed siklus 2 putaran 2 — ECB SDW, SNB balance sheet, Treasury TIPS, OECD CLI, DTCC FX swaps
-- **Tasks created today:** 15 (TASK-095–099 siklus 5, TASK-100–104 siklus 1, TASK-105–109 siklus 2)
-- **Total tasks created:** 109 (TASK-000 template + TASK-001 s/d TASK-109)
+- **Siklus saat ini:** 3/5 (Fitur Baru) — Putaran 2, SELESAI. Next: siklus 4 (Tech Refactor)
+- **Last run:** 2026-04-01 22:00 WIB
+- **Current:** completed siklus 3 putaran 2 — Regime overlay, correlation V2, risk parity, unified signal, session analysis
+- **Tasks created today:** 20 (TASK-095–099, TASK-100–104, TASK-105–109, TASK-110–114)
+- **Total tasks created:** 114 (TASK-000 template + TASK-001 s/d TASK-114)
 
 ---
 
