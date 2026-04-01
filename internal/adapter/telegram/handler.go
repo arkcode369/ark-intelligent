@@ -126,6 +126,10 @@ type Handler struct {
 	// May be nil — /ict command disabled if not configured.
 	ict      *ICTServices
 	ictCache *ictStateCache
+
+	// gex holds the GEX engine for /gex command.
+	// May be nil — /gex command disabled if not configured.
+	gex *GEXServices
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
@@ -408,6 +412,8 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /ctabt — Backtest Classical TA · <code>/ctabt EUR</code> · <code>/ctabt EUR 4h</code>
 /quant — Econometric analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
 /vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
+/ict — ICT/SMC Smart Money Concepts · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
+/gex — Gamma Exposure (crypto options) · <code>/gex BTC</code> · <code>/gex ETH</code>
 /backtest — Backtest dashboard (17 sub-views)
 /accuracy — Win rate summary
 /report — Weekly signal performance`
