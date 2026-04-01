@@ -1724,12 +1724,12 @@ func (h *Handler) macroRegimePerformance(ctx context.Context, chatID string, msg
 	builder := fred.NewRegimePerformanceBuilder(h.signalRepo)
 	matrix, err := builder.Build(ctx)
 	if err != nil {
-		errMsg := userFriendlyError(err, "macro")
 		if msgID > 0 {
-			return h.bot.EditWithKeyboard(ctx, chatID, msgID, errMsg, h.kb.MacroDetailMenu())
+			h.editUserErrorWithKeyboard(ctx, chatID, msgID, err, "macro", h.kb.MacroDetailMenu())
+		} else {
+			h.sendUserError(ctx, chatID, err, "macro")
 		}
-		_, sendErr := h.bot.SendHTML(ctx, chatID, errMsg)
-		return sendErr
+		return nil
 	}
 
 	htmlOut := h.fmt.FormatRegimePerformance(matrix)

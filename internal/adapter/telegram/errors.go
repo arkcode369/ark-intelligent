@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/ports"
 )
 
 // userFriendlyError translates a technical error into a user-friendly message
@@ -100,5 +102,20 @@ func (h *Handler) editUserError(ctx context.Context, chatID string, msgID int, e
 	friendly := userFriendlyError(err, command)
 	if editErr := h.bot.EditMessage(ctx, chatID, msgID, friendly); editErr != nil {
 		log.Error().Err(editErr).Str("chat_id", chatID).Msg("failed to edit error message")
+	}
+}
+
+// editUserErrorWithKeyboard logs the technical error and edits an existing message
+// with a user-friendly error, preserving the inline keyboard for navigation.
+func (h *Handler) editUserErrorWithKeyboard(ctx context.Context, chatID string, msgID int, err error, command string, kb ports.InlineKeyboard) {
+	log.Error().
+		Err(err).
+		Str("chat_id", chatID).
+		Str("command", command).
+		Msg("handler error")
+
+	friendly := userFriendlyError(err, command)
+	if editErr := h.bot.EditWithKeyboard(ctx, chatID, msgID, friendly, kb); editErr != nil {
+		log.Error().Err(editErr).Str("chat_id", chatID).Msg("failed to edit error message with keyboard")
 	}
 }

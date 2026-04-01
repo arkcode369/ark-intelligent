@@ -136,7 +136,7 @@ func (h *Handler) computeAlphaState(ctx context.Context) (*alphaState, error) {
 
 	profiles, err := h.alpha.ProfileBuilder.BuildProfiles(ctx)
 	if err != nil || len(profiles) == 0 {
-		return nil, fmt.Errorf("could not build asset profiles: %s", alphaErr(err))
+		return nil, fmt.Errorf("could not build asset profiles: %w", err)
 	}
 
 	ranking := h.alpha.FactorEngine.Rank(profiles)
@@ -527,7 +527,11 @@ func (h *Handler) cmdXFactors(ctx context.Context, chatID string, _ int64, _ str
 
 	profiles, err := h.alpha.ProfileBuilder.BuildProfiles(ctx)
 	if err != nil || len(profiles) == 0 {
-		_, _ = h.bot.SendHTML(ctx, chatID, "❌ Could not build asset profiles: "+alphaErr(err))
+		if err != nil {
+			h.sendUserError(ctx, chatID, err, "xfactors")
+		} else {
+			_, _ = h.bot.SendHTML(ctx, chatID, "📭 <b>Data belum tersedia</b>\n\nBelum ada profil aset yang bisa dibangun.\n\n💡 <i>Tip: Coba lagi nanti setelah data terkumpul.</i>")
+		}
 		return nil
 	}
 
@@ -548,7 +552,11 @@ func (h *Handler) cmdPlaybook(ctx context.Context, chatID string, _ int64, _ str
 
 	profiles, err := h.alpha.ProfileBuilder.BuildProfiles(ctx)
 	if err != nil || len(profiles) == 0 {
-		_, _ = h.bot.SendHTML(ctx, chatID, "❌ Could not build profiles: "+alphaErr(err))
+		if err != nil {
+			h.sendUserError(ctx, chatID, err, "alpha")
+		} else {
+			_, _ = h.bot.SendHTML(ctx, chatID, "📭 <b>Data belum tersedia</b>\n\nBelum ada profil aset yang bisa dibangun.\n\n💡 <i>Tip: Coba lagi nanti setelah data terkumpul.</i>")
+		}
 		return nil
 	}
 
@@ -582,7 +590,11 @@ func (h *Handler) cmdHeat(ctx context.Context, chatID string, _ int64, _ string)
 
 	profiles, err := h.alpha.ProfileBuilder.BuildProfiles(ctx)
 	if err != nil || len(profiles) == 0 {
-		_, _ = h.bot.SendHTML(ctx, chatID, "❌ Could not build profiles: "+alphaErr(err))
+		if err != nil {
+			h.sendUserError(ctx, chatID, err, "alpha")
+		} else {
+			_, _ = h.bot.SendHTML(ctx, chatID, "📭 <b>Data belum tersedia</b>\n\nBelum ada profil aset yang bisa dibangun.\n\n💡 <i>Tip: Coba lagi nanti setelah data terkumpul.</i>")
+		}
 		return nil
 	}
 	ranking := h.alpha.FactorEngine.Rank(profiles)
@@ -613,7 +625,11 @@ func (h *Handler) cmdRankX(ctx context.Context, chatID string, _ int64, _ string
 
 	profiles, err := h.alpha.ProfileBuilder.BuildProfiles(ctx)
 	if err != nil || len(profiles) == 0 {
-		_, _ = h.bot.SendHTML(ctx, chatID, "❌ Could not build profiles: "+alphaErr(err))
+		if err != nil {
+			h.sendUserError(ctx, chatID, err, "alpha")
+		} else {
+			_, _ = h.bot.SendHTML(ctx, chatID, "📭 <b>Data belum tersedia</b>\n\nBelum ada profil aset yang bisa dibangun.\n\n💡 <i>Tip: Coba lagi nanti setelah data terkumpul.</i>")
+		}
 		return nil
 	}
 	result := h.alpha.FactorEngine.Rank(profiles)
@@ -1115,9 +1131,4 @@ func alphaMicroEmoji(b microstructure.Bias) string {
 	}
 }
 
-func alphaErr(err error) string {
-	if err == nil {
-		return "unknown error"
-	}
-	return html.EscapeString(err.Error())
-}
+// alphaErr is removed — use sendUserError/editUserError instead.

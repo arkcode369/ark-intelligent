@@ -135,12 +135,12 @@ Pilih aset:`, h.kb.VPSymbolMenu())
 
 	state, err := h.computeVPState(ctx, mapping, timeframe)
 	if err != nil {
-		errMsg := userFriendlyError(err, "vp")
 		if msgID > 0 {
-			return h.bot.EditWithKeyboard(ctx, chatID, msgID, errMsg, h.kb.VPMenu())
+			h.editUserErrorWithKeyboard(ctx, chatID, msgID, err, "vp", h.kb.VPMenu())
+		} else {
+			h.sendUserError(ctx, chatID, err, "vp")
 		}
-		_, sendErr := h.bot.SendHTML(ctx, chatID, errMsg)
-		return sendErr
+		return nil
 	}
 
 	h.vpCache.set(chatID, state)
@@ -172,8 +172,8 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 				html.EscapeString(currency), timeframe), h.kb.VPMenu())
 		state, err := h.computeVPState(ctx, mapping, timeframe)
 		if err != nil {
-			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-				userFriendlyError(err, "vp"), h.kb.VPMenu())
+			h.editUserErrorWithKeyboard(ctx, chatID, msgID, err, "vp", h.kb.VPMenu())
+			return nil
 		}
 		h.vpCache.set(chatID, state)
 		return h.vpRunMode(ctx, chatID, msgID, state, "profile")
@@ -194,8 +194,8 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 			}
 			newState, err := h.computeVPState(ctx, mapping, newTF)
 			if err != nil {
-				return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-					userFriendlyError(err, "vp"), h.kb.VPMenu())
+				h.editUserErrorWithKeyboard(ctx, chatID, msgID, err, "vp", h.kb.VPMenu())
+				return nil
 			}
 			h.vpCache.set(chatID, newState)
 			state = newState
@@ -226,8 +226,8 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 		}
 		newState, err := h.computeVPState(ctx, mapping, state.timeframe)
 		if err != nil {
-			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-				userFriendlyError(err, "vp"), h.kb.VPMenu())
+			h.editUserErrorWithKeyboard(ctx, chatID, msgID, err, "vp", h.kb.VPMenu())
+			return nil
 		}
 		h.vpCache.set(chatID, newState)
 		return h.vpRunMode(ctx, chatID, msgID, newState, "profile")
@@ -353,12 +353,12 @@ func (h *Handler) vpRunMode(ctx context.Context, chatID string, msgID int, state
 
 	result, err := h.runVPEngine(input)
 	if err != nil {
-		errMsg := userFriendlyError(err, "vp")
 		if msgID > 0 {
-			return h.bot.EditWithKeyboard(ctx, chatID, msgID, errMsg, h.kb.VPMenu())
+			h.editUserErrorWithKeyboard(ctx, chatID, msgID, err, "vp", h.kb.VPMenu())
+		} else {
+			h.sendUserError(ctx, chatID, err, "vp")
 		}
-		_, sendErr := h.bot.SendWithKeyboard(ctx, chatID, errMsg, h.kb.VPMenu())
-		return sendErr
+		return nil
 	}
 
 	// Delete existing message, then send chart + text
