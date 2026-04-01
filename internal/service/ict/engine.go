@@ -15,6 +15,11 @@ func NewEngine() *Engine { return &Engine{} }
 
 // Analyze runs the full ICT/SMC analysis on a slice of OHLCV bars (newest-first).
 // symbol and timeframe are for display purposes only.
+//
+// FVG and Order Block detection is delegated to the canonical ta.CalcICT
+// implementation to avoid duplicated algorithms. Structure detection
+// (BOS/CHoCH) and Liquidity Sweeps remain in this package as they are
+// features unique to the service/ict engine.
 func (e *Engine) Analyze(bars []ta.OHLCV, symbol, timeframe string) *ICTResult {
 	result := &ICTResult{
 		Symbol:     symbol,
@@ -28,22 +33,26 @@ func (e *Engine) Analyze(bars []ta.OHLCV, symbol, timeframe string) *ICTResult {
 		return result
 	}
 
-	// Step 1: Detect swing points (prerequisite for all ICT concepts).
+	// Step 1: Compute ATR for ta.CalcICT.
+	atr := ta.CalcATR(bars, 14)
+
+	// Step 2: Delegate FVG + Order Block + Liquidity Level detection to ta.CalcICT.
+	// This is the single authoritative source for these computations.
+	if taICT := ta.CalcICT(bars, atr); taICT != nil {
+		result.FVGZones = convertFVGs(taICT.FairValueGaps)
+		result.OrderBlocks = convertOrderBlocks(taICT.OrderBlocks, taICT.BreakerBlocks)
+	}
+
+	// Step 3: Detect swing points (prerequisite for structure + sweeps).
 	swings := detectSwings(bars)
 
-	// Step 2: Fair Value Gaps.
-	result.FVGZones = DetectFVG(bars)
-
-	// Step 3: Order Blocks (requires swing context).
-	result.OrderBlocks = DetectOrderBlocks(bars, swings)
-
-	// Step 4: Market structure — CHoCH & BOS.
+	// Step 4: Market structure — CHoCH & BOS (unique to this engine).
 	result.Structure = DetectStructure(swings)
 
-	// Step 5: Liquidity Sweeps.
+	// Step 5: Liquidity Sweeps (unique to this engine).
 	result.Sweeps = DetectLiquiditySweeps(bars, swings)
 
-	// Step 6: Derive current bias.
+	// Step 6: Derive current bias from structure events.
 	result.Bias = currentBias(result.Structure)
 
 	// Step 7: Killzone detection from the most recent bar.
@@ -55,6 +64,59 @@ func (e *Engine) Analyze(bars []ta.OHLCV, symbol, timeframe string) *ICTResult {
 	result.Summary = buildSummary(result)
 
 	return result
+}
+
+// ---------------------------------------------------------------------------
+// Type conversion: ta.ICTResult → ict package types
+// ---------------------------------------------------------------------------
+
+// convertFVGs converts ta.FVG slices to ict.FVGZone slices.
+func convertFVGs(taFVGs []ta.FVG) []FVGZone {
+	if len(taFVGs) == 0 {
+		return nil
+	}
+	zones := make([]FVGZone, len(taFVGs))
+	for i, f := range taFVGs {
+		zones[i] = FVGZone{
+			Kind:    f.Type, // ta uses "BULLISH"/"BEARISH" in Type field
+			Top:     f.High,
+			Bottom:  f.Low,
+			BarIndex: f.BarIndex,
+			Filled:  f.Filled,
+			FillPct: f.FillPct,
+		}
+	}
+	return zones
+}
+
+// convertOrderBlocks converts ta.OrderBlock slices to ict.OrderBlock slices.
+// Breaker blocks (Broken=true in ta) are merged into the same output slice
+// with Broken=true so callers can distinguish them.
+func convertOrderBlocks(taOBs, taBreakers []ta.OrderBlock) []OrderBlock {
+	total := len(taOBs) + len(taBreakers)
+	if total == 0 {
+		return nil
+	}
+	out := make([]OrderBlock, 0, total)
+	for _, ob := range taOBs {
+		out = append(out, OrderBlock{
+			Kind:     ob.Type,
+			Top:      ob.High,
+			Bottom:   ob.Low,
+			BarIndex: ob.BarIndex,
+			Broken:   ob.Broken,
+		})
+	}
+	for _, ob := range taBreakers {
+		out = append(out, OrderBlock{
+			Kind:     ob.Type,
+			Top:      ob.High,
+			Bottom:   ob.Low,
+			BarIndex: ob.BarIndex,
+			Broken:   true, // breakers are always broken by definition
+		})
+	}
+	return out
 }
 
 // detectKillzone returns the ICT session name if the given UTC time falls
