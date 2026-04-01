@@ -204,6 +204,7 @@ func (h *Handler) cmdAlpha(ctx context.Context, chatID string, _ int64, _ string
 
 	summary := formatAlphaSummary(state)
 	kb := h.kb.AlphaMenu()
+	kb = AppendFeedbackRow(kb, h.kb, "fb:alpha:summary", h.feedbackEnabled())
 	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, summary, kb)
 	return err
 }

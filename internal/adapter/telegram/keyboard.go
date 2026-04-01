@@ -1548,6 +1548,30 @@ func (kb *KeyboardBuilder) RelatedCommandsKeyboard(command, currency string) por
 	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{row}}}
 
 // ---------------------------------------------------------------------------
+// Feedback Buttons — 👍/👎 Reactions on Analysis Messages (TASK-051)
+// ---------------------------------------------------------------------------
+
+// FeedbackRow returns a row with thumbs-up/down buttons for user feedback.
+// callbackBase encodes the analysis type and key, e.g. "fb:cot:099741" or "fb:outlook:latest".
+// The full callback_data becomes "fb:<type>:<key>:up" or "fb:<type>:<key>:down".
+func (kb *KeyboardBuilder) FeedbackRow(callbackBase string) []ports.InlineButton {
+	return []ports.InlineButton{
+		{Text: "👍 Helpful", CallbackData: callbackBase + ":up"},
+		{Text: "👎 Not Helpful", CallbackData: callbackBase + ":down"},
+	}
+}
+
+// AppendFeedbackRow appends a feedback row to an existing InlineKeyboard.
+// If feedbackEnabled is false, returns the keyboard unchanged (nil-safe).
+func AppendFeedbackRow(kb ports.InlineKeyboard, kbb *KeyboardBuilder, callbackBase string, feedbackEnabled bool) ports.InlineKeyboard {
+	if !feedbackEnabled || kbb == nil {
+		return kb
+	}
+	kb.Rows = append(kb.Rows, kbb.FeedbackRow(callbackBase))
+	return kb
+}
+
+// ---------------------------------------------------------------------------
 // Error Retry Keyboard
 // ---------------------------------------------------------------------------
 
