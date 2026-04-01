@@ -30,6 +30,7 @@ type UnifiedOutlookData struct {
 	BacktestStats      *domain.BacktestStats
 	CurrencyStrength   []pricesvc.CurrencyStrength
 	WorldBankData      *worldbank.WorldBankData
+	FedSpeechData      *fred.FedSpeechData
 	Language           string
 }
 
@@ -372,6 +373,25 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 			b.WriteString("  - Lower inflation → PPP-based currency strength over time\n")
 			b.WriteString("\n")
 		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Section 11: Fed Communication (speeches & tone)
+	// -----------------------------------------------------------------------
+	if data.FedSpeechData != nil && data.FedSpeechData.Available && len(data.FedSpeechData.Speeches) > 0 {
+		b.WriteString(fmt.Sprintf("=== %d. FED COMMUNICATION (Last %d Speeches) ===\n",
+			section, len(data.FedSpeechData.Speeches)))
+		section++ //nolint:ineffassign
+		for _, s := range data.FedSpeechData.Speeches {
+			dateStr := ""
+			if !s.Date.IsZero() {
+				dateStr = s.Date.Format("2006-01-02")
+			}
+			b.WriteString(fmt.Sprintf("[%s] %s: %s — Tone: %s\n",
+				dateStr, s.Speaker, s.Title, s.Tone))
+		}
+		b.WriteString(fmt.Sprintf("→ Overall Fed stance: %s\n", fred.OverallFedStance(data.FedSpeechData.Speeches)))
+		b.WriteString("\n")
 	}
 
 	// -----------------------------------------------------------------------

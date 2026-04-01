@@ -968,6 +968,9 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	// World Bank cross-country macro fundamentals (graceful degradation on error)
 	wbData, _ := worldbank.GetCachedOrFetch(ctx)
 
+	// Fed speeches — hawkish/dovish tone from recent Fed communication (via Firecrawl)
+	fedSpeechData := fred.GetCachedOrFetchSpeeches(ctx)
+
 	// Daily price contexts (for daily technical analysis in outlook)
 	var dailyPriceCtxs map[string]*domain.DailyPriceContext
 	if h.dailyPriceRepo != nil {
@@ -1008,6 +1011,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		BacktestStats:      backtestStats,
 		CurrencyStrength:   currencyStrength,
 		WorldBankData:      wbData,
+		FedSpeechData:      fedSpeechData,
 		Language:           prefs.Language,
 	}
 
