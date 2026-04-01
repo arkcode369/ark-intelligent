@@ -223,3 +223,97 @@ func BulletList(items []string) string {
 	}
 	return sb.String()
 }
+
+// ---------------------------------------------------------------------------
+// Message Formatting Helpers
+// ---------------------------------------------------------------------------
+
+// Divider returns a horizontal rule line for Telegram messages.
+func Divider() string {
+	return strings.Repeat("─", 28)
+}
+
+// DividerN returns a horizontal rule of specified width.
+func DividerN(width int) string {
+	if width <= 0 {
+		width = 28
+	}
+	return strings.Repeat("─", width)
+}
+
+// MessageHeader returns a bold Telegram-formatted section header with emoji.
+// Example: MessageHeader("📊", "COT Analysis") → "📊 <b>COT Analysis</b>"
+func MessageHeader(emoji, title string) string {
+	return emoji + " <b>" + title + "</b>"
+}
+
+// FormatPips formats a float as pips value (1 decimal, always positive).
+func FormatPips(v float64) string {
+	return fmt.Sprintf("%.1f", math.Abs(v))
+}
+
+// FormatLargeInt formats an integer with thousand separators and optional sign.
+// Example: FormatLargeInt(123456, true) → "+123,456"
+func FormatLargeInt(n int64, withSign bool) string {
+	abs := n
+	neg := n < 0
+	if neg {
+		abs = -abs
+	}
+
+	s := fmt.Sprintf("%d", abs)
+
+	// Insert thousand separators
+	if len(s) > 3 {
+		var result []byte
+		for i, c := range s {
+			if i > 0 && (len(s)-i)%3 == 0 {
+				result = append(result, ',')
+			}
+			result = append(result, byte(c))
+		}
+		s = string(result)
+	}
+
+	if withSign {
+		if neg {
+			return "-" + s
+		}
+		return "+" + s
+	}
+	if neg {
+		return "-" + s
+	}
+	return s
+}
+
+// SparkLine returns a simple text-based sparkline for a series of values.
+// Uses Unicode block characters: ▁▂▃▄▅▆▇█
+func SparkLine(values []float64) string {
+	if len(values) == 0 {
+		return ""
+	}
+	blocks := []rune("▁▂▃▄▅▆▇█")
+	min, max := values[0], values[0]
+	for _, v := range values {
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+	}
+	span := max - min
+	if span == 0 {
+		return strings.Repeat("▄", len(values))
+	}
+	var result []rune
+	for _, v := range values {
+		idx := int((v - min) / span * float64(len(blocks)-1))
+		if idx >= len(blocks) {
+			idx = len(blocks) - 1
+		}
+		result = append(result, blocks[idx])
+	}
+	return string(result)
+}
