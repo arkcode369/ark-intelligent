@@ -13,7 +13,6 @@ import (
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
 	"github.com/arkcode369/ark-intelligent/internal/service/worldbank"
-	"github.com/arkcode369/ark-intelligent/internal/service/imf"
 	"github.com/arkcode369/ark-intelligent/pkg/fmtutil"
 )
 
