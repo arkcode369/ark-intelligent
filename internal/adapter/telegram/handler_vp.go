@@ -129,7 +129,7 @@ Pilih aset:`, h.kb.VPSymbolMenu())
 	}
 
 	// Send "computing..." placeholder
-	msgID, _ := h.bot.SendHTML(ctx, chatID,
+	msgID, _ := h.bot.SendLoading(ctx, chatID,
 		fmt.Sprintf("⏳ Menghitung Volume Profile <b>%s</b> (%s)...",
 			html.EscapeString(mapping.Currency), timeframe))
 

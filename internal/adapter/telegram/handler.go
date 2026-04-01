@@ -646,7 +646,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		_ = h.bot.EditMessage(ctx, chatID, editMsgID, "Generating unified intelligence report... ⏳\n(collecting all data sources + web search)")
 		placeholderID = editMsgID
 	} else {
-		placeholderID, _ = h.bot.SendHTML(ctx, chatID, "Generating unified intelligence report... ⏳\n(collecting all data sources + web search)")
+		placeholderID, _ = h.bot.SendLoading(ctx, chatID, "Generating unified intelligence report... ⏳\n(collecting all data sources + web search)")
 	}
 
 	now := timeutil.NowWIB()
@@ -1528,7 +1528,7 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 	if !forceRefresh && fred.CacheAge() >= 0 {
 		cacheStatus = "🏦 Loading FRED macro data (from cache)... ⏳"
 	}
-	placeholderID, _ := h.bot.SendHTML(ctx, chatID, cacheStatus)
+	placeholderID, _ := h.bot.SendLoading(ctx, chatID, cacheStatus)
 
 	data, err := fred.GetCachedOrFetch(ctx)
 	if err != nil {
@@ -1775,7 +1775,7 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 	if !forceRefresh && sentiment.CacheAge() >= 0 {
 		cacheStatus = "🧠 Loading sentiment data (from cache)... ⏳"
 	}
-	placeholderID, _ := h.bot.SendHTML(ctx, chatID, cacheStatus)
+	placeholderID, _ := h.bot.SendLoading(ctx, chatID, cacheStatus)
 
 	data, err := sentiment.GetCachedOrFetch(ctx)
 	if err != nil {
