@@ -120,6 +120,10 @@ type Handler struct {
 	// ctabt holds optional CTA Backtest engine services.
 	// May be nil — /ctabt command disabled if not configured.
 	ctabt *CTABTServices
+
+	// wyckoff holds optional Wyckoff analysis engine services.
+	// May be nil — /wyckoff command disabled if not configured.
+	wyckoff *WyckoffServices
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
