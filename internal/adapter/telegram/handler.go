@@ -143,6 +143,10 @@ type Handler struct {
 	// wyckoff holds optional Wyckoff analysis engine services.
 	// May be nil — /wyckoff command disabled if not configured.
 	wyckoff *WyckoffServices
+
+	// orderflow holds optional Order Flow / Estimated Delta engine services.
+	// May be nil — /orderflow command disabled if not configured.
+	orderflow *OrderFlowServices
 }
 
 // NewHandler creates a handler and registers all commands on the bot.

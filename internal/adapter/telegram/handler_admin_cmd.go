@@ -2,6 +2,14 @@ package telegram
 
 // /membership, Admin Commands
 
+import (
+	"context"
+	"fmt"
+	"html"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+)
 
 // ---------------------------------------------------------------------------
 // /membership — Tier comparison & upgrade info

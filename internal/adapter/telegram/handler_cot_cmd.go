@@ -2,6 +2,20 @@ package telegram
 
 // /cot, /bias, /rank, /history — COT Positioning Domain
 
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/internal/service/cot"
+	"github.com/arkcode369/ark-intelligent/internal/service/fred"
+	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
+)
+
 // ---------------------------------------------------------------------------
 // /cot — COT positioning analysis
 // ---------------------------------------------------------------------------

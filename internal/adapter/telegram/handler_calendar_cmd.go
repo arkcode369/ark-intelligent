@@ -2,6 +2,17 @@ package telegram
 
 // /calendar — Economic Calendar & Navigation
 
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
+)
+
 
 // ---------------------------------------------------------------------------
 // /calendar & Callbacks — Economic Calendar

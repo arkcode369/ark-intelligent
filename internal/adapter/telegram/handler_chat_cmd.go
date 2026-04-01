@@ -2,6 +2,17 @@ package telegram
 
 // Chatbot — Free-text & /clear
 
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
+)
+
 // ---------------------------------------------------------------------------
 // Chatbot — Free-text message handling via Claude
 // ---------------------------------------------------------------------------

@@ -289,9 +289,6 @@ func (h *Handler) cbHelp(ctx context.Context, chatID string, msgID int, userID i
 	return h.sendHelpSubCategory(ctx, chatID, userID, action, msgID)
 }
 
-	return nil
-}
-
 func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, args string) error {
 	now := timeutil.NowWIB()
 
