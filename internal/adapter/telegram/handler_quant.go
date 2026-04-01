@@ -104,7 +104,7 @@ func (h *Handler) registerQuantCommands() {
 // /quant — Main command
 // ---------------------------------------------------------------------------
 
-func (h *Handler) cmdQuant(ctx context.Context, chatID string, _ int64, args string) error {
+func (h *Handler) cmdQuant(ctx context.Context, chatID string, userID int64, args string) error {
 	if h.quant == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "⚙️ Quant Engine not configured.")
 		return err
@@ -323,18 +323,27 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 	kb := h.kb.QuantDetailMenu()
 
 	// Send chart if available
+	chartSent := false
 	if result.ChartPath != "" {
 		chartData, readErr := os.ReadFile(result.ChartPath)
 		if readErr == nil && len(chartData) > 0 {
 			shortCaption := fmt.Sprintf("📊 %s — %s — %s", strings.ToUpper(action), html.EscapeString(state.symbol), state.timeframe)
 			_, _ = h.bot.SendPhoto(ctx, chatID, chartData, shortCaption)
+			chartSent = true
+		} else if readErr != nil {
+			log.Error().Err(readErr).Str("symbol", state.symbol).Str("timeframe", state.timeframe).Str("mode", action).Msg("quant chart read failed, falling back to text")
 		}
 		os.Remove(result.ChartPath) // cleanup
 	}
 
-	// Send text
+	// Send text — prepend chart failure notice if chart was expected but not sent
 	if result.TextOutput != "" {
-		_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, result.TextOutput, kb)
+		textToSend := result.TextOutput
+		if result.ChartPath != "" && !chartSent {
+			fallbackNotice := "📊 <i>Chart sementara tidak tersedia. Menampilkan analisis teks.</i>\n\n"
+			textToSend = fallbackNotice + textToSend
+		}
+		_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, textToSend, kb)
 	} else if !result.Success {
 		_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, "❌ "+html.EscapeString(result.Error), kb)
 	}
