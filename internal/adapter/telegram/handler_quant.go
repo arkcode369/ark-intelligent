@@ -328,13 +328,18 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 		if readErr == nil && len(chartData) > 0 {
 			shortCaption := fmt.Sprintf("📊 %s — %s — %s", strings.ToUpper(action), html.EscapeString(state.symbol), state.timeframe)
 			_, _ = h.bot.SendPhoto(ctx, chatID, chartData, shortCaption)
+		} else if readErr != nil {
+			log.Warn().Err(readErr).Str("chart_path", result.ChartPath).
+				Str("symbol", state.symbol).Str("timeframe", state.timeframe).
+				Msg("quant: chart file unreadable")
 		}
 		os.Remove(result.ChartPath) // cleanup
 	}
 
-	// Send text
-	if result.TextOutput != "" {
-		_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, result.TextOutput, kb)
+	// Send text with chart-failure note if chart was expected but unavailable
+	textOut := result.TextOutput
+	if textOut != "" {
+		_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, textOut, kb)
 	} else if !result.Success {
 		_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, "❌ "+html.EscapeString(result.Error), kb)
 	}

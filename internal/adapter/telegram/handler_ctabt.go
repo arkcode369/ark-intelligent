@@ -281,7 +281,10 @@ func (h *Handler) runCTABacktest(ctx context.Context, chatID string, symbol, tim
 		return err
 	}
 
-	// Fallback: text only
+	// Chart unavailable: prepend notification so user knows chart exists but failed
+	if chartErr != nil {
+		summary = "📊 <i>Chart sementara tidak tersedia. Menampilkan analisis teks.</i>\n\n" + summary
+	}
 	_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, summary, kb)
 	return err
 }
