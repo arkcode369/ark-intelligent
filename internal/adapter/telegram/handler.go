@@ -15,6 +15,7 @@ import (
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
 	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	"github.com/arkcode369/ark-intelligent/internal/service/cot"
+	fedsvc "github.com/arkcode369/ark-intelligent/internal/service/fed"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
@@ -789,6 +790,9 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	// Sentiment (CNN Fear & Greed)
 	sentimentData, _ := sentiment.GetCachedOrFetch(ctx)
 
+	// Fed speeches (hawkish/dovish narrative context)
+	fedSpeeches, _ := fedsvc.FetchFedSpeeches(ctx)
+
 	// Seasonal patterns
 	var seasonalData map[string]*pricesvc.SeasonalPattern
 	if h.priceRepo != nil {
@@ -852,6 +856,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		DailyPriceContexts: dailyPriceCtxs,
 		RiskContext:         riskCtx,
 		SentimentData:      sentimentData,
+		FedSpeeches:        fedSpeeches,
 		SeasonalData:       seasonalData,
 		BacktestStats:      backtestStats,
 		CurrencyStrength:   currencyStrength,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
+	fedsvc "github.com/arkcode369/ark-intelligent/internal/service/fed"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
@@ -25,6 +26,7 @@ type UnifiedOutlookData struct {
 	DailyPriceContexts map[string]*domain.DailyPriceContext
 	RiskContext         *domain.RiskContext
 	SentimentData      *sentiment.SentimentData
+	FedSpeeches        *fedsvc.FedSpeechData
 	SeasonalData       map[string]*pricesvc.SeasonalPattern
 	BacktestStats      *domain.BacktestStats
 	CurrencyStrength   []pricesvc.CurrencyStrength
@@ -282,7 +284,23 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 	}
 
 	// -----------------------------------------------------------------------
-	// Section 7: Seasonal Patterns
+	// Section 7: Fed Speeches (Fed Communication / Hawkish-Dovish Tone)
+	// -----------------------------------------------------------------------
+	if data.FedSpeeches != nil && data.FedSpeeches.Available && len(data.FedSpeeches.Speeches) > 0 {
+		b.WriteString(fmt.Sprintf("=== %d. FED COMMUNICATION (Recent Speeches) ===\n", section))
+		section++
+		for _, s := range data.FedSpeeches.Speeches {
+			b.WriteString(fmt.Sprintf("[%s] %s — %s\n", s.Date, s.Speaker, s.Title))
+			if s.Excerpt != "" {
+				b.WriteString(fmt.Sprintf("  Excerpt: %s\n", s.Excerpt))
+			}
+		}
+		b.WriteString("NOTE: Weigh speaker influence — Powell/FOMC voters carry more weight than regional presidents.\n")
+		b.WriteString("\n")
+	}
+
+	// -----------------------------------------------------------------------
+	// Section 8: Seasonal Patterns
 	// -----------------------------------------------------------------------
 	if len(data.SeasonalData) > 0 {
 		b.WriteString(fmt.Sprintf("=== %d. SEASONAL PATTERNS ===\n", section))
