@@ -14,6 +14,7 @@ type FullResult struct {
 	Zones       *ZoneResult
 	Patterns    []CandlePattern // from patterns.go
 	Divergences []Divergence    // from divergence.go
+	SMC         *SMCResult      // from smc.go
 	ComputedAt  time.Time
 }
 
@@ -113,6 +114,7 @@ func (e *Engine) ComputeFull(bars []OHLCV) *FullResult {
 		Zones:       zones,
 		Patterns:    patterns,
 		Divergences: divergences,
+		SMC:         CalcSMC(bars, snap.ATR),
 		ComputedAt:  time.Now(),
 	}
 }
