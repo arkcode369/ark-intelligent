@@ -25,6 +25,8 @@ type MacroRegime struct {
 	Growth       string // growth trajectory label
 	USDStrength  string // USD index label
 	FedBalance   string // Fed balance sheet QT/QE status
+	TGALabel     string // Treasury General Account liquidity status
+	LiquidityRegime string // "TIGHT", "NEUTRAL", "EASY"
 	RecessionRisk string // "LOW", "ELEVATED", "HIGH — SAHM TRIGGERED"
 	Bias         string // directional bias e.g., "USD BEARISH bias, Gold BULLISH"
 	Description  string // narrative explanation
@@ -439,7 +441,33 @@ func ClassifyMacroRegime(data *MacroData, composites ...*domain.MacroComposites)
 		r.FedBalance = "N/A"
 	}
 
-	// --- Recession Risk Classification ---
+	// --- 9b. TGA Balance (liquidity drain/inject signal) ---
+	if data.TGABalance > 0 {
+		tgaDir := data.TGABalanceTrend.Arrow()
+		switch data.TGABalanceTrend.Direction {
+		case "UP":
+			r.TGALabel = fmt.Sprintf("$%.0fB %s Rising — drain 🔴", data.TGABalance, tgaDir)
+			riskScore += 3
+		case "DOWN":
+			r.TGALabel = fmt.Sprintf("$%.0fB %s Falling — inject 🟢", data.TGABalance, tgaDir)
+		default:
+			r.TGALabel = fmt.Sprintf("$%.0fB %s Stable", data.TGABalance, tgaDir)
+		}
+		// Liquidity regime composite: TGA + RRP + Fed Balance Sheet
+		tgaDrain := data.TGABalanceTrend.Direction == "UP"
+		rrpHigh := data.ReverseRepo > 500
+		fedQT := data.FedBalSheetTrend.Direction == "DOWN"
+		switch {
+		case tgaDrain && (rrpHigh || fedQT):
+			r.LiquidityRegime = "TIGHT 🔴"
+		case !tgaDrain && !fedQT:
+			r.LiquidityRegime = "EASY 🟢"
+		default:
+			r.LiquidityRegime = "NEUTRAL ⚪"
+		}
+	} else {
+		r.TGALabel = "N/A"
+	}
 	switch {
 	case r.SahmAlert:
 		r.RecessionRisk = "HIGH — SAHM TRIGGERED 🚨"

@@ -86,6 +86,7 @@ func (ps *PersistenceService) PersistSnapshot(ctx context.Context, data *MacroDa
 	addObs("BAMLC0A1CAAA", data.AAASpread)
 	addObs("STLFSI4", data.StLouisStress)
 	addObs("RRPONTSYD", data.ReverseRepo)
+	addObs("WDTGAL", data.TGABalance)
 
 	// Rates
 	addObs("SOFR", data.SOFR)

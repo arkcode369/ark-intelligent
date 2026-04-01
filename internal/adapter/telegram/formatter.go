@@ -1723,6 +1723,12 @@ func (f *Formatter) FormatMacroRegime(regime fred.MacroRegime, data *fred.MacroD
 	if regime.FedBalance != "N/A" && regime.FedBalance != "" {
 		b.WriteString(fmt.Sprintf("<code>Fed Balance  : %s</code>\n", regime.FedBalance))
 	}
+	if regime.TGALabel != "N/A" && regime.TGALabel != "" {
+		b.WriteString(fmt.Sprintf("<code>TGA Balance  : %s</code>\n", regime.TGALabel))
+	}
+	if regime.LiquidityRegime != "" {
+		b.WriteString(fmt.Sprintf("<code>Liquidity    : %s</code>\n", regime.LiquidityRegime))
+	}
 
 	// --- Financial Stress ---
 	b.WriteString(fmt.Sprintf("\n<code>Fin. Stress  : %s</code>\n", regime.FinStress))
@@ -2571,6 +2577,17 @@ func (f *Formatter) FormatMacroExplain(regime fred.MacroRegime, data *fred.Macro
 		b.WriteString("<i>Total aset Fed. Naik (QE) = cetak uang, likuiditas naik.")
 		b.WriteString(" Turun (QT) = likuiditas dikurangi, pasar lebih ketat.</i>\n")
 		b.WriteString(fmt.Sprintf("<code>  Saat ini: %s</code>\n", regime.FedBalance))
+	}
+
+	// TGA Balance
+	if regime.TGALabel != "N/A" && regime.TGALabel != "" {
+		b.WriteString("\n<b>TGA Balance (Kas Treasury)</b>\n")
+		b.WriteString("<i>Treasury General Account — saldo kas pemerintah AS. Naik = drain likuiditas")
+		b.WriteString(" (risk-off). Turun = injeksi likuiditas ke sistem (risk-on).</i>\n")
+		b.WriteString(fmt.Sprintf("<code>  Saat ini: %s</code>\n", regime.TGALabel))
+		if regime.LiquidityRegime != "" {
+			b.WriteString(fmt.Sprintf("<code>  Likuiditas: %s</code>\n", regime.LiquidityRegime))
+		}
 	}
 
 	// DXY

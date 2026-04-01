@@ -183,6 +183,10 @@ type MacroData struct {
 	TotalReserves     float64 // TOTRESNS — Total Reserves in Banking System (millions)
 	SeniorLoanSurvey  float64 // DRTSCILM — Fed Senior Loan Officer Survey C&I Tightening (%)
 
+	// Treasury General Account — Liquidity
+	TGABalance      float64     // WDTGAL — Treasury General Account balance (billions USD)
+	TGABalanceTrend SeriesTrend // trend: rising (liquidity drain) or falling (liquidity inject)
+
 	// --- Housing & Consumer ---
 	HousingStarts      float64     // HOUST — Housing Starts (thousands, ann.)
 	HousingStartsTrend SeriesTrend
@@ -287,6 +291,8 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 		{"BAMLC0A4CBBB", 5}, {"BAMLC0A1CAAA", 5},
 		{"STLFSI4", 3}, {"RRPONTSYD", 3},
 		{"TOTRESNS", 3}, {"DRTSCILM", 3},
+		// Treasury General Account (weekly, Wednesday)
+		{"WDTGAL", 8},
 		// Short-term rates
 		{"SOFR", 5}, {"IORB", 5},
 		// VIX + term structure
@@ -459,6 +465,9 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	data.ReverseRepo = single("RRPONTSYD")
 	data.TotalReserves = single("TOTRESNS")
 	data.SeniorLoanSurvey = single("DRTSCILM")
+
+	// Treasury General Account
+	data.TGABalance, data.TGABalanceTrend = trend("WDTGAL", 50) // $50B threshold
 
 	// Short-term rates
 	data.SOFR = single("SOFR")
@@ -663,6 +672,7 @@ func FetchMacroData(ctx context.Context) (*MacroData, error) {
 	sanitizeFloat(&data.StLouisStress)
 	sanitizeFloat(&data.ReverseRepo)
 	sanitizeFloat(&data.TotalReserves)
+	sanitizeFloat(&data.TGABalance)
 	sanitizeFloat(&data.SeniorLoanSurvey)
 
 	// Housing & Consumer
