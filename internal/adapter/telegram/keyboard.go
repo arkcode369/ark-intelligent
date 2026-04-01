@@ -59,6 +59,35 @@ func (kb *KeyboardBuilder) HomeRow() []ports.InlineButton {
 	}
 }
 
+// NavFooter returns a single-row navigation footer to append to any keyboard.
+// Provides quick access to the most important sections of the bot.
+func (kb *KeyboardBuilder) NavFooter() []ports.InlineButton {
+	return []ports.InlineButton{
+		{Text: "🏠", CallbackData: "cmd:help"},
+		{Text: "📊 COT", CallbackData: "nav:cot"},
+		{Text: "📅 Cal", CallbackData: "cmd:calendar"},
+		{Text: "🦅 Outlook", CallbackData: "out:unified"},
+		{Text: "⚙️", CallbackData: "cmd:settings"},
+	}
+}
+
+// AppendNavFooter appends the NavFooter row to an existing inline keyboard.
+// It is safe to call multiple times — it checks for an existing nav footer
+// by looking for the "cmd:help" callback in the last row to avoid duplication.
+func (kb *KeyboardBuilder) AppendNavFooter(keyboard ports.InlineKeyboard) ports.InlineKeyboard {
+	// Guard: avoid double-appending
+	if len(keyboard.Rows) > 0 {
+		lastRow := keyboard.Rows[len(keyboard.Rows)-1]
+		for _, btn := range lastRow {
+			if btn.CallbackData == "cmd:help" {
+				return keyboard
+			}
+		}
+	}
+	keyboard.Rows = append(keyboard.Rows, kb.NavFooter())
+	return keyboard
+}
+
 // ---------------------------------------------------------------------------
 // COT Keyboards
 // ---------------------------------------------------------------------------
@@ -100,7 +129,8 @@ func (kb *KeyboardBuilder) COTCurrencySelector(analyses []domain.COTAnalysis) po
 		rows = append(rows, crossRow)
 	}
 
-	return ports.InlineKeyboard{Rows: rows}
+	kb2 := ports.InlineKeyboard{Rows: rows}
+	return kb.AppendNavFooter(kb2)
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +209,8 @@ func (kb *KeyboardBuilder) OutlookMenu() ports.InlineKeyboard {
 		{Text: "🦅 Generate Unified Outlook", CallbackData: "out:unified"},
 	})
 
-	return ports.InlineKeyboard{Rows: rows}
+	kb2 := ports.InlineKeyboard{Rows: rows}
+	return kb.AppendNavFooter(kb2)
 }
 
 // MacroMenu builds the inline keyboard for the /macro command.
@@ -214,7 +245,8 @@ func (kb *KeyboardBuilder) MacroMenu(isAdmin bool) ports.InlineKeyboard {
 	}
 	rows = append(rows, row3)
 
-	return ports.InlineKeyboard{Rows: rows}
+	kb2 := ports.InlineKeyboard{Rows: rows}
+	return kb.AppendNavFooter(kb2)
 }
 
 // MacroDetailMenu builds the back-navigation keyboard for macro detail/explain views.
@@ -478,7 +510,7 @@ func (kb *KeyboardBuilder) COTDetailMenu(code string, isRaw bool) ports.InlineKe
 		{Text: btnBack, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
 	})
 
-	return ports.InlineKeyboard{Rows: rows}
+	return kb.AppendNavFooter(ports.InlineKeyboard{Rows: rows})
 }
 
 // ---------------------------------------------------------------------------
@@ -755,7 +787,7 @@ func (kb *KeyboardBuilder) COTDetailMenuWithBias(code string, isRaw bool, signal
 		{Text: btnBack, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
 	})
 
-	return ports.InlineKeyboard{Rows: rows}
+	return kb.AppendNavFooter(ports.InlineKeyboard{Rows: rows})
 }
 
 // MainMenu builds a quick-access keyboard for the main bot features.
@@ -789,25 +821,24 @@ func (kb *KeyboardBuilder) MainMenu() ports.InlineKeyboard {
 
 // AlphaMenu builds the inline keyboard for the unified /alpha dashboard.
 func (kb *KeyboardBuilder) AlphaMenu() ports.InlineKeyboard {
-	return ports.InlineKeyboard{
-		Rows: [][]ports.InlineButton{
-			{
-				{Text: "📊 Factor Ranking", CallbackData: "alpha:factors"},
-				{Text: "🎯 Playbook", CallbackData: "alpha:playbook"},
-			},
-			{
-				{Text: "🌡 Portfolio Heat", CallbackData: "alpha:heat"},
-				{Text: "📈 RankX", CallbackData: "alpha:rankx"},
-			},
-			{
-				{Text: "🔄 Regime & Transisi", CallbackData: "alpha:transition"},
-				{Text: "⚡ Crypto Alpha", CallbackData: "alpha:crypto"},
-			},
-			{
-				{Text: "🔄 Refresh Data", CallbackData: "alpha:refresh"},
-			},
+	rows := [][]ports.InlineButton{
+		{
+			{Text: "📊 Factor Ranking", CallbackData: "alpha:factors"},
+			{Text: "🎯 Playbook", CallbackData: "alpha:playbook"},
+		},
+		{
+			{Text: "🌡 Portfolio Heat", CallbackData: "alpha:heat"},
+			{Text: "📈 RankX", CallbackData: "alpha:rankx"},
+		},
+		{
+			{Text: "🔄 Regime & Transisi", CallbackData: "alpha:transition"},
+			{Text: "⚡ Crypto Alpha", CallbackData: "alpha:crypto"},
+		},
+		{
+			{Text: "🔄 Refresh Data", CallbackData: "alpha:refresh"},
 		},
 	}
+	return kb.AppendNavFooter(ports.InlineKeyboard{Rows: rows})
 }
 
 // AlphaDetailMenu builds the back-navigation keyboard for alpha detail views.
@@ -845,34 +876,33 @@ func (kb *KeyboardBuilder) AlphaCryptoDetailMenu() ports.InlineKeyboard {
 
 // CTAMenu builds the inline keyboard for the /cta dashboard.
 func (kb *KeyboardBuilder) CTAMenu() ports.InlineKeyboard {
-	return ports.InlineKeyboard{
-		Rows: [][]ports.InlineButton{
-			{
-				{Text: "📊 15m", CallbackData: "cta:tf:15m"},
-				{Text: "📊 30m", CallbackData: "cta:tf:30m"},
-				{Text: "📊 1H", CallbackData: "cta:tf:1h"},
-				{Text: "📊 4H", CallbackData: "cta:tf:4h"},
-			},
-			{
-				{Text: "📊 6H", CallbackData: "cta:tf:6h"},
-				{Text: "📊 12H", CallbackData: "cta:tf:12h"},
-				{Text: "📊 Daily", CallbackData: "cta:tf:daily"},
-			},
-			{
-				{Text: "🏯 Ichimoku", CallbackData: "cta:ichi"},
-				{Text: "📐 Fibonacci", CallbackData: "cta:fib"},
-				{Text: "🕯 Patterns", CallbackData: "cta:patterns"},
-			},
-			{
-				{Text: "⚡ Confluence", CallbackData: "cta:confluence"},
-				{Text: "📱 Multi-TF", CallbackData: "cta:mtf"},
-				{Text: "🎯 Zones", CallbackData: "cta:zones"},
-			},
-			{
-				{Text: "🔄 Refresh", CallbackData: "cta:refresh"},
-			},
+	rows := [][]ports.InlineButton{
+		{
+			{Text: "📊 15m", CallbackData: "cta:tf:15m"},
+			{Text: "📊 30m", CallbackData: "cta:tf:30m"},
+			{Text: "📊 1H", CallbackData: "cta:tf:1h"},
+			{Text: "📊 4H", CallbackData: "cta:tf:4h"},
+		},
+		{
+			{Text: "📊 6H", CallbackData: "cta:tf:6h"},
+			{Text: "📊 12H", CallbackData: "cta:tf:12h"},
+			{Text: "📊 Daily", CallbackData: "cta:tf:daily"},
+		},
+		{
+			{Text: "🏯 Ichimoku", CallbackData: "cta:ichi"},
+			{Text: "📐 Fibonacci", CallbackData: "cta:fib"},
+			{Text: "🕯 Patterns", CallbackData: "cta:patterns"},
+		},
+		{
+			{Text: "⚡ Confluence", CallbackData: "cta:confluence"},
+			{Text: "📱 Multi-TF", CallbackData: "cta:mtf"},
+			{Text: "🎯 Zones", CallbackData: "cta:zones"},
+		},
+		{
+			{Text: "🔄 Refresh", CallbackData: "cta:refresh"},
 		},
 	}
+	return kb.AppendNavFooter(ports.InlineKeyboard{Rows: rows})
 }
 
 // CTADetailMenu builds the back-navigation keyboard for CTA detail views.
@@ -994,43 +1024,42 @@ func (kb *KeyboardBuilder) PriceMenu() ports.InlineKeyboard {
 
 // QuantMenu builds the main /quant dashboard inline keyboard.
 func (kb *KeyboardBuilder) QuantMenu() ports.InlineKeyboard {
-	return ports.InlineKeyboard{
-		Rows: [][]ports.InlineButton{
-			{
-				{Text: "📊 Stats", CallbackData: "quant:stats"},
-				{Text: "📈 Volatility", CallbackData: "quant:garch"},
-				{Text: "🔗 Correlation", CallbackData: "quant:corr"},
-			},
-			{
-				{Text: "📅 Seasonal", CallbackData: "quant:seasonal"},
-				{Text: "🔄 Mean Revert", CallbackData: "quant:meanrevert"},
-				{Text: "⚡ Granger", CallbackData: "quant:granger"},
-			},
-			{
-				{Text: "🎭 Regime (HMM)", CallbackData: "quant:regime"},
-				{Text: "🔗 Cointegration", CallbackData: "quant:coint"},
-			},
-			{
-				{Text: "🧬 PCA", CallbackData: "quant:pca"},
-				{Text: "🌐 VAR", CallbackData: "quant:var"},
-				{Text: "⚠️ Risk", CallbackData: "quant:risk"},
-			},
-			{
-				{Text: "📋 Full Report", CallbackData: "quant:full"},
-			},
-			{
-				{Text: "15m", CallbackData: "quant:tf:15m"},
-				{Text: "30m", CallbackData: "quant:tf:30m"},
-				{Text: "1H", CallbackData: "quant:tf:1h"},
-				{Text: "4H", CallbackData: "quant:tf:4h"},
-			},
-			{
-				{Text: "6H", CallbackData: "quant:tf:6h"},
-				{Text: "12H", CallbackData: "quant:tf:12h"},
-				{Text: "📊 Daily", CallbackData: "quant:tf:daily"},
-			},
+	rows := [][]ports.InlineButton{
+		{
+			{Text: "📊 Stats", CallbackData: "quant:stats"},
+			{Text: "📈 Volatility", CallbackData: "quant:garch"},
+			{Text: "🔗 Correlation", CallbackData: "quant:corr"},
+		},
+		{
+			{Text: "📅 Seasonal", CallbackData: "quant:seasonal"},
+			{Text: "🔄 Mean Revert", CallbackData: "quant:meanrevert"},
+			{Text: "⚡ Granger", CallbackData: "quant:granger"},
+		},
+		{
+			{Text: "🎭 Regime (HMM)", CallbackData: "quant:regime"},
+			{Text: "🔗 Cointegration", CallbackData: "quant:coint"},
+		},
+		{
+			{Text: "🧬 PCA", CallbackData: "quant:pca"},
+			{Text: "🌐 VAR", CallbackData: "quant:var"},
+			{Text: "⚠️ Risk", CallbackData: "quant:risk"},
+		},
+		{
+			{Text: "📋 Full Report", CallbackData: "quant:full"},
+		},
+		{
+			{Text: "15m", CallbackData: "quant:tf:15m"},
+			{Text: "30m", CallbackData: "quant:tf:30m"},
+			{Text: "1H", CallbackData: "quant:tf:1h"},
+			{Text: "4H", CallbackData: "quant:tf:4h"},
+		},
+		{
+			{Text: "6H", CallbackData: "quant:tf:6h"},
+			{Text: "12H", CallbackData: "quant:tf:12h"},
+			{Text: "📊 Daily", CallbackData: "quant:tf:daily"},
 		},
 	}
+	return kb.AppendNavFooter(ports.InlineKeyboard{Rows: rows})
 }
 
 // QuantDetailMenu builds the back-navigation keyboard for quant detail views.
@@ -1046,42 +1075,41 @@ func (kb *KeyboardBuilder) QuantDetailMenu() ports.InlineKeyboard {
 
 // VPMenu builds the main /vp Volume Profile dashboard keyboard.
 func (kb *KeyboardBuilder) VPMenu() ports.InlineKeyboard {
-	return ports.InlineKeyboard{
-		Rows: [][]ports.InlineButton{
-			// Analysis modes
-			{
-				{Text: "📊 Profile", CallbackData: "vp:profile"},
-				{Text: "🕐 Session", CallbackData: "vp:session"},
-				{Text: "📐 Shape", CallbackData: "vp:shape"},
-			},
-			{
-				{Text: "🔀 Composite", CallbackData: "vp:composite"},
-				{Text: "📏 VWAP", CallbackData: "vp:vwap"},
-				{Text: "⏱ TPO", CallbackData: "vp:tpo"},
-			},
-			{
-				{Text: "📈 Delta", CallbackData: "vp:delta"},
-				{Text: "🏛 Auction", CallbackData: "vp:auction"},
-				{Text: "🎯 Confluence", CallbackData: "vp:confluence"},
-			},
-			{
-				{Text: "📋 Full Report", CallbackData: "vp:full"},
-			},
-			// TF selector
-			{
-				{Text: "15m", CallbackData: "vp:tf:15m"},
-				{Text: "30m", CallbackData: "vp:tf:30m"},
-				{Text: "1H", CallbackData: "vp:tf:1h"},
-				{Text: "4H", CallbackData: "vp:tf:4h"},
-			},
-			{
-				{Text: "6H", CallbackData: "vp:tf:6h"},
-				{Text: "12H", CallbackData: "vp:tf:12h"},
-				{Text: "📅 Daily", CallbackData: "vp:tf:daily"},
-				{Text: "🔄 Refresh", CallbackData: "vp:refresh"},
-			},
+	rows := [][]ports.InlineButton{
+		// Analysis modes
+		{
+			{Text: "📊 Profile", CallbackData: "vp:profile"},
+			{Text: "🕐 Session", CallbackData: "vp:session"},
+			{Text: "📐 Shape", CallbackData: "vp:shape"},
+		},
+		{
+			{Text: "🔀 Composite", CallbackData: "vp:composite"},
+			{Text: "📏 VWAP", CallbackData: "vp:vwap"},
+			{Text: "⏱ TPO", CallbackData: "vp:tpo"},
+		},
+		{
+			{Text: "📈 Delta", CallbackData: "vp:delta"},
+			{Text: "🏛 Auction", CallbackData: "vp:auction"},
+			{Text: "🎯 Confluence", CallbackData: "vp:confluence"},
+		},
+		{
+			{Text: "📋 Full Report", CallbackData: "vp:full"},
+		},
+		// TF selector
+		{
+			{Text: "15m", CallbackData: "vp:tf:15m"},
+			{Text: "30m", CallbackData: "vp:tf:30m"},
+			{Text: "1H", CallbackData: "vp:tf:1h"},
+			{Text: "4H", CallbackData: "vp:tf:4h"},
+		},
+		{
+			{Text: "6H", CallbackData: "vp:tf:6h"},
+			{Text: "12H", CallbackData: "vp:tf:12h"},
+			{Text: "📅 Daily", CallbackData: "vp:tf:daily"},
+			{Text: "🔄 Refresh", CallbackData: "vp:refresh"},
 		},
 	}
+	return kb.AppendNavFooter(ports.InlineKeyboard{Rows: rows})
 }
 
 // VPDetailMenu builds the back-navigation keyboard for VP detail views.

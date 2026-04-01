@@ -1455,6 +1455,10 @@ func (h *Handler) cbQuickCommand(ctx context.Context, chatID string, msgID int, 
 		return h.cmdPrice(ctx, chatID, userID, args)
 	case "levels":
 		return h.cmdLevels(ctx, chatID, userID, args)
+	case "help":
+		return h.sendHelp(ctx, chatID, userID)
+	case "settings":
+		return h.cmdSettings(ctx, chatID, userID, args)
 	case "corr", "carry", "intraday", "garch", "hurst", "regime", "factors", "wfopt":
 		// These are now handled by /quant
 		return h.cmdQuant(ctx, chatID, userID, args)
@@ -1478,6 +1482,8 @@ func (h *Handler) cbNav(ctx context.Context, chatID string, msgID int, userID in
 		// Delete the current message and show the main menu
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
 		return h.cmdStart(ctx, chatID, userID, "")
+	case "cot":
+		return h.renderCOTOverview(ctx, chatID, userID, msgID)
 	default:
 		return nil
 	}
