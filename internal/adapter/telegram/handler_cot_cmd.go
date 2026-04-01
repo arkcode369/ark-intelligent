@@ -5,6 +5,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -437,8 +438,313 @@ func (h *Handler) cmdHistory(ctx context.Context, chatID string, userID int64, a
 	}
 	b.WriteString("</pre>")
 
-	_, err = h.bot.SendHTML(ctx, chatID, b.String())
+	// Trend summary
+	positiveWeeks := 0
+	for i := 0; i < len(records)-1; i++ {
+		net := records[i].GetSmartMoneyNet(contractReportType(records[i].ContractCode))
+		prev := records[i+1].GetSmartMoneyNet(contractReportType(records[i+1].ContractCode))
+		if net > prev {
+			positiveWeeks++
+		}
+	}
+	totalChanges := len(records) - 1
+	if totalChanges > 0 {
+		trendEmoji := "↗️"
+		trendLabel := "Akumulasi"
+		if positiveWeeks < totalChanges/2 {
+			trendEmoji = "↘️"
+			trendLabel = "Distribusi"
+		} else if positiveWeeks == totalChanges/2 {
+			trendEmoji = "➡️"
+			trendLabel = "Sideways"
+		}
+		latestNet := records[0].GetSmartMoneyNet(contractReportType(records[0].ContractCode))
+		baseNet := records[len(records)-1].GetSmartMoneyNet(contractReportType(records[len(records)-1].ContractCode))
+		momentum := 0.0
+		if baseNet != 0 {
+			momentum = (latestNet - baseNet) / math.Abs(baseNet) * 100
+		}
+		b.WriteString(fmt.Sprintf("\n<b>Trend:</b> %s %s (%d/%d minggu positif)\n", trendEmoji, trendLabel, positiveWeeks, totalChanges))
+		b.WriteString(fmt.Sprintf("<b>Momentum:</b> %+.1f%% dari baseline\n", momentum))
+	}
+
+	// Keyboard: week toggle + navigation
+	kb := ports.InlineKeyboard{Rows: [][]ports.InlineButton{
+		{
+			{Text: "4W" + boolToCheck(weeks == 4), CallbackData: fmt.Sprintf("hist:nav:%s:4", currency)},
+			{Text: "8W" + boolToCheck(weeks == 8), CallbackData: fmt.Sprintf("hist:nav:%s:8", currency)},
+			{Text: "12W" + boolToCheck(weeks == 12), CallbackData: fmt.Sprintf("hist:nav:%s:12", currency)},
+		},
+		{
+			{Text: "🔄 Refresh", CallbackData: fmt.Sprintf("hist:nav:%s:%d", currency, weeks)},
+			{Text: "⚖️ Compare", CallbackData: fmt.Sprintf("hist:cmp:%s", currency)},
+			{Text: "🏠 Home", CallbackData: "cot:overview"},
+		},
+	}}
+
+	_, err = h.bot.SendWithKeyboard(ctx, chatID, b.String(), kb)
 	return err
+}
+
+// boolToCheck returns " ✓" if true, otherwise "".
+func boolToCheck(active bool) string {
+	if active {
+		return " ✓"
+	}
+	return ""
+}
+
+// cbHistoryNav handles inline keyboard callbacks for COT history view navigation.
+// Callback data format: "hist:nav:<CURRENCY>:<WEEKS>" or "hist:cmp:<CURRENCY>"
+func (h *Handler) cbHistoryNav(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
+	rest := strings.TrimPrefix(data, "hist:")
+
+	// Compare hint: "cmp:EUR" — prompt user to provide second currency
+	if strings.HasPrefix(rest, "cmp:") {
+		currency := strings.TrimPrefix(rest, "cmp:")
+		helpText := fmt.Sprintf("⚖️ <b>COT Compare</b>\n\nGunakan: <code>/compare %s GBP</code>\n\nContoh lain:\n<code>/compare EUR JPY</code>\n<code>/compare AUD NZD</code>", currency)
+		return h.bot.EditMessage(ctx, chatID, msgID, helpText)
+	}
+
+	// Navigation: "nav:EUR:8"
+	if strings.HasPrefix(rest, "nav:") {
+		parts := strings.Split(strings.TrimPrefix(rest, "nav:"), ":")
+		if len(parts) != 2 {
+			return nil
+		}
+		currency := parts[0]
+		weeks := 4
+		if w, err := strconv.Atoi(parts[1]); err == nil && w >= 2 && w <= 52 {
+			weeks = w
+		}
+		contractCode := currencyToContractCode(currency)
+		records, err := h.cotRepo.GetHistory(ctx, contractCode, weeks)
+		if err != nil || len(records) == 0 {
+			return h.bot.AnswerCallback(ctx, "", fmt.Sprintf("No history for %s", currency))
+		}
+
+		var b strings.Builder
+		b.WriteString(fmt.Sprintf("📊 <b>COT History — %s (%d weeks)</b>\n", currency, len(records)))
+		b.WriteString(fmt.Sprintf("<i>%s → %s</i>\n\n", records[len(records)-1].ReportDate.Format("02 Jan"), records[0].ReportDate.Format("02 Jan 2006")))
+
+		netPositions := make([]float64, len(records))
+		for i, r := range records {
+			netPositions[i] = r.GetSmartMoneyNet(contractReportType(r.ContractCode))
+		}
+		for i, j := 0, len(netPositions)-1; i < j; i, j = i+1, j-1 {
+			netPositions[i], netPositions[j] = netPositions[j], netPositions[i]
+		}
+		b.WriteString("📈 Net Position Trend: <code>")
+		b.WriteString(sparkLine(netPositions))
+		b.WriteString("</code>\n\n")
+
+		b.WriteString("<pre>")
+		b.WriteString("Date       | Net Pos   | Chg      | L/S\n")
+		b.WriteString("───────────┼───────────┼──────────┼────\n")
+		for i, r := range records {
+			net := int64(r.GetSmartMoneyNet(contractReportType(r.ContractCode)))
+			var chg int64
+			if i+1 < len(records) {
+				chg = net - int64(records[i+1].GetSmartMoneyNet(contractReportType(records[i+1].ContractCode)))
+			}
+			ratio := 0.0
+			if r.LevFundShort > 0 {
+				ratio = r.LevFundLong / r.LevFundShort
+			} else if r.ManagedMoneyShort > 0 {
+				ratio = r.ManagedMoneyLong / r.ManagedMoneyShort
+			}
+			b.WriteString(fmt.Sprintf("%-10s | %+9d | %+8d | %.2f\n",
+				r.ReportDate.Format("02 Jan"), net, chg, ratio))
+		}
+		b.WriteString("</pre>")
+
+		positiveWeeks := 0
+		for i := 0; i < len(records)-1; i++ {
+			if records[i].GetSmartMoneyNet(contractReportType(records[i].ContractCode)) > records[i+1].GetSmartMoneyNet(contractReportType(records[i+1].ContractCode)) {
+				positiveWeeks++
+			}
+		}
+		totalChanges := len(records) - 1
+		if totalChanges > 0 {
+			trendEmoji := "↗️"
+			trendLabel := "Akumulasi"
+			if positiveWeeks < totalChanges/2 {
+				trendEmoji = "↘️"
+				trendLabel = "Distribusi"
+			} else if positiveWeeks == totalChanges/2 {
+				trendEmoji = "➡️"
+				trendLabel = "Sideways"
+			}
+			latestNet := records[0].GetSmartMoneyNet(contractReportType(records[0].ContractCode))
+			baseNet := records[len(records)-1].GetSmartMoneyNet(contractReportType(records[len(records)-1].ContractCode))
+			momentum := 0.0
+			if baseNet != 0 {
+				momentum = (latestNet - baseNet) / math.Abs(baseNet) * 100
+			}
+			b.WriteString(fmt.Sprintf("\n<b>Trend:</b> %s %s (%d/%d minggu positif)\n", trendEmoji, trendLabel, positiveWeeks, totalChanges))
+			b.WriteString(fmt.Sprintf("<b>Momentum:</b> %+.1f%% dari baseline\n", momentum))
+		}
+
+		kb := ports.InlineKeyboard{Rows: [][]ports.InlineButton{
+			{
+				{Text: "4W" + boolToCheck(weeks == 4), CallbackData: fmt.Sprintf("hist:nav:%s:4", currency)},
+				{Text: "8W" + boolToCheck(weeks == 8), CallbackData: fmt.Sprintf("hist:nav:%s:8", currency)},
+				{Text: "12W" + boolToCheck(weeks == 12), CallbackData: fmt.Sprintf("hist:nav:%s:12", currency)},
+			},
+			{
+				{Text: "🔄 Refresh", CallbackData: fmt.Sprintf("hist:nav:%s:%d", currency, weeks)},
+				{Text: "⚖️ Compare", CallbackData: fmt.Sprintf("hist:cmp:%s", currency)},
+				{Text: "🏠 Home", CallbackData: "cot:overview"},
+			},
+		}}
+
+		return h.bot.EditWithKeyboard(ctx, chatID, msgID, b.String(), kb)
+	}
+
+	return nil
+}
+
+// cmdCompare shows a side-by-side COT comparison for two currencies.
+// Usage: /compare EUR GBP
+func (h *Handler) cmdCompare(ctx context.Context, chatID string, userID int64, args string) error {
+	h.bot.SendTyping(ctx, chatID)
+
+	parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
+	if len(parts) < 2 {
+		_, err := h.bot.SendHTML(ctx, chatID,
+			"⚖️ <b>COT Compare</b>\n\nUsage: <code>/compare EUR GBP</code>\n\nContoh:\n<code>/compare EUR JPY</code>\n<code>/compare AUD NZD</code>\n<code>/compare XAUUSD OIL</code>")
+		return err
+	}
+
+	currA := parts[0]
+	currB := parts[1]
+
+	codeA := currencyToContractCode(currA)
+	codeB := currencyToContractCode(currB)
+
+	// Fetch latest analyses
+	analysisA, errA := h.cotRepo.GetLatestAnalysis(ctx, codeA)
+	analysisB, errB := h.cotRepo.GetLatestAnalysis(ctx, codeB)
+
+	if errA != nil || analysisA == nil {
+		h.sendUserError(ctx, chatID, fmt.Errorf("no data for %s", currA), "compare")
+		return nil
+	}
+	if errB != nil || analysisB == nil {
+		h.sendUserError(ctx, chatID, fmt.Errorf("no data for %s", currB), "compare")
+		return nil
+	}
+
+	// Fetch 4-week history for trend direction
+	histA, _ := h.cotRepo.GetHistory(ctx, codeA, 4)
+	histB, _ := h.cotRepo.GetHistory(ctx, codeB, 4)
+
+	// Compute conviction scores (best-effort, non-fatal)
+	var csA, csB cot.ConvictionScore
+	macroData, fredErr := fred.GetCachedOrFetch(ctx)
+	if fredErr == nil && macroData != nil {
+		composites := fred.ComputeComposites(macroData)
+		regime := fred.ClassifyMacroRegime(macroData, composites)
+		surpriseA, surpriseB := 0.0, 0.0
+		if h.newsScheduler != nil {
+			surpriseA = h.newsScheduler.GetSurpriseSigma(analysisA.Contract.Currency)
+			surpriseB = h.newsScheduler.GetSurpriseSigma(analysisB.Contract.Currency)
+		}
+		csA = cot.ComputeConvictionScoreV3(*analysisA, regime, surpriseA, "", macroData, nil)
+		csB = cot.ComputeConvictionScoreV3(*analysisB, regime, surpriseB, "", macroData, nil)
+	} else {
+		csA = cot.ConvictionScore{Currency: currA, Score: 50, Direction: "NEUTRAL"}
+		csB = cot.ConvictionScore{Currency: currB, Score: 50, Direction: "NEUTRAL"}
+	}
+
+	// Trend direction from history
+	trendLabelA := compareTrend(histA)
+	trendLabelB := compareTrend(histB)
+
+	// Format output
+	biasEmojiA := directionToEmoji(csA.Direction)
+	biasEmojiB := directionToEmoji(csB.Direction)
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("⚖️ <b>COT Comparison — %s vs %s</b>\n", currA, currB))
+	b.WriteString(fmt.Sprintf("<i>Report: %s</i>\n\n", analysisA.ReportDate.Format("02 Jan 2006")))
+
+	b.WriteString("<pre>")
+	b.WriteString(fmt.Sprintf("%-12s  %-16s  %-16s\n", "", currA, currB))
+	b.WriteString(strings.Repeat("─", 46) + "\n")
+	b.WriteString(fmt.Sprintf("%-12s  %+16d  %+16d\n", "Net Pos:", int64(analysisA.NetPosition), int64(analysisB.NetPosition)))
+	b.WriteString(fmt.Sprintf("%-12s  %+16d  %+16d\n", "WoW Chg:", int64(analysisA.NetChange), int64(analysisB.NetChange)))
+	b.WriteString(fmt.Sprintf("%-12s  %15.1f%%  %15.1f%%\n", "COT Index:", analysisA.COTIndex, analysisB.COTIndex))
+	b.WriteString(fmt.Sprintf("%-12s  %16.1f  %16.1f\n", "L/S Ratio:", analysisA.LongShortRatio, analysisB.LongShortRatio))
+	b.WriteString(fmt.Sprintf("%-12s  %15.1f/10  %15.1f/10\n", "Conviction:", csA.Score/10, csB.Score/10))
+	b.WriteString("</pre>")
+
+	b.WriteString(fmt.Sprintf("\n%s <b>%s:</b> %s — %s\n", biasEmojiA, currA, csA.Direction, trendLabelA))
+	b.WriteString(fmt.Sprintf("%s <b>%s:</b> %s — %s\n", biasEmojiB, currB, csB.Direction, trendLabelB))
+
+	// Divergence signal
+	if (csA.Direction == "LONG" && csB.Direction == "SHORT") || (csA.Direction == "SHORT" && csB.Direction == "LONG") {
+		b.WriteString("\n⚡ <b>Divergence Detected!</b> Smart money split → potential pair trade setup.")
+	} else if csA.Direction == csB.Direction && csA.Direction != "NEUTRAL" {
+		b.WriteString(fmt.Sprintf("\n🔄 Both %s — confluent momentum, no pair edge.", csA.Direction))
+	}
+
+	kb := ports.InlineKeyboard{Rows: [][]ports.InlineButton{
+		{
+			{Text: fmt.Sprintf("📊 %s History", currA), CallbackData: fmt.Sprintf("hist:nav:%s:4", currA)},
+			{Text: fmt.Sprintf("📊 %s History", currB), CallbackData: fmt.Sprintf("hist:nav:%s:4", currB)},
+		},
+		{
+			{Text: "🔄 Refresh", CallbackData: fmt.Sprintf("hist:nav:%s:4", currA)},
+			{Text: "🏠 Home", CallbackData: "cot:overview"},
+		},
+	}}
+
+	_, err := h.bot.SendWithKeyboard(ctx, chatID, b.String(), kb)
+	return err
+}
+
+// compareTrend returns a short trend label from 4-week history records.
+func compareTrend(records []domain.COTRecord) string {
+	if len(records) < 2 {
+		return "─ No data"
+	}
+	positiveWeeks := 0
+	totalChanges := len(records) - 1
+	for i := 0; i < totalChanges; i++ {
+		if records[i].GetSmartMoneyNet(contractReportType(records[i].ContractCode)) > records[i+1].GetSmartMoneyNet(contractReportType(records[i+1].ContractCode)) {
+			positiveWeeks++
+		}
+	}
+	if positiveWeeks >= totalChanges*2/3 {
+		return "↗ Akumulasi"
+	} else if positiveWeeks <= totalChanges/3 {
+		return "↘ Distribusi"
+	}
+	return "➡ Sideways"
+}
+
+// directionToEmoji returns a colored circle emoji for a COT direction string (LONG/SHORT/NEUTRAL).
+func directionToEmoji(direction string) string {
+	switch direction {
+	case "LONG":
+		return "🟢"
+	case "SHORT":
+		return "🔴"
+	default:
+		return "🟡"
+	}
+}
+
+// contractReportType returns the report type ("TFF" or "DISAGGREGATED") for a given contract code.
+// Falls back to "TFF" for unknown codes (most FX contracts are TFF).
+func contractReportType(contractCode string) string {
+	for _, c := range domain.DefaultCOTContracts {
+		if c.Code == contractCode {
+			return c.ReportType
+		}
+	}
+	return "TFF"
 }
 
 // sparkLine generates a Unicode sparkline from a slice of values.
