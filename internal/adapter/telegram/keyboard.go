@@ -478,24 +478,15 @@ func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyb
 		CallbackData: "set:output_mode_toggle",
 	}})
 
-	// Row 12: Default Timeframe selector
-	tfBtn := func(tf string) ports.InlineButton {
-		label := domain.TimeframeLabel(tf)
-		current := domain.ResolveDefaultTimeframe(prefs.DefaultTimeframe)
-		if current == tf {
-			label = "✅ " + label
-		}
-		return ports.InlineButton{
-			Text:         label,
-			CallbackData: "set:tf_" + tf,
-		}
+	// Row 12: Mobile sparkline mode toggle
+	mobileLabel := "📱 Mobile Mode: OFF → Turn ON"
+	if prefs.MobileMode {
+		mobileLabel = "📱 Mobile Mode: ON → Turn OFF"
 	}
-	rows = append(rows, []ports.InlineButton{
-		tfBtn("daily"),
-		tfBtn("4h"),
-		tfBtn("1h"),
-		tfBtn("weekly"),
-	})
+	rows = append(rows, []ports.InlineButton{{
+		Text:         mobileLabel,
+		CallbackData: "set:mobile_toggle",
+	}})
 
 	// Row 13: View Changelog
 	rows = append(rows, []ports.InlineButton{{
