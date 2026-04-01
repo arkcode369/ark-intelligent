@@ -504,6 +504,9 @@ func (kb *KeyboardBuilder) COTDetailMenu(code string, isRaw bool) ports.InlineKe
 		{Text: "💹 Sentiment", CallbackData: "cmd:sentiment"},
 	})
 
+	// Share button for copy-paste friendly output
+	rows = append(rows, kb.ShareRow(fmt.Sprintf("share:cot:%s", code)))
+
 	rows = append(rows, []ports.InlineButton{
 		{Text: btnBack, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
 	})
@@ -781,6 +784,9 @@ func (kb *KeyboardBuilder) COTDetailMenuWithBias(code string, isRaw bool, signal
 		{Text: "📈 Seasonal", CallbackData: fmt.Sprintf("cmd:seasonal:%s", currencyLabel)},
 		{Text: "💹 Sentiment", CallbackData: "cmd:sentiment"},
 	})
+
+	// Share button for copy-paste friendly output
+	rows = append(rows, kb.ShareRow(fmt.Sprintf("share:cot:%s", code)))
 
 	rows = append(rows, []ports.InlineButton{
 		{Text: btnBack, CallbackData: "cot:overview"}, {Text: btnHome, CallbackData: "nav:home"},
@@ -1400,5 +1406,17 @@ func (kb *KeyboardBuilder) StarterKitMenu(level string) ports.InlineKeyboard {
 				},
 			},
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Share Buttons
+// ---------------------------------------------------------------------------
+
+// ShareRow returns a single-button row with a share/forward button.
+// callbackBase should be e.g. "share:cot:EUR", "share:outlook:latest".
+func (kb *KeyboardBuilder) ShareRow(callbackBase string) []ports.InlineButton {
+	return []ports.InlineButton{
+		{Text: "📤 Share", CallbackData: callbackBase},
 	}
 }
