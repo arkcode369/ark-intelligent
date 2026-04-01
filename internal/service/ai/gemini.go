@@ -21,20 +21,21 @@ var geminiLog = logger.Component("gemini")
 // financial analysis prompts. It manages the client lifecycle,
 // model configuration, and retry logic.
 type GeminiClient struct {
-	client  *genai.Client
-	model   *genai.GenerativeModel
-	apiKey  string
-	limiter *aiRateLimiter
+	client    *genai.Client
+	model     *genai.GenerativeModel
+	apiKey    string
+	modelName string
+	limiter   *aiRateLimiter
 }
 
-// NewGeminiClient creates a Gemini client with the given API key and rate limits.
-func NewGeminiClient(ctx context.Context, apiKey string, maxRPM int, maxDaily int) (*GeminiClient, error) {
+// NewGeminiClient creates a Gemini client with the given API key, model name, and rate limits.
+func NewGeminiClient(ctx context.Context, apiKey string, modelName string, maxRPM int, maxDaily int) (*GeminiClient, error) {
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
 		return nil, fmt.Errorf("create gemini client: %w", err)
 	}
 
-	model := client.GenerativeModel("gemini-3.1-flash-lite-preview")
+	model := client.GenerativeModel(modelName)
 
 	// Configure for financial analysis
 	model.SetTemperature(0.3) // low creativity, high precision
@@ -49,10 +50,11 @@ func NewGeminiClient(ctx context.Context, apiKey string, maxRPM int, maxDaily in
 	}
 
 	return &GeminiClient{
-		client:  client,
-		model:   model,
-		apiKey:  apiKey,
-		limiter: newAIRateLimiter(maxRPM, maxDaily),
+		client:    client,
+		model:     model,
+		apiKey:    apiKey,
+		modelName: modelName,
+		limiter:   newAIRateLimiter(maxRPM, maxDaily),
 	}, nil
 }
 
@@ -71,7 +73,11 @@ func (gc *GeminiClient) Generate(ctx context.Context, prompt string) (string, er
 		if attempt > 0 {
 			backoff := time.Duration(attempt*attempt) * time.Second
 			geminiLog.Warn().Int("attempt", attempt).Dur("backoff", backoff).Msg("retrying request")
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(backoff):
+			}
 		}
 
 		resp, err := gc.model.GenerateContent(ctx, genai.Text(prompt))
@@ -105,7 +111,7 @@ func (gc *GeminiClient) GenerateWithSystem(ctx context.Context, systemPrompt, us
 	}
 
 	// Clone model config with system instruction
-	model := gc.client.GenerativeModel("gemini-3.1-flash-lite-preview")
+	model := gc.client.GenerativeModel(gc.modelName)
 	model.SetTemperature(0.3)
 	model.SetTopP(0.8)
 	model.SetTopK(40)
@@ -115,7 +121,12 @@ func (gc *GeminiClient) GenerateWithSystem(ctx context.Context, systemPrompt, us
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			time.Sleep(time.Duration(attempt*attempt) * time.Second)
+			backoff := time.Duration(attempt*attempt) * time.Second
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(backoff):
+			}
 		}
 
 		resp, err := model.GenerateContent(ctx, genai.Text(userPrompt))

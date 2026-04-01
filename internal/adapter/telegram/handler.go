@@ -18,6 +18,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
+	"github.com/arkcode369/ark-intelligent/internal/service/worldbank"
 	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
 )
 
@@ -120,6 +121,24 @@ type Handler struct {
 	// ctabt holds optional CTA Backtest engine services.
 	// May be nil — /ctabt command disabled if not configured.
 	ctabt *CTABTServices
+
+	// ict holds optional ICT/SMC analysis engine services.
+	// May be nil — /ict command disabled if not configured.
+	ict      *ICTServices
+	ictCache *ictStateCache
+
+	// smc holds optional SMC analysis engine services.
+	// May be nil — /smc command disabled if not configured.
+	smc      *SMCServices
+	smcCache *smcStateCache
+
+	// gex holds the GEX engine for /gex command.
+	// May be nil — /gex command disabled if not configured.
+	gex *GEXServices
+
+	// wyckoff holds optional Wyckoff analysis engine services.
+	// May be nil — /wyckoff command disabled if not configured.
+	wyckoff *WyckoffServices
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
@@ -199,6 +218,20 @@ func NewHandler(
 	bot.RegisterCommand("/ban", h.cmdBan)
 	bot.RegisterCommand("/unban", h.cmdUnban)
 
+	// Short aliases for power users (mobile-friendly)
+	bot.RegisterCommand("/c", h.cmdCOT)
+	bot.RegisterCommand("/cal", h.cmdCalendar)
+	bot.RegisterCommand("/out", h.cmdOutlook)
+	bot.RegisterCommand("/m", h.cmdMacro)
+	bot.RegisterCommand("/b", h.cmdBias)
+	bot.RegisterCommand("/q", h.cmdQuant)
+	bot.RegisterCommand("/bt", h.cmdBacktest)
+	bot.RegisterCommand("/r", h.cmdRank)
+	bot.RegisterCommand("/s", h.cmdSentiment)
+	bot.RegisterCommand("/p", h.cmdPrice)
+	bot.RegisterCommand("/l", h.cmdLevels)
+
+
 	// Register callback handlers
 	bot.RegisterCallback("cot:", h.cbCOTDetail)
 	bot.RegisterCallback("alert:", h.cbAlertToggle)
@@ -211,8 +244,9 @@ func NewHandler(
 	bot.RegisterCallback("macro:", h.cbMacro)
 	bot.RegisterCallback("imp:", h.cbImpact)
 	bot.RegisterCallback("nav:", h.cbNav)
+	bot.RegisterCallback("help:", h.cbHelp)
 
-	log.Info().Int("commands", 37).Int("callbacks", 9).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 48).Int("callbacks", 10).Msg("registered commands and callback prefixes")
 	return h
 }
 
@@ -328,10 +362,18 @@ Ini menu kamu — klik untuk mulai:`
 }
 
 func (h *Handler) cmdHelp(ctx context.Context, chatID string, userID int64, args string) error {
+	// Support /help <category> to directly expand a sub-category
+	category := strings.ToLower(strings.TrimSpace(args))
+	if category != "" {
+		switch category {
+		case "market", "research", "ai", "signals", "settings", "admin", "changelog":
+			return h.sendHelpSubCategory(ctx, chatID, userID, category, 0)
+		}
+	}
 	return h.sendHelp(ctx, chatID, userID)
 }
 
-// sendHelp sends a role-aware help menu. Admin/Settings only shown to admin+.
+// sendHelp sends the interactive category-based help menu.
 func (h *Handler) sendHelp(ctx context.Context, chatID string, userID int64) error {
 	// Determine user role
 	isAdmin := h.bot.isOwner(userID)
@@ -340,55 +382,161 @@ func (h *Handler) sendHelp(ctx context.Context, chatID string, userID int64) err
 		isAdmin = domain.RoleHierarchy(role) >= domain.RoleHierarchy(domain.RoleAdmin)
 	}
 
-	var sb strings.Builder
-	sb.WriteString(`🦅 <b>ARK Intelligence Terminal</b>
+	header := `🦅 <b>ARK Intelligence Terminal</b>
 <i>Institutional Flow &amp; Macro Analytics</i>
 
-<b>⚡ Alpha &amp; Technical Analysis</b>
-/alpha — Dashboard lengkap (ringkasan + navigasi detail)
-/cta — Classical TA dashboard · <code>/cta EUR</code> · <code>/cta EUR 4h</code>
-/ctabt — Backtest strategi Classical TA · <code>/ctabt EUR</code> · <code>/ctabt EUR 4h</code>
-/quant — Econometric/Statistical analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
-/vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
+<i>Pilih kategori untuk melihat commands tersedia:</i>`
 
-<b>📊 Market Data</b>
-/cot — COT positioning · <code>/cot EUR</code>
-/rank — Currency strength
-/bias — Directional bias
-/calendar — Economic calendar · <code>/calendar week</code>
-/price — Daily price · <code>/price EUR</code>
-/levels — Support/resistance · <code>/levels EUR</code>
-
-<b>🧠 AI Outlook</b>
-/outlook — Unified analysis (all data + web search)
-
-<b>📈 Analytics</b>
-/backtest — Backtest dashboard (17 sub-views)
-/accuracy — Win rate summary
-/report — Weekly signal performance
-
-<b>🏛 Macro</b>
-/macro — FRED regime + asset performance
-/impact — Event impact DB · <code>/impact NFP</code>
-/sentiment — Sentiment surveys
-/seasonal — Seasonal patterns · <code>/seasonal EUR</code>
-
-<b>⚙️ Settings</b>
-/settings · /membership · /clear
-`)
-
+	var kb ports.InlineKeyboard
 	if isAdmin {
-		sb.WriteString(`
-<b>🔐 Admin</b>
-/users · /setrole · /ban · /unban
-`)
+		kb = h.kb.HelpCategoryMenuWithAdmin()
+	} else {
+		kb = h.kb.HelpCategoryMenu()
 	}
 
-	sb.WriteString(`
-<code>ARK v3.7.0</code>`)
-
-	_, err := h.bot.SendWithKeyboard(ctx, chatID, sb.String(), h.kb.MainMenu())
+	_, err := h.bot.SendWithKeyboard(ctx, chatID, header, kb)
 	return err
+}
+
+// sendHelpSubCategory sends or edits the help sub-category message for a given category.
+func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID int64, category string, editMsgID int) error {
+	var text string
+
+	switch category {
+	case "market":
+		text = `📊 <b>Market &amp; Data Commands</b>
+
+/cot — COT institutional positioning · <code>/cot EUR</code>
+/rank — Currency strength ranking
+/bias — Directional bias summary · <code>/bias EUR</code>
+/calendar — Economic calendar · <code>/calendar week</code>
+/price — Daily OHLC price context · <code>/price EUR</code>
+/levels — Support/resistance levels · <code>/levels EUR</code>`
+
+	case "research":
+		text = `🔬 <b>Research &amp; Alpha Commands</b>
+
+/alpha — Dashboard lengkap (factor + playbook + risk)
+/cta — Classical TA dashboard · <code>/cta EUR</code> · <code>/cta EUR 4h</code>
+/ctabt — Backtest Classical TA · <code>/ctabt EUR</code> · <code>/ctabt EUR 4h</code>
+/quant — Econometric analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
+/vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
+/ict — ICT/SMC Smart Money Concepts · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
+/gex — Gamma Exposure (crypto options) · <code>/gex BTC</code> · <code>/gex ETH</code>
+/backtest — Backtest dashboard (17 sub-views)
+/accuracy — Win rate summary
+/report — Weekly signal performance`
+
+	case "ai":
+		text = `🧠 <b>AI &amp; Outlook Commands</b>
+
+/outlook — Unified AI analysis (all data + web search)
+/macro — FRED macro regime + asset performance
+/impact — Event impact database · <code>/impact NFP</code>
+/sentiment — Sentiment surveys (CNN F&amp;G, AAII, P/C)
+/seasonal — Seasonal patterns · <code>/seasonal EUR</code>`
+
+	case "signals":
+		text = `⚡ <b>Signals &amp; Alerts</b>
+
+/bias — Directional bias signals · <code>/bias EUR</code>
+/cot — COT positioning + conviction score · <code>/cot EUR</code>
+/rank — Currency strength ranking
+
+<b>Alert Settings:</b>
+Use /settings to configure:
+• COT release alerts
+• News event alerts (High/Med/All impact)
+• Currency filter for alerts
+• Alert timing (60/15/5, 15/5/1, 5/1 min)`
+
+	case "settings":
+		text = `⚙️ <b>Settings &amp; Preferences</b>
+
+/settings — Preferences dashboard (alerts, language, model)
+/membership — Tier info + upgrade · <code>/membership</code>
+/clear — Clear AI chat history
+
+<b>Available settings:</b>
+• Language: Indonesian / English
+• AI Provider: Claude / Gemini
+• Claude Model: Opus / Sonnet / Haiku
+• COT &amp; AI report alerts on/off
+• Currency filter for alerts
+• Alert timing presets`
+
+	case "admin":
+		// Only show admin section to admins
+		isAdmin := h.bot.isOwner(userID)
+		if !isAdmin && h.middleware != nil {
+			role := h.middleware.GetUserRole(ctx, userID)
+			isAdmin = domain.RoleHierarchy(role) >= domain.RoleHierarchy(domain.RoleAdmin)
+		}
+		if !isAdmin {
+			text = "⛔ Admin commands hanya tersedia untuk Admin+"
+		} else {
+			text = `🔐 <b>Admin Commands</b>
+
+/users — List all registered users with roles
+/setrole — Change user role · <code>/setrole &lt;userID&gt; &lt;role&gt;</code>
+/ban — Ban a user · <code>/ban &lt;userID&gt;</code>
+/unban — Unban a user · <code>/unban &lt;userID&gt;</code>
+
+<b>Roles:</b> owner · admin · member · free · banned`
+		}
+
+	case "changelog":
+		if h.changelog == "" {
+			text = "📋 <b>Changelog</b>\n\n<i>Changelog tidak tersedia.</i>"
+		} else {
+			// Show a reasonable portion of the changelog
+			cl := h.changelog
+			if len(cl) > 3500 {
+				cl = cl[:3500] + "\n\n<i>... (lihat selengkapnya di /settings → View Changelog)</i>"
+			}
+			text = "🆕 <b>What's New</b>\n\n" + cl
+		}
+
+	default:
+		return h.sendHelp(ctx, chatID, userID)
+	}
+
+	kb := h.kb.HelpSubMenu()
+
+	if editMsgID > 0 {
+		return h.bot.EditWithKeyboard(ctx, chatID, editMsgID, text, kb)
+	}
+	_, err := h.bot.SendWithKeyboard(ctx, chatID, text, kb)
+	return err
+}
+
+// cbHelp handles "help:" prefixed callbacks for the interactive help menu.
+func (h *Handler) cbHelp(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
+	action := strings.TrimPrefix(data, "help:")
+
+	if action == "back" {
+		// Return to category menu
+		isAdmin := h.bot.isOwner(userID)
+		if !isAdmin && h.middleware != nil {
+			role := h.middleware.GetUserRole(ctx, userID)
+			isAdmin = domain.RoleHierarchy(role) >= domain.RoleHierarchy(domain.RoleAdmin)
+		}
+
+		header := `🦅 <b>ARK Intelligence Terminal</b>
+<i>Institutional Flow &amp; Macro Analytics</i>
+
+<i>Pilih kategori untuk melihat commands tersedia:</i>`
+
+		var kb ports.InlineKeyboard
+		if isAdmin {
+			kb = h.kb.HelpCategoryMenuWithAdmin()
+		} else {
+			kb = h.kb.HelpCategoryMenu()
+		}
+		return h.bot.EditWithKeyboard(ctx, chatID, msgID, header, kb)
+	}
+
+	return h.sendHelpSubCategory(ctx, chatID, userID, action, msgID)
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +568,7 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 		}
 
 		if code != "" {
+			h.saveLastCurrency(ctx, userID, code)
 			contractCode := currencyToContractCode(code)
 			return h.sendCOTDetail(ctx, chatID, contractCode, code, isRaw, 0)
 		}
@@ -816,6 +965,9 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		}
 	}
 
+	// World Bank cross-country macro fundamentals (graceful degradation on error)
+	wbData, _ := worldbank.GetCachedOrFetch(ctx)
+
 	// Daily price contexts (for daily technical analysis in outlook)
 	var dailyPriceCtxs map[string]*domain.DailyPriceContext
 	if h.dailyPriceRepo != nil {
@@ -855,6 +1007,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		SeasonalData:       seasonalData,
 		BacktestStats:      backtestStats,
 		CurrencyStrength:   currencyStrength,
+		WorldBankData:      wbData,
 		Language:           prefs.Language,
 	}
 
@@ -1092,8 +1245,12 @@ func (h *Handler) cmdStatus(ctx context.Context, chatID string, userID int64, ar
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdBias(ctx context.Context, chatID string, userID int64, args string) error {
+	loadingID, _ := h.bot.SendHTML(ctx, chatID, "🎯 Mendeteksi directional bias... ⏳")
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
+		if loadingID > 0 {
+			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+		}
 		_, err = h.bot.SendHTML(ctx, chatID, "No COT data available for bias detection.")
 		return err
 	}
@@ -1138,6 +1295,9 @@ func (h *Handler) cmdBias(ctx context.Context, chatID string, userID int64, args
 	}
 
 	html := h.fmt.FormatBiasHTML(signals, filterCurrency)
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
@@ -1483,6 +1643,31 @@ func (h *Handler) cbNav(ctx context.Context, chatID string, msgID int, userID in
 	}
 }
 
+
+// saveLastCurrency persists the user's last viewed currency for context carry-over.
+func (h *Handler) saveLastCurrency(ctx context.Context, userID int64, currency string) {
+	if currency == "" {
+		return
+	}
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+	prefs.LastCurrency = strings.ToUpper(currency)
+	_ = h.prefsRepo.Set(ctx, userID, prefs)
+}
+
+// getLastCurrency returns the user's last viewed currency, or empty string.
+func (h *Handler) getLastCurrency(ctx context.Context, userID int64) string {
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+	return prefs.LastCurrency
+}
+
+// resolveOrLastCurrency returns the given currency if non-empty, otherwise the user's last currency.
+func (h *Handler) resolveOrLastCurrency(ctx context.Context, userID int64, currency string) string {
+	if currency != "" {
+		return currency
+	}
+	return h.getLastCurrency(ctx, userID)
+}
+
 // cbViewToggle handles compact/full view toggle callbacks.
 // Callback data format: "view:<action>:<command>"
 func (h *Handler) cbViewToggle(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
@@ -1652,8 +1837,12 @@ func (h *Handler) handleMonthNav(ctx context.Context, chatID string, msgID int, 
 // cmdRank handles the /rank command — weekly currency strength ranking.
 // Ranks 8 major currencies by COT SentimentScore and shows conviction scores (COT + FRED + Calendar).
 func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args string) error {
+	loadingID, _ := h.bot.SendHTML(ctx, chatID, "📈 Menghitung currency strength ranking... ⏳")
 	analyses, err := h.cotRepo.GetAllLatestAnalyses(ctx)
 	if err != nil || len(analyses) == 0 {
+		if loadingID > 0 {
+			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+		}
 		_, err = h.bot.SendHTML(ctx, chatID,
 			"No COT data available for ranking. Data is fetched from CFTC every Friday.")
 		return err
@@ -1717,6 +1906,9 @@ func (h *Handler) cmdRank(ctx context.Context, chatID string, userID int64, args
 		}
 	}
 
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	_, err = h.bot.SendHTML(ctx, chatID, html)
 	return err
 }
