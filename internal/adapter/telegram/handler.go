@@ -379,7 +379,7 @@ func (h *Handler) cmdHelp(ctx context.Context, chatID string, userID int64, args
 	category := strings.ToLower(strings.TrimSpace(args))
 	if category != "" {
 		switch category {
-		case "market", "research", "ai", "signals", "settings", "admin", "changelog":
+		case "market", "research", "ai", "signals", "settings", "admin", "changelog", "shortcuts":
 			return h.sendHelpSubCategory(ctx, chatID, userID, category, 0)
 		}
 	}
@@ -435,6 +435,7 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /quant — Econometric analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
 /vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
 /ict — ICT/SMC Smart Money Concepts · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
+/wyckoff — Wyckoff Phase + Composite Man · <code>/wyckoff EURUSD</code> · <code>/wyckoff XAUUSD H4</code>
 /gex — Gamma Exposure (crypto options) · <code>/gex BTC</code> · <code>/gex ETH</code>
 /backtest — Backtest dashboard (17 sub-views)
 /accuracy — Win rate summary
@@ -497,6 +498,26 @@ Use /settings to configure:
 
 <b>Roles:</b> owner · admin · member · free · banned`
 		}
+
+	case "shortcuts":
+		text = `⚡ <b>Quick Shortcuts</b>
+
+Alias pendek untuk mobile — ketik lebih cepat:
+
+<code>/c</code>   → <code>/cot</code>
+<code>/cal</code> → <code>/calendar</code>
+<code>/out</code> → <code>/outlook</code>
+<code>/m</code>   → <code>/macro</code>
+<code>/b</code>   → <code>/bias</code>
+<code>/q</code>   → <code>/quant</code>
+<code>/bt</code>  → <code>/backtest</code>
+<code>/r</code>   → <code>/rank</code>
+<code>/s</code>   → <code>/sentiment</code>
+<code>/p</code>   → <code>/price</code>
+<code>/l</code>   → <code>/levels</code>
+<code>/h</code>   → <code>/history</code>
+
+<i>Contoh: <code>/q EUR</code> sama dengan <code>/quant EUR</code></i>`
 
 	case "changelog":
 		if h.changelog == "" {
