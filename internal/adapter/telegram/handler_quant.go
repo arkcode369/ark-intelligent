@@ -137,8 +137,7 @@ Analisis statistik & ekonometrik institutional:
 📋 <b>Full Report</b> — Semua model → LONG/SHORT/FLAT
 
 Pilih aset:`, h.kb.QuantSymbolMenu())
-			return err
-		}
+		return err
 	}
 
 	symbol := parts[0]
