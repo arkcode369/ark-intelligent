@@ -149,7 +149,7 @@ Pilih aset:`, h.kb.QuantSymbolMenu())
 		return err
 	}
 
-	loadingID, _ := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("📊 Computing Quant Analysis for <b>%s</b> (%s)... ⏳", html.EscapeString(mapping.Currency), timeframe))
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf("📊 Computing Quant Analysis for <b>%s</b> (%s)... ⏳", html.EscapeString(mapping.Currency), timeframe))
 
 	state, err := h.computeQuantState(ctx, mapping, timeframe)
 	if err != nil {
