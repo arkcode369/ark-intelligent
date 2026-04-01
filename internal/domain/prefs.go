@@ -83,10 +83,19 @@ func DefaultPrefs() UserPrefs {
 		AlertsEnabled:    true,
 		AIReportsEnabled: true,
 		COTAlertsEnabled: true,
-		CurrencyFilter:   nil,  // nil = all currencies
-		Language:         "id", // Default to Indonesian
+		CurrencyFilter:   nil,           // nil = all currencies
+		Language:         "id",          // Default to Indonesian
 		ChatID:           "",
 		CalendarFilter:   "all",
 		CalendarView:     "day",
+		OutputMode:       OutputCompact, // Default to compact for mobile traders
 	}
+}
+
+// EffectiveOutputMode returns the user's output mode, defaulting to compact.
+func (p UserPrefs) EffectiveOutputMode() OutputMode {
+	if p.OutputMode == OutputFull {
+		return OutputFull
+	}
+	return OutputCompact
 }

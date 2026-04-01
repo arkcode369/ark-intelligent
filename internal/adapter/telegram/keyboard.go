@@ -440,7 +440,20 @@ func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyb
 		claudeModelBtn(domain.ClaudeModelHaiku4),
 	})
 
-	// Row 11: View Changelog
+	// Row 11: Format Output toggle (compact vs full)
+	outputCompactLabel := "📊 Compact"
+	outputFullLabel := "📖 Detail Lengkap"
+	if prefs.EffectiveOutputMode() == domain.OutputCompact {
+		outputCompactLabel = "✅ 📊 Compact"
+	} else {
+		outputFullLabel = "✅ 📖 Detail Lengkap"
+	}
+	rows = append(rows, []ports.InlineButton{
+		{Text: outputCompactLabel, CallbackData: "set:output_compact"},
+		{Text: outputFullLabel, CallbackData: "set:output_full"},
+	})
+
+	// Row 12: View Changelog
 	rows = append(rows, []ports.InlineButton{{
 		Text:         "📜 View Changelog",
 		CallbackData: "set:changelog_view",

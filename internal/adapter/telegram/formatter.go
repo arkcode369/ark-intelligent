@@ -951,6 +951,13 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 		b.WriteString("<code>Alert Currencies   : All Currencies</code>\n")
 	}
 
+	// Output mode display
+	outputModeDisplay := "Compact 📊"
+	if prefs.EffectiveOutputMode() == domain.OutputFull {
+		outputModeDisplay = "Detail Lengkap 📖"
+	}
+	b.WriteString(fmt.Sprintf("<code>Format Output      : %s</code>\n", outputModeDisplay))
+
 	b.WriteString("\n<i>Use the buttons below to adjust preferences</i>")
 
 	return b.String()

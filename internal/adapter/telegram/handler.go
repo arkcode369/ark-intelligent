@@ -966,6 +966,10 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 		prefs.PreferredModel = "claude"
 	case "model_gemini":
 		prefs.PreferredModel = "gemini"
+	case "output_compact":
+		prefs.OutputMode = domain.OutputCompact
+	case "output_full":
+		prefs.OutputMode = domain.OutputFull
 	case "impact_high_only":
 		prefs.AlertImpacts = []string{"High"}
 	case "impact_high_med":
@@ -1537,7 +1541,7 @@ func (h *Handler) renderCOTOverview(ctx context.Context, chatID string, userID i
 
 	var htmlOut string
 	var toggleBtn ports.InlineButton
-	if prefs.OutputMode == domain.OutputFull {
+	if prefs.EffectiveOutputMode() == domain.OutputFull {
 		htmlOut = h.fmt.FormatCOTOverview(analyses, convictions)
 		toggleBtn = ports.InlineButton{Text: btnCompact, CallbackData: "view:compact:cot"}
 	} else {
@@ -1569,7 +1573,7 @@ func (h *Handler) renderMacroSummary(ctx context.Context, chatID string, userID 
 
 	var htmlOut string
 	var toggleBtn ports.InlineButton
-	if prefs.OutputMode == domain.OutputFull {
+	if prefs.EffectiveOutputMode() == domain.OutputFull {
 		implications := fred.DeriveTradingImplications(regime, data)
 		htmlOut = h.fmt.FormatMacroSummary(regime, data, implications)
 		toggleBtn = ports.InlineButton{Text: btnCompact, CallbackData: "view:compact:macro"}
