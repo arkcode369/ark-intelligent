@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -245,7 +246,10 @@ func (b *Bot) getUpdates(ctx context.Context, offset, limit, timeout int) ([]Upd
 func (b *Bot) handleUpdate(ctx context.Context, update Update) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Msg("panic in handler")
+			log.Error().
+				Interface("panic", r).
+				Str("stack", string(debug.Stack())).
+				Msg("PANIC recovered in handleUpdate — bot continues running")
 		}
 	}()
 
@@ -362,6 +366,18 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 
 	userID := cb.From.ID
 	log.Info().Str("data", cb.Data).Int64("user_id", userID).Msg("callback received")
+
+	// Guard: cb.Message can be nil when the message is too old (>48h) or deleted.
+	// Without a valid chatID, handlers cannot send responses to Telegram.
+	// Return a session-expired toast so the user knows to re-issue the command.
+	if chatID == "" {
+		log.Warn().
+			Str("data", cb.Data).
+			Int64("user_id", userID).
+			Msg("callback with nil message — session expired or message deleted")
+		_ = b.AnswerCallback(ctx, cb.ID, "⏳ Session expired. Please resend the command.")
+		return
+	}
 
 	// Authorization via middleware (ban check + tiered rate limit)
 	if b.middleware != nil {

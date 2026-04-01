@@ -265,7 +265,7 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 	state := h.quantCache.get(chatID)
 	if state == nil {
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
-		_, err := h.bot.SendHTML(ctx, chatID, "⏰ Session expired. Gunakan <code>/quant "+html.EscapeString("")+"</code> lagi.")
+		_, err := h.bot.SendHTML(ctx, chatID, sessionExpiredMessage("quant"))
 		return err
 	}
 
@@ -385,6 +385,13 @@ type quantAssetClose struct {
 // ---------------------------------------------------------------------------
 
 func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineResult, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().
+				Interface("panic", r).
+				Msg("panic in runQuantEngine — subprocess may have failed")
+		}
+	}()
 	tf := state.timeframe
 	bars, ok := state.bars[tf]
 	if !ok || len(bars) == 0 {

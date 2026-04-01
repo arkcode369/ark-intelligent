@@ -155,7 +155,10 @@ func (h *Handler) handleGEXCallback(ctx context.Context, chatID string, msgID in
 	case "sym", "refresh":
 		result, err := h.gex.Engine.Analyze(ctx, sym)
 		if err != nil {
-			return err
+			errHTML := fmt.Sprintf("\u26a0\ufe0f <b>GEX analysis failed for %s</b>\n\n<i>%s</i>\n\nThis may be temporary \u2014 try again in a few minutes.", sym, err.Error())
+			kb := gexKeyboard(sym)
+			_ = h.bot.EditWithKeyboard(ctx, chatID, msgID, errHTML, kb)
+			return nil
 		}
 		html := FormatGEXResult(result)
 		kb := gexKeyboard(sym)

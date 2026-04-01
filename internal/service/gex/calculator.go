@@ -33,7 +33,10 @@ func calculateGEX(
 	putOI map[float64]float64,
 	contractSize float64,
 	spot float64,
-) []GEXLevel {
+) ([]GEXLevel, error) {
+	if spot <= 0 {
+		return nil, fmt.Errorf("invalid spot price: %f — all GEX values would be zero", spot)
+	}
 	if contractSize <= 0 {
 		contractSize = 1.0
 	}
@@ -50,7 +53,7 @@ func calculateGEX(
 			NetGEX:  cGEX + pGEX,
 		})
 	}
-	return levels
+	return levels, nil
 }
 
 // findFlipLevel returns the strike closest to the gamma-neutral price.

@@ -186,7 +186,7 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 		state := h.vpCache.get(chatID)
 		if state == nil {
 			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-				"⏰ Session expired — ketik /vp lagi.", h.kb.VPMenu())
+				sessionExpiredMessage("vp"), h.kb.VPMenu())
 		}
 		if newTF != state.timeframe {
 			mapping := domain.FindPriceMappingByCurrency(state.currency)
@@ -208,7 +208,7 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 		state := h.vpCache.get(chatID)
 		if state == nil {
 			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-				"⏰ Session expired — ketik /vp lagi.", h.kb.VPMenu())
+				sessionExpiredMessage("vp"), h.kb.VPMenu())
 		}
 		summary := fmt.Sprintf("📊 <b>Volume Profile: %s — %s</b>\n\nPilih mode analisis:",
 			html.EscapeString(state.symbol), state.timeframe)
@@ -219,7 +219,7 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 		state := h.vpCache.get(chatID)
 		if state == nil {
 			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-				"⏰ Session expired — ketik /vp lagi.", h.kb.VPMenu())
+				sessionExpiredMessage("vp"), h.kb.VPMenu())
 		}
 		mapping := domain.FindPriceMappingByCurrency(state.currency)
 		if mapping == nil {
@@ -244,7 +244,7 @@ func (h *Handler) handleVPCallback(ctx context.Context, chatID string, msgID int
 		state := h.vpCache.get(chatID)
 		if state == nil {
 			return h.bot.EditWithKeyboard(ctx, chatID, msgID,
-				"⏰ Session expired — ketik /vp lagi.", h.kb.VPMenu())
+				sessionExpiredMessage("vp"), h.kb.VPMenu())
 		}
 		return h.vpRunMode(ctx, chatID, msgID, state, action)
 	}
@@ -402,6 +402,15 @@ type vpEngineResult struct {
 }
 
 func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// This panic is caught by handleUpdate's outer recovery too,
+			// but logging here gives more specific context.
+			log.Error().
+				Interface("panic", r).
+				Msg("panic in runVPEngine — subprocess may have failed")
+		}
+	}()
 	ts := time.Now().UnixNano()
 	inputPath := filepath.Join(os.TempDir(), fmt.Sprintf("vp_in_%d.json", ts))
 	outputPath := filepath.Join(os.TempDir(), fmt.Sprintf("vp_out_%d.json", ts))
