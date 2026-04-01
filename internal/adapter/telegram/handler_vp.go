@@ -383,10 +383,6 @@ func (h *Handler) vpRunMode(ctx context.Context, chatID string, msgID int, state
 				log.Error().Err(readErr).Str("symbol", state.symbol).Str("timeframe", tf).Str("mode", mode).Msg("VP chart read failed, falling back to text")
 			}
 			_ = os.Remove(result.ChartPath)
-		} else if readErr != nil {
-			log.Warn().Err(readErr).Str("chart_path", result.ChartPath).
-				Str("symbol", state.symbol).Str("timeframe", tf).
-				Msg("vp: chart file unreadable")
 		}
 	}
 

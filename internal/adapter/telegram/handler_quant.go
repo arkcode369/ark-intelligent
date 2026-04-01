@@ -331,7 +331,6 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 	kb := h.kb.QuantDetailMenu()
 
 	// Send chart if available
-	chartSent := false
 	if result.ChartPath != "" {
 		chartData, readErr := os.ReadFile(result.ChartPath)
 		if readErr == nil && len(chartData) > 0 {
