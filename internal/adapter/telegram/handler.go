@@ -231,6 +231,10 @@ func NewHandler(
 	bot.RegisterCommand("/history", h.cmdHistory)
 	bot.RegisterCommand("/h", h.cmdHistory)
 
+	// Daily briefing
+	bot.RegisterCommand("/briefing", h.cmdBriefing)
+	bot.RegisterCommand("/br", h.cmdBriefing)
+
 	// Register callback handlers
 	bot.RegisterCallback("cot:", h.cbCOTDetail)
 	bot.RegisterCallback("alert:", h.cbAlertToggle)
@@ -244,8 +248,9 @@ func NewHandler(
 	bot.RegisterCallback("imp:", h.cbImpact)
 	bot.RegisterCallback("nav:", h.cbNav)
 	bot.RegisterCallback("help:", h.cbHelp)
+	bot.RegisterCallback("briefing:", h.cbBriefing)
 
-	log.Info().Int("commands", 48).Int("callbacks", 10).Msg("registered commands and callback prefixes")
+	log.Info().Int("commands", 50).Int("callbacks", 11).Msg("registered commands and callback prefixes")
 	return h
 }
 
