@@ -431,6 +431,14 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 
 	defer os.Remove(inputPath)
 
+	// Defer chart cleanup; skip if caller takes ownership via result.ChartPath.
+	cleanupChart := true
+	defer func() {
+		if cleanupChart {
+			os.Remove(chartPath)
+		}
+	}()
+
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
 		return nil, fmt.Errorf("marshal input: %w", err)
@@ -452,7 +460,6 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 		log.Error().Err(err).
 			Str("stderr", stderr.String()).
 			Msg("VP engine subprocess failed")
-		os.Remove(chartPath) // cleanup chart on failure
 		os.Remove(outputPath)
 		return nil, fmt.Errorf("VP engine failed: %w", err)
 	}
@@ -475,9 +482,9 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 	if fi, statErr := os.Stat(chartPath); statErr == nil {
 		if fi.Size() > 0 {
 			result.ChartPath = chartPath
+			cleanupChart = false // caller owns cleanup via result.ChartPath
 		} else {
 			log.Warn().Str("chart_path", chartPath).Msg("chart renderer produced 0-byte file, skipping")
-			os.Remove(chartPath)
 		}
 	}
 

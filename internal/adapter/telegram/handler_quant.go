@@ -461,6 +461,14 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	outputPath := filepath.Join(tmpDir, fmt.Sprintf("quant_output_%d.json", ts))
 	chartPath := filepath.Join(tmpDir, fmt.Sprintf("quant_chart_%d.png", ts))
 
+	// Defer chart cleanup; skip if caller takes ownership via result.ChartPath.
+	cleanupChart := true
+	defer func() {
+		if cleanupChart {
+			os.Remove(chartPath)
+		}
+	}()
+
 	if err := os.WriteFile(inputPath, jsonData, 0644); err != nil {
 		return nil, fmt.Errorf("write quant input: %w", err)
 	}
@@ -481,7 +489,6 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 			Str("symbol", state.symbol).
 			Str("mode", mode).
 			Msg("quant engine subprocess failed")
-		os.Remove(chartPath) // cleanup chart on failure
 		os.Remove(outputPath)
 		return nil, fmt.Errorf("quant engine failed: %w", err)
 	}
@@ -502,9 +509,9 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	if fi, err := os.Stat(chartPath); err == nil {
 		if fi.Size() > 0 {
 			result.ChartPath = chartPath
+			cleanupChart = false // caller owns cleanup via result.ChartPath
 		} else {
 			log.Warn().Str("chart_path", chartPath).Msg("chart renderer produced 0-byte file, skipping")
-			os.Remove(chartPath)
 		}
 	}
 
