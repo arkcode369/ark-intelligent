@@ -209,6 +209,8 @@ func NewHandler(
 	bot.RegisterCommand("/rank", h.cmdRank)
 	bot.RegisterCommand("/macro", h.cmdMacro)
 	bot.RegisterCommand("/ecb", h.cmdECB)           // ECB monetary policy dashboard (SDW)
+	bot.RegisterCommand("/eurostat", h.cmdEurostat)  // EU economy dashboard (Eurostat)
+	bot.RegisterCommand("/eu", h.cmdEurostat)        // EU economy alias
 	bot.RegisterCommand("/snb", h.cmdSNB)           // SNB balance sheet / FX intervention proxy
 	bot.RegisterCommand("/bias", h.cmdBias)
 	bot.RegisterCommand("/backtest", h.cmdBacktest)
@@ -221,6 +223,7 @@ func NewHandler(
 	bot.RegisterCommand("/levels", h.cmdLevels)           // Support/resistance levels + position sizing
 	bot.RegisterCommand("/intermarket", h.cmdIntermarket) // Intermarket correlation signals
 	bot.RegisterCommand("/treasury", h.cmdTreasury)     // US Treasury auction results
+	bot.RegisterCommand("/onchain", h.cmdOnChain)    // On-chain exchange flow metrics (CoinMetrics)
 
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
