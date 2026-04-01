@@ -462,8 +462,13 @@ func (h *Handler) runVPEngine(input map[string]any) (*vpEngineResult, error) {
 		return &result, fmt.Errorf("%s", result.Error)
 	}
 
-	if _, statErr := os.Stat(chartPath); statErr == nil {
-		result.ChartPath = chartPath
+	if fi, statErr := os.Stat(chartPath); statErr == nil {
+		if fi.Size() > 0 {
+			result.ChartPath = chartPath
+		} else {
+			log.Warn().Str("chart_path", chartPath).Msg("chart renderer produced 0-byte file, skipping")
+			os.Remove(chartPath)
+		}
 	}
 
 	return &result, nil

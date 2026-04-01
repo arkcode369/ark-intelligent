@@ -489,8 +489,13 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	}
 
 	// Check if chart was actually generated
-	if _, err := os.Stat(chartPath); err == nil {
-		result.ChartPath = chartPath
+	if fi, err := os.Stat(chartPath); err == nil {
+		if fi.Size() > 0 {
+			result.ChartPath = chartPath
+		} else {
+			log.Warn().Str("chart_path", chartPath).Msg("chart renderer produced 0-byte file, skipping")
+			os.Remove(chartPath)
+		}
 	}
 
 	return &result, nil
