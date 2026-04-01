@@ -114,7 +114,7 @@ func (h *Handler) registerCTACommands() {
 // /cta — Main CTA Command
 // ---------------------------------------------------------------------------
 
-func (h *Handler) cmdCTA(ctx context.Context, chatID string, _ int64, args string) error {
+func (h *Handler) cmdCTA(ctx context.Context, chatID string, userID int64, args string) error {
 	if h.cta == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "⚙️ CTA Engine not configured.")
 		return err
@@ -122,6 +122,10 @@ func (h *Handler) cmdCTA(ctx context.Context, chatID string, _ int64, args strin
 
 	parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
 	if len(parts) == 0 {
+		// Fallback to last currency if available
+		if lc := h.getLastCurrency(ctx, userID); lc != "" {
+			return h.cmdCTA(ctx, chatID, userID, lc)
+		}
 		_, err := h.bot.SendWithKeyboard(ctx, chatID,
 			`📈 <b>CTA — Classical Technical Analysis</b>
 
@@ -150,6 +154,9 @@ Pilih aset:`, h.kb.CTASymbolMenu())
 		))
 		return err
 	}
+
+	// Save last currency for context carry-over
+	h.saveLastCurrency(ctx, userID, mapping.Currency)
 
 	// Send loading indicator
 	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf("⚡ Computing TA for <b>%s</b>... ⏳", html.EscapeString(mapping.Currency)))
