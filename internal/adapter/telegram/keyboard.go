@@ -38,6 +38,11 @@ func NewKeyboardBuilder() *KeyboardBuilder {
 const (
 	// Navigation
 	btnBack       = "◀ Kembali"
+	btnRingkasan  = "◀ Ringkasan"
+	btnDashboard  = "◀ Dashboard"
+	btnKategori   = "◀ Kategori"
+	btnGrid       = "◀ Grid"
+	btnMenuHelp   = "◀ Menu Help"
 	btnHome       = "🏠 Menu Utama"
 	btnPrevDay    = "◀ Kemarin"
 	btnNextDay    = "Besok ▶"
@@ -238,7 +243,7 @@ func (kb *KeyboardBuilder) MacroDrillDownMenu() ports.InlineKeyboard {
 			},
 			{
 				{Text: "🧮 Composites", CallbackData: "macro:composites"},
-				{Text: "<< Ringkasan", CallbackData: "macro:summary"},
+				{Text: btnRingkasan, CallbackData: "macro:summary"},
 			},
 		},
 	}
@@ -712,7 +717,7 @@ func (kb *KeyboardBuilder) SeasonalDetailMenu(currency string) ports.InlineKeybo
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: "<< Grid Overview", CallbackData: "cmd:seasonal"},
+				{Text: btnGrid, CallbackData: "cmd:seasonal"},
 				{Text: "💹 Price", CallbackData: fmt.Sprintf("cmd:price:%s", currency)},
 			},
 		},
@@ -1147,7 +1152,7 @@ func (kb *KeyboardBuilder) HelpSubMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: "◀ Kembali ke Menu Help", CallbackData: "help:back"},
+				{Text: btnMenuHelp, CallbackData: "help:back"},
 			},
 		},
 	}
