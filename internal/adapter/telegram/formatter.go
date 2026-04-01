@@ -968,11 +968,7 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 	}
 
 	// Output format mode
-	outputDisplay := "Compact 📊"
-	if prefs.OutputMode == domain.OutputFull {
-		outputDisplay = "Full Detail 📖"
-	}
-	b.WriteString(fmt.Sprintf("<code>[UI] Format Output: %s</code>\n", outputDisplay))
+	b.WriteString(fmt.Sprintf("<code>[UI] Format Output: %s</code>\n", domain.OutputModeLabel(prefs.OutputMode)))
 
 	// Alert minutes display
 	if len(prefs.AlertMinutes) > 0 {
