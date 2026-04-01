@@ -29,9 +29,9 @@ func formatCTASummary(state *ctaState) string {
 	dirEmoji := "🔵"
 	dirLabel := conf.Direction
 	if conf.Direction == "BULLISH" {
-		dirEmoji = "🟢"
+		dirEmoji = "🟢 Long"
 	} else if conf.Direction == "BEARISH" {
-		dirEmoji = "🔴"
+		dirEmoji = "🔴 Short"
 	}
 
 	sb.WriteString(fmt.Sprintf("🎯 <b>KEPUTUSAN: %s %s</b> (Skor: %+.0f/100, Grade: %s)\n",
@@ -229,11 +229,11 @@ func formatCTASummary(state *ctaState) string {
 		sb.WriteString("📊 <b>Multi-Timeframe:</b>\n")
 		var mtfParts []string
 		for _, row := range state.mtf.Matrix {
-			dirE := "⚪"
+			dirE := "⚪ Neutral"
 			if row.Direction == "BULLISH" {
-				dirE = "🟢"
+				dirE = "🟢 Long"
 			} else if row.Direction == "BEARISH" {
-				dirE = "🔴"
+				dirE = "🔴 Short"
 			}
 			mtfParts = append(mtfParts, fmt.Sprintf("%s%s %s", dirE, row.Timeframe, row.Grade))
 		}
@@ -340,16 +340,16 @@ func formatCTAIchimoku(state *ctaState) string {
 		}
 		ich := entry.result.Snapshot.Ichimoku
 
-		overallEmoji := "⚪"
+		overallEmoji := "⚪ Neutral"
 		switch ich.Overall {
 		case "STRONG_BULLISH":
 			overallEmoji = "🟢🟢"
 		case "BULLISH":
-			overallEmoji = "🟢"
+			overallEmoji = "🟢 Bullish"
 		case "STRONG_BEARISH":
 			overallEmoji = "🔴🔴"
 		case "BEARISH":
-			overallEmoji = "🔴"
+			overallEmoji = "🔴 Bearish"
 		}
 
 		sb.WriteString(fmt.Sprintf("<b>%s: %s %s</b>\n", entry.tf, overallEmoji, ich.Overall))
@@ -457,11 +457,11 @@ func formatCTAPatterns(state *ctaState) string {
 		found = true
 		sb.WriteString(fmt.Sprintf("<b>%s:</b>\n", entry.tf))
 		for _, p := range entry.result.Patterns {
-			dirEmoji := "⚪"
+			dirEmoji := "⚪ Neutral"
 			if p.Direction == "BULLISH" {
-				dirEmoji = "🟢"
+				dirEmoji = "🟢 Long"
 			} else if p.Direction == "BEARISH" {
-				dirEmoji = "🔴"
+				dirEmoji = "🔴 Short"
 			}
 			stars := strings.Repeat("★", p.Reliability) + strings.Repeat("☆", 3-p.Reliability)
 			sb.WriteString(fmt.Sprintf("  %s <b>%s</b> %s\n", dirEmoji, p.Name, stars))
@@ -490,11 +490,11 @@ func formatCTAConfluence(state *ctaState) string {
 	}
 
 	conf := state.daily.Confluence
-	dirEmoji := "⚪"
+	dirEmoji := "⚪ Neutral"
 	if conf.Direction == "BULLISH" {
-		dirEmoji = "🟢"
+		dirEmoji = "🟢 Long"
 	} else if conf.Direction == "BEARISH" {
-		dirEmoji = "🔴"
+		dirEmoji = "🔴 Short"
 	}
 
 	sb.WriteString(fmt.Sprintf("%s Skor: <b>%+.1f</b> | Grade: <b>%s</b> | Arah: <b>%s</b>\n",
@@ -504,11 +504,11 @@ func formatCTAConfluence(state *ctaState) string {
 
 	sb.WriteString("<b>Sinyal per-indikator:</b>\n")
 	for _, sig := range conf.Signals {
-		signalEmoji := "⚪"
+		signalEmoji := "⚪ Neutral"
 		if sig.Value > 0.05 {
-			signalEmoji = "🟢"
+			signalEmoji = "🟢 Bullish"
 		} else if sig.Value < -0.05 {
-			signalEmoji = "🔴"
+			signalEmoji = "🔴 Bearish"
 		}
 		sb.WriteString(fmt.Sprintf("  %s <b>%s</b>: %+.2f (bobot: %.0f%%)\n",
 			signalEmoji, sig.Indicator, sig.Value, sig.Weight*100))
@@ -548,20 +548,20 @@ func formatCTAMTF(state *ctaState) string {
 	}
 
 	// Alignment with explanation
-	alignEmoji := "⚪"
+	alignEmoji := "⚪ Mixed"
 	alignNote := ""
 	switch state.mtf.Alignment {
 	case "STRONG_BULLISH":
 		alignEmoji = "🟢🟢"
 		alignNote = "Semua timeframe bullish — kepercayaan sangat tinggi"
 	case "BULLISH":
-		alignEmoji = "🟢"
+		alignEmoji = "🟢 Aligned"
 		alignNote = "Mayoritas timeframe bullish"
 	case "STRONG_BEARISH":
 		alignEmoji = "🔴🔴"
 		alignNote = "Semua timeframe bearish — kepercayaan sangat tinggi"
 	case "BEARISH":
-		alignEmoji = "🔴"
+		alignEmoji = "🔴 Divergent"
 		alignNote = "Mayoritas timeframe bearish"
 	default:
 		alignEmoji = "🟡"
@@ -574,11 +574,11 @@ func formatCTAMTF(state *ctaState) string {
 
 	// Matrix as clean list (better for mobile than <code> table)
 	for _, row := range state.mtf.Matrix {
-		dirEmoji := "⚪"
+		dirEmoji := "⚪ Neutral"
 		if row.Direction == "BULLISH" {
-			dirEmoji = "🟢"
+			dirEmoji = "🟢 Long"
 		} else if row.Direction == "BEARISH" {
-			dirEmoji = "🔴"
+			dirEmoji = "🔴 Short"
 		}
 		weightStr := ""
 		if row.Weight > 0 {
@@ -615,10 +615,10 @@ func formatCTAZones(state *ctaState) string {
 			continue
 		}
 
-		dirEmoji := "🟢"
+		dirEmoji := "🟢 Long"
 		dirNote := "BUY (masuk posisi beli)"
 		if z.Direction == "SHORT" {
-			dirEmoji = "🔴"
+			dirEmoji = "🔴 Short"
 			dirNote = "SELL (masuk posisi jual)"
 		}
 
@@ -674,12 +674,12 @@ func formatCTAVWAPDelta(state *ctaState) string {
 			if r == nil {
 				return
 			}
-			posEmoji := "⚪"
+			posEmoji := "⚪ Neutral"
 			switch r.Position {
 			case "ABOVE":
-				posEmoji = "🟢"
+				posEmoji = "🟢 Long"
 			case "BELOW":
-				posEmoji = "🔴"
+				posEmoji = "🔴 Short"
 			}
 			sb.WriteString(fmt.Sprintf("  %s <b>%s:</b> %.5f (%s, %.1fσ)\n",
 				posEmoji, label, r.VWAP, r.Position, r.Deviation))
@@ -707,12 +707,12 @@ func formatCTAVWAPDelta(state *ctaState) string {
 	} else {
 		d := snap.Delta
 
-		biasEmoji := "⚪"
+		biasEmoji := "⚪ Neutral"
 		switch d.Bias {
 		case "BUYING_PRESSURE":
-			biasEmoji = "🟢"
+			biasEmoji = "🟢 Bullish"
 		case "SELLING_PRESSURE":
-			biasEmoji = "🔴"
+			biasEmoji = "🔴 Bearish"
 		}
 
 		sb.WriteString("📈 <b>Estimated Delta (Tick Rule)</b>\n")
@@ -751,9 +751,9 @@ func formatCTATimeframeDetail(state *ctaState, tf string, result *ta.FullResult)
 	conf := result.Confluence
 	dirEmoji := "🔵"
 	if conf.Direction == "BULLISH" {
-		dirEmoji = "🟢"
+		dirEmoji = "🟢 Long"
 	} else if conf.Direction == "BEARISH" {
-		dirEmoji = "🔴"
+		dirEmoji = "🔴 Short"
 	}
 
 	sb.WriteString(fmt.Sprintf("%s <b>%s</b> Skor: %+.0f Grade: %s\n",
@@ -837,9 +837,9 @@ func formatCTATimeframeDetail(state *ctaState, tf string, result *ta.FullResult)
 			smc := snap.SMC
 			structEmoji := "🔵"
 			if string(smc.Structure) == "BULLISH" {
-				structEmoji = "🟢"
+				structEmoji = "🟢 Bullish"
 			} else if string(smc.Structure) == "BEARISH" {
-				structEmoji = "🔴"
+				structEmoji = "🔴 Bearish"
 			}
 			sb.WriteString(fmt.Sprintf("\n🏗 <b>SMC Structure:</b> %s %s (zone: %s)\n",
 				structEmoji, smc.Structure, smc.CurrentZone))
@@ -867,11 +867,11 @@ func formatCTATimeframeDetail(state *ctaState, tf string, result *ta.FullResult)
 	if len(result.Patterns) > 0 {
 		sb.WriteString("\n🕯 <b>Pola:</b>\n")
 		for _, p := range result.Patterns {
-			dirE := "⚪"
+			dirE := "⚪ Neutral"
 			if p.Direction == "BULLISH" {
-				dirE = "🟢"
+				dirE = "🟢 Long"
 			} else if p.Direction == "BEARISH" {
-				dirE = "🔴"
+				dirE = "🔴 Short"
 			}
 			stars := strings.Repeat("★", p.Reliability) + strings.Repeat("☆", 3-p.Reliability)
 			sb.WriteString(fmt.Sprintf("  %s %s %s\n", dirE, p.Name, stars))

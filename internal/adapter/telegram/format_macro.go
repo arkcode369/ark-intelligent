@@ -132,9 +132,9 @@ func (f *Formatter) FormatRegimeAssetInsight(insight fred.RegimeInsight) string 
 	if len(insight.BestAssets) > 0 {
 		b.WriteString("<code>Best performers:</code>\n")
 		for _, a := range insight.BestAssets {
-			arrow := "🟢"
+			arrow := "🟢 Up"
 			if a.AnnualizedReturn < 0 {
-				arrow = "🔴"
+				arrow = "🔴 Down"
 			}
 			b.WriteString(fmt.Sprintf("<code>  %s %s  %+.1f%% ann. (%dw)</code>\n",
 				arrow, a.Currency, a.AnnualizedReturn, a.Occurrences))
@@ -144,9 +144,9 @@ func (f *Formatter) FormatRegimeAssetInsight(insight fred.RegimeInsight) string 
 	if len(insight.WorstAssets) > 0 {
 		b.WriteString("<code>Worst performers:</code>\n")
 		for _, a := range insight.WorstAssets {
-			arrow := "🟢"
+			arrow := "🟢 Up"
 			if a.AnnualizedReturn < 0 {
-				arrow = "🔴"
+				arrow = "🔴 Down"
 			}
 			b.WriteString(fmt.Sprintf("<code>  %s %s  %+.1f%% ann. (%dw)</code>\n",
 				arrow, a.Currency, a.AnnualizedReturn, a.Occurrences))
@@ -246,7 +246,7 @@ func (f *Formatter) FormatMacroComposites(composites *domain.MacroComposites, da
 	}
 	inflEmoji := "✅"
 	if composites.InflationMomentum > 0.5 {
-		inflEmoji = "🔴"
+		inflEmoji = "🔴 Hot"
 	} else if composites.InflationMomentum > 0.2 {
 		inflEmoji = "⚠️"
 	}
@@ -256,13 +256,13 @@ func (f *Formatter) FormatMacroComposites(composites *domain.MacroComposites, da
 	curveEmoji := "✅"
 	switch composites.YieldCurveSignal {
 	case "DEEP_INVERSION":
-		curveEmoji = "🔴"
+		curveEmoji = "🔴 Warning"
 	case "INVERTED":
-		curveEmoji = "🔴"
+		curveEmoji = "🔴 Warning"
 	case "FLAT":
 		curveEmoji = "⚠️"
 	case "STEEP":
-		curveEmoji = "🟢"
+		curveEmoji = "🟢 Normal"
 	}
 	b.WriteString(fmt.Sprintf("📈 <b>Yield Curve:</b> %s %s\n", composites.YieldCurveSignal, curveEmoji))
 
@@ -274,11 +274,11 @@ func (f *Formatter) FormatMacroComposites(composites *domain.MacroComposites, da
 	housingEmoji := "→"
 	switch composites.HousingPulse {
 	case "EXPANDING":
-		housingEmoji = "🟢"
+		housingEmoji = "🟢 Strong"
 	case "CONTRACTING":
 		housingEmoji = "⚠️"
 	case "COLLAPSING":
-		housingEmoji = "🔴"
+		housingEmoji = "🔴 Weak"
 	case "N/A":
 		housingEmoji = "—"
 	}
@@ -289,17 +289,17 @@ func (f *Formatter) FormatMacroComposites(composites *domain.MacroComposites, da
 	finEmoji := "→"
 	if composites.FinConditions > 0.3 {
 		finLabel = "LOOSE"
-		finEmoji = "🟢"
+		finEmoji = "🟢 Stable"
 	} else if composites.FinConditions < -0.3 {
 		finLabel = "TIGHT"
-		finEmoji = "🔴"
+		finEmoji = "🔴 Stress"
 	}
 	b.WriteString(fmt.Sprintf("🏦 <b>Fin. Conditions:</b> %+.2f %s %s\n", composites.FinConditions, finLabel, finEmoji))
 
 	// VIX Term Structure
 	vixEmoji := "✅"
 	if composites.VIXTermRegime == "BACKWARDATION" {
-		vixEmoji = "🔴"
+		vixEmoji = "🔴 Elevated"
 	} else if composites.VIXTermRegime == "FLAT" {
 		vixEmoji = "⚠️"
 	}
@@ -312,9 +312,9 @@ func (f *Formatter) FormatMacroComposites(composites *domain.MacroComposites, da
 	// Sentiment
 	sentEmoji := "🟡"
 	if composites.SentimentComposite > 30 {
-		sentEmoji = "🟢" // fear = contrarian bullish
+		sentEmoji = "🟢 Bullish" // fear = contrarian bullish
 	} else if composites.SentimentComposite < -30 {
-		sentEmoji = "🔴" // greed = contrarian bearish
+		sentEmoji = "🔴 Bearish" // greed = contrarian bearish
 	}
 	b.WriteString(fmt.Sprintf("🧭 <b>Sentiment:</b> %+.0f %s %s\n", composites.SentimentComposite, composites.SentimentLabel, sentEmoji))
 
@@ -343,9 +343,9 @@ func (f *Formatter) FormatMacroComposites(composites *domain.MacroComposites, da
 	for i, c := range countries {
 		icon := "🟡"
 		if c.score > 20 {
-			icon = "🟢"
+			icon = "🟢 Bullish"
 		} else if c.score < -20 {
-			icon = "🔴"
+			icon = "🔴 Bearish"
 		}
 		rank := i + 1
 		b.WriteString(fmt.Sprintf(" %d. %s %s %+.0f\n", rank, icon, c.code, c.score))
@@ -389,9 +389,9 @@ func (f *Formatter) FormatMacroGlobal(composites *domain.MacroComposites, data *
 	for _, r := range rows {
 		icon := "🟡"
 		if r.score > 20 {
-			icon = "🟢"
+			icon = "🟢 Bullish"
 		} else if r.score < -20 {
-			icon = "🔴"
+			icon = "🔴 Bearish"
 		}
 
 		cpiStr := "  — "
@@ -450,10 +450,10 @@ func (f *Formatter) FormatMacroLabor(composites *domain.MacroComposites, data *f
 	b.WriteString(fmt.Sprintf("<i>Updated %s</i>\n\n", fmtutil.FormatDateTimeWIB(data.FetchedAt)))
 
 	// Health Index
-	healthEmoji := "🟢"
+	healthEmoji := "🟢 Healthy"
 	switch {
 	case composites != nil && composites.LaborHealth < 20:
-		healthEmoji = "🔴"
+		healthEmoji = "🔴 Weak"
 	case composites != nil && composites.LaborHealth < 40:
 		healthEmoji = "🟠"
 	case composites != nil && composites.LaborHealth < 60:
@@ -550,10 +550,10 @@ func (f *Formatter) FormatMacroInflation(composites *domain.MacroComposites, dat
 	b.WriteString(fmt.Sprintf("<i>Updated %s</i>\n\n", fmtutil.FormatDateTimeWIB(data.FetchedAt)))
 
 	// Momentum
-	momEmoji := "🟢"
+	momEmoji := "🟢 Positive"
 	switch {
 	case composites != nil && composites.InflationMomentum > 0.5:
-		momEmoji = "🔴"
+		momEmoji = "🔴 Negative"
 	case composites != nil && composites.InflationMomentum > 0.2:
 		momEmoji = "🟠"
 	case composites != nil && composites.InflationMomentum < -0.2:
@@ -927,12 +927,12 @@ func (f *Formatter) FormatMacroExplain(regime fred.MacroRegime, data *fred.Macro
 
 // FormatRegimeLabel formats a COT-based regime result for display.
 func (f *Formatter) FormatRegimeLabel(regime string, confidence float64, factors []string) string {
-	icon := "⚪"
+	icon := "⚪ Neutral"
 	switch regime {
 	case "RISK-ON":
-		icon = "🟢"
+		icon = "🟢 Bullish"
 	case "RISK-OFF":
-		icon = "🔴"
+		icon = "🔴 Bearish"
 	case "UNCERTAINTY":
 		icon = "🟡"
 	}
@@ -973,11 +973,11 @@ func (f *Formatter) FormatRegimePerformance(matrix *fred.RegimePerformanceMatrix
 
 		icon := "\xF0\x9F\x93\x88"
 		if regime == "STRESS" || regime == "RECESSION" {
-			icon = "\xF0\x9F\x94\xB4"
+			icon = "\xF0\x9F\x94\xB4 Bearish"
 		} else if regime == "STAGFLATION" {
 			icon = "\xF0\x9F\x9F\xA0"
 		} else if regime == "GOLDILOCKS" {
-			icon = "\xF0\x9F\x9F\xA2"
+			icon = "\xF0\x9F\x9F\xA2 Bullish"
 		}
 
 		currentTag := ""
@@ -1172,11 +1172,11 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 			signalEmoji := "🟡"
 			switch data.PutCallSignal {
 			case "EXTREME FEAR":
-				signalEmoji = "🟢"
+				signalEmoji = "🟢 Bullish"
 			case "FEAR":
-				signalEmoji = "🟢"
+				signalEmoji = "🟢 Bullish"
 			case "EXTREME COMPLACENCY":
-				signalEmoji = "🔴"
+				signalEmoji = "🔴 Bearish"
 			case "COMPLACENCY":
 				signalEmoji = "🟠"
 			}
@@ -1203,15 +1203,15 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 			var signalEmoji string
 			switch mp.Signal {
 			case "CONTRARIAN_BULLISH":
-				signalEmoji = "🟢"
+				signalEmoji = "🟢 Bullish"
 			case "LEAN_BULLISH":
-				signalEmoji = "🟢"
+				signalEmoji = "🟢 Bullish"
 			case "CONTRARIAN_BEARISH":
-				signalEmoji = "🔴"
+				signalEmoji = "🔴 Bearish"
 			case "LEAN_BEARISH":
-				signalEmoji = "🔴"
+				signalEmoji = "🔴 Bearish"
 			default:
-				signalEmoji = "⚪"
+				signalEmoji = "⚪ Neutral"
 			}
 			signalLabel := mp.Signal
 			if signalLabel == "CONTRARIAN_BULLISH" {
@@ -1251,7 +1251,7 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 			structEmoji = "✅"
 		} else {
 			structLabel = "BACKWARDATION"
-			structEmoji = "🔴"
+			structEmoji = "🔴 Inverted"
 		}
 		if data.VIXSlopePct != 0 {
 			b.WriteString(fmt.Sprintf("<code>Shape : %s (%+.1f%%) %s</code>\n", structLabel, data.VIXSlopePct, structEmoji))
@@ -1268,7 +1268,7 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 			case "ELEVATED":
 				regimeEmoji = "⚠️"
 			case "RISK_ON_NORMAL":
-				regimeEmoji = "🟢"
+				regimeEmoji = "🟢 Risk-On"
 			case "RISK_ON_COMPLACENT":
 				regimeEmoji = "😏"
 			default:
@@ -1366,7 +1366,7 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 			var skewEmoji string
 			switch {
 			case data.VolSKEW > 140:
-				skewEmoji = "🔴"
+				skewEmoji = "🔴 Elevated"
 			case data.VolSKEW > 130:
 				skewEmoji = "⚠️"
 			default:
