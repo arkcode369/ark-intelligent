@@ -1570,3 +1570,23 @@ func AppendFeedbackRow(kb ports.InlineKeyboard, kbb *KeyboardBuilder, callbackBa
 	kb.Rows = append(kb.Rows, kbb.FeedbackRow(callbackBase))
 	return kb
 }
+
+// ---------------------------------------------------------------------------
+// Error Retry Keyboard
+// ---------------------------------------------------------------------------
+
+// ErrorRetryKeyboard returns a keyboard with a retry button that re-executes
+// the given command (with args) and a home button. Reuses the existing
+// "cmd:" callback prefix so cbQuickCommand handles the re-execution.
+// Example: ErrorRetryKeyboard("wyckoff", "EUR 4h") -> callback "cmd:wyckoff:EUR 4h"
+func (kb *KeyboardBuilder) ErrorRetryKeyboard(command, args string) ports.InlineKeyboard {
+	cb := "cmd:" + command
+	if args != "" {
+		cb += ":" + args
+	}
+	retryRow := []ports.InlineButton{
+		{Text: "🔄 Coba Lagi", CallbackData: cb},
+		{Text: btnHome, CallbackData: "nav:home"},
+	}
+	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{retryRow}}
+}
