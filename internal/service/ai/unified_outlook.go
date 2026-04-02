@@ -40,6 +40,7 @@ type UnifiedOutlookData struct {
 	IMFData            *imf.IMFWEOData
 	FedWatchData       *fed.FedWatchData
 	EurostatData       *macro.EurostatData
+	FedSpeeches        *fred.FedSpeechData  // Recent Fed speeches (scraper via Firecrawl)
 	Language           string
 }
 
@@ -285,7 +286,44 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 	}
 
 	// -----------------------------------------------------------------------
+	// Section X: Fed Speeches & Communication
+	// -----------------------------------------------------------------------
+	if data.FedSpeeches != nil && data.FedSpeeches.Available && len(data.FedSpeeches.Speeches) > 0 {
+		b.WriteString(fmt.Sprintf("=== %d. FED COMMUNICATION (Last %d Speeches) ===\n", section, len(data.FedSpeeches.Speeches)))
+		section++
+		hawkCount, dovishCount := 0, 0
+		for _, s := range data.FedSpeeches.Speeches {
+			dateStr := ""
+			if !s.Date.IsZero() {
+				dateStr = s.Date.Format("2006-01-02") + " "
+			}
+			speakerStr := ""
+			if s.Speaker != "" {
+				speakerStr = s.Speaker + ": "
+			}
+			b.WriteString(fmt.Sprintf("[%s%s%s] — Tone: %s", dateStr, speakerStr, s.Title, s.Tone))
+			if len(s.Topics) > 0 {
+				b.WriteString(fmt.Sprintf(" (Topics: %s)", strings.Join(s.Topics, ", ")))
+			}
+			b.WriteString("\n")
+			switch s.Tone {
+			case "HAWKISH":
+				hawkCount++
+			case "DOVISH":
+				dovishCount++
+			}
+		}
+		overallStance := "NEUTRAL"
+		if hawkCount > dovishCount {
+			overallStance = fmt.Sprintf("HAWKISH (%.0f%% hawkish signals)", float64(hawkCount)/float64(len(data.FedSpeeches.Speeches))*100)
+		} else if dovishCount > hawkCount {
+			overallStance = fmt.Sprintf("DOVISH (%.0f%% dovish signals)", float64(dovishCount)/float64(len(data.FedSpeeches.Speeches))*100)
+		}
+		b.WriteString(fmt.Sprintf("→ Overall Fed stance: %s\n", overallStance))
+		b.WriteString("\n")
+	}
 
+	// -----------------------------------------------------------------------
 	// Section X: Macro Composite Scores
 	// -----------------------------------------------------------------------
 	if data.MacroComposites != nil {
