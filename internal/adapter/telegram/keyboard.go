@@ -1709,11 +1709,13 @@ func (kb *KeyboardBuilder) BriefingMenu() ports.InlineKeyboard {
 // Feedback Buttons — 👍/👎 Reactions on Analysis Messages (TASK-051)
 // ---------------------------------------------------------------------------
 
-// FeedbackRow returns a row with thumbs-up/down buttons for user feedback.
+// FeedbackRow returns a row with thumbs-up/down and alert buttons for user feedback.
+// callbackBase format: "fb:<type>:<key>" e.g. "fb:cot:EUR", "fb:outlook:latest"
 func (kb *KeyboardBuilder) FeedbackRow(callbackBase string) []ports.InlineButton {
 	return []ports.InlineButton{
 		{Text: "👍 Helpful", CallbackData: callbackBase + ":up"},
 		{Text: "👎 Not Helpful", CallbackData: callbackBase + ":down"},
+		{Text: "🔔 Alert on change", CallbackData: callbackBase + ":alert"},
 	}
 }
 
