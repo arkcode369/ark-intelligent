@@ -227,6 +227,7 @@ func NewHandler(
 	bot.RegisterCommand("/report", h.cmdReport)
 	bot.RegisterCommand("/impact", h.cmdImpact)
 	bot.RegisterCommand("/sentiment", h.cmdSentiment)
+	bot.RegisterCommand("/vix", h.cmdVix)                // CBOE volatility index dashboard (VIX + vol suite)
 	bot.RegisterCommand("/seasonal", h.cmdSeasonal)
 	bot.RegisterCommand("/price", h.cmdPrice)             // Daily price context
 	bot.RegisterCommand("/levels", h.cmdLevels)           // Support/resistance levels + position sizing
