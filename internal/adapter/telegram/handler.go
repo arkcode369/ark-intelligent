@@ -14,6 +14,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	regimesvc "github.com/arkcode369/ark-intelligent/internal/service/regime"
 )
 
 // ---------------------------------------------------------------------------
@@ -111,6 +112,10 @@ type Handler struct {
 
 	// quantCache stores per-chat Quant state with TTL.
 	quantCache *quantStateCache
+
+	// regimeEngine computes the unified market regime overlay.
+	// May be nil — overlay headers silently omitted if not configured.
+	regimeEngine *regimesvc.OverlayEngine
 
 	// vp holds optional Volume Profile engine services.
 	// May be nil — /vp command disabled if not configured.
@@ -448,4 +453,15 @@ func (h *Handler) cmdOutlookFRED(ctx context.Context, chatID string, userID int6
 		args = "fred"
 	}
 	return h.cmdOutlook(ctx, chatID, userID, args)
+}
+
+// ---------------------------------------------------------------------------
+// Regime Overlay Engine — optional injection
+// ---------------------------------------------------------------------------
+
+// WithRegimeEngine injects the regime overlay engine into the handler.
+// If nil is passed, regime overlay headers are silently skipped.
+func (h *Handler) WithRegimeEngine(e *regimesvc.OverlayEngine) *Handler {
+	h.regimeEngine = e
+	return h
 }
