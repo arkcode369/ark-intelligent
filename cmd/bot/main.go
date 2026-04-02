@@ -30,6 +30,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	factorsvc "github.com/arkcode369/ark-intelligent/internal/service/factors"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
+	"github.com/arkcode369/ark-intelligent/internal/service/marketdata/finviz"
 	microsvc "github.com/arkcode369/ark-intelligent/internal/service/microstructure"
 	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
@@ -102,6 +103,7 @@ func main() {
 	impactRepo := storage.NewImpactRepo(db)
 	dailyPriceRepo := storage.NewDailyPriceRepo(db)
 	intradayRepo := storage.NewIntradayRepo(db)
+	feedbackRepo := storage.NewFeedbackRepo(db)
 	fredRepo := storage.NewFREDRepo(db)
 	fredPersistence := fred.NewPersistenceService(&fredPersistAdapter{repo: fredRepo})
 	fred.SetPostFetchHook(func(ctx context.Context, data *fred.MacroData) {
@@ -113,6 +115,7 @@ func main() {
 	// Sentiment cache: inject BadgerDB for persistence across restarts.
 	// Saves Firecrawl API quota by avoiding re-fetches on every restart.
 	sentiment.InitSentimentCache(db.Badger())
+	finviz.InitCache(db.Badger())
 	log.Info().Msg("Sentiment cache persistence initialized (BadgerDB-backed)")
 
 	log.Info().Msg("Storage layer initialized")
@@ -377,6 +380,9 @@ func main() {
 		dailyPriceRepo,  // Daily price data for /price command (nil-safe)
 		intradayRepo,    // 4H intraday data for /intraday command (nil-safe)
 	)
+
+	// Wire feedback repo for 👍/👎 reaction buttons on analysis messages (TASK-051)
+	handler.WithFeedback(feedbackRepo)
 
 	// Wire alpha services (Factor + Strategy + Microstructure engines)
 	if alphaServices != nil {
