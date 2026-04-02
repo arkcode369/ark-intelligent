@@ -1569,3 +1569,42 @@ func (kb *KeyboardBuilder) BriefingMenu() ports.InlineKeyboard {
 		},
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Feedback Buttons — 👍/👎 Reactions on Analysis Messages (TASK-051)
+// ---------------------------------------------------------------------------
+
+// FeedbackRow returns a row with thumbs-up/down buttons for user feedback.
+func (kb *KeyboardBuilder) FeedbackRow(callbackBase string) []ports.InlineButton {
+	return []ports.InlineButton{
+		{Text: "👍 Helpful", CallbackData: callbackBase + ":up"},
+		{Text: "👎 Not Helpful", CallbackData: callbackBase + ":down"},
+	}
+}
+
+// AppendFeedbackRow appends a feedback row to an existing InlineKeyboard.
+func AppendFeedbackRow(kb ports.InlineKeyboard, kbb *KeyboardBuilder, callbackBase string, feedbackEnabled bool) ports.InlineKeyboard {
+	if !feedbackEnabled || kbb == nil {
+		return kb
+	}
+	kb.Rows = append(kb.Rows, kbb.FeedbackRow(callbackBase))
+	return kb
+}
+
+// ---------------------------------------------------------------------------
+// Error Retry Keyboard
+// ---------------------------------------------------------------------------
+
+// ErrorRetryKeyboard returns a keyboard with a retry button.
+func (kb *KeyboardBuilder) ErrorRetryKeyboard(command, args string) ports.InlineKeyboard {
+	cb := "cmd:" + command
+	if args != "" {
+		cb += ":" + args
+	}
+	retryRow := []ports.InlineButton{
+		{Text: "🔄 Coba Lagi", CallbackData: cb},
+		{Text: btnHome, CallbackData: "nav:home"},
+	}
+	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{retryRow}}
+}
+

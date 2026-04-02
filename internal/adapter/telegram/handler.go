@@ -153,6 +153,10 @@ type Handler struct {
 	// orderFlow holds optional price repos for the /orderflow command.
 	// May be nil — /orderflow command disabled if not configured.
 	orderFlow *OrderFlowServices
+
+	// regimeProvider exposes regime state data for the /regime command.
+	// May be nil — regime feature disabled if scheduler not wired.
+	regimeProvider RegimeAlertProvider
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
@@ -213,6 +217,7 @@ func NewHandler(
 	bot.RegisterCommand("/rank", h.cmdRank)
 	bot.RegisterCommand("/macro", h.cmdMacro)
 	bot.RegisterCommand("/ecb", h.cmdECB)           // ECB monetary policy dashboard (SDW)
+	bot.RegisterCommand("/leading", h.cmdLeading)    // OECD Composite Leading Indicators
 	bot.RegisterCommand("/eurostat", h.cmdEurostat)  // EU economy dashboard (Eurostat)
 	bot.RegisterCommand("/eu", h.cmdEurostat)        // EU economy alias
 	bot.RegisterCommand("/snb", h.cmdSNB)           // SNB balance sheet / FX intervention proxy
@@ -229,7 +234,10 @@ func NewHandler(
 	bot.RegisterCommand("/treasury", h.cmdTreasury)     // US Treasury auction results
 	bot.RegisterCommand("/signal", h.cmdSignal)         // Unified directional signal (COT+CTA+Quant+Sentiment+Seasonal)
 	bot.RegisterCommand("/onchain", h.cmdOnChain)    // On-chain exchange flow metrics (CoinMetrics)
+	bot.RegisterCommand("/bis", h.cmdBIS)            // BIS Statistics: CB policy rates + credit gaps + REER
+	bot.RegisterCommand("/cbrates", h.cmdBIS)        // Central bank policy rates (alias for /bis)
 	bot.RegisterCommand("/orderflow", h.cmdOrderFlow)   // Estimated delta & order flow analysis
+	bot.RegisterCommand("/market", h.cmdMarket)      // Cross-asset market overview (Finviz via Firecrawl)
 
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
@@ -286,6 +294,9 @@ func NewHandler(
 	bot.RegisterCallback("share:", h.cbShare)
 	bot.RegisterCallback("adm_cf:", h.cbAdminConfirm)
 	bot.RegisterCallback("briefing:", h.cbBriefingRefresh)
+
+	// Onboarding completion tracking (TASK-204)
+	h.registerOnboardingProgress()
 
 	log.Info().Int("commands", 50).Int("callbacks", 11).Msg("registered commands and callback prefixes")
 	return h
