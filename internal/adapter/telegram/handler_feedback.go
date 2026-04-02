@@ -1,6 +1,6 @@
 package telegram
 
-// handler_feedback.go — 👍/👎 reaction feedback on analysis messages (TASK-051)
+// handler_feedback.go — 👍/👎/🔔 reaction feedback on analysis messages (TASK-051)
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 func (h *Handler) WithFeedback(repo *storage.FeedbackRepo) {
 	h.feedbackRepo = repo
 	h.bot.RegisterCallback("fb:", h.cbFeedback)
-	log.Info().Msg("Feedback buttons enabled (👍/👎)")
+	log.Info().Msg("Feedback buttons enabled (👍/👎/🔔)")
 }
 
 // feedbackEnabled returns true when the feedback repo is wired.
@@ -24,7 +24,7 @@ func (h *Handler) feedbackEnabled() bool {
 }
 
 // cbFeedback handles fb:<type>:<key>:<rating> callbacks.
-// Example: "fb:cot:099741:up", "fb:outlook:latest:down"
+// Example: "fb:cot:099741:up", "fb:outlook:latest:down", "fb:cot:EUR:alert"
 func (h *Handler) cbFeedback(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
 	// Strip "fb:" prefix
 	rest := strings.TrimPrefix(data, "fb:")
@@ -38,6 +38,11 @@ func (h *Handler) cbFeedback(ctx context.Context, chatID string, msgID int, user
 	analysisType := parts[0]
 	analysisKey := parts[1]
 	rating := parts[2]
+
+	// Handle alert request — feature coming soon
+	if rating == "alert" {
+		return callbackToast("🔔 Fitur alert on change segera hadir!")
+	}
 
 	if rating != "up" && rating != "down" {
 		return nil
@@ -72,7 +77,5 @@ func (h *Handler) cbFeedback(ctx context.Context, chatID string, msgID int, user
 		Int64("user_id", userID).
 		Msg("feedback saved")
 
-	// The bot dispatcher calls AnswerCallback(cb.ID, "") on nil return,
-	// which dismisses the loading spinner. Feedback is silently recorded.
-	return nil
+	return callbackToast("✅ Feedback diterima!")
 }

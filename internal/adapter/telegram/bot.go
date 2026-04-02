@@ -442,6 +442,12 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 			metrics.RecordCallback(cb.Data, userID, cbElapsed, cbErr)
 
 			if cbErr != nil {
+				// callbackToast is a success sentinel — show toast, no error logging.
+				if toastMsg, ok := isCallbackToast(cbErr); ok {
+					_ = b.AnswerCallback(ctx, cb.ID, toastMsg)
+					return
+				}
+
 				log.Error().
 					Err(cbErr).
 					Str("callback_data", cb.Data).

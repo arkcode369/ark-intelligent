@@ -225,3 +225,27 @@ func sessionExpiredMessage(command string) string {
 	return "⏳ <b>Sesi berakhir</b>\n\nData sudah expired. Ketik <code>/" + command + "</code> untuk memulai ulang."
 }
 
+
+// ---------------------------------------------------------------------------
+// Callback Toast — success message without error logging
+// ---------------------------------------------------------------------------
+
+// callbackToastErr is a sentinel error type that signals a success toast to
+// the bot dispatcher. It is NOT logged as an error — the dispatcher shows the
+// toast text via AnswerCallbackQuery and returns without any error handling.
+type callbackToastErr struct{ msg string }
+
+func (e *callbackToastErr) Error() string { return e.msg }
+
+// callbackToast wraps msg as a success-toast sentinel so the callback
+// dispatcher shows it via AnswerCallbackQuery without treating it as an error.
+func callbackToast(msg string) error { return &callbackToastErr{msg: msg} }
+
+// isCallbackToast returns true if err is a callbackToastErr sentinel.
+func isCallbackToast(err error) (string, bool) {
+	var t *callbackToastErr
+	if errors.As(err, &t) {
+		return t.msg, true
+	}
+	return "", false
+}
