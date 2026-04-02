@@ -1515,6 +1515,7 @@ var relatedCommands = map[string][]struct {
 	"seasonal":    {{Label: "📉 COT", Callback: "cot"}, {Label: "📊 Backtest", Callback: "backtest"}, {Label: "📈 Bias", Callback: "bias"}},
 	"backtest":    {{Label: "📊 Quant", Callback: "quant"}, {Label: "🎯 CTA", Callback: "cta"}, {Label: "📈 Seasonal", Callback: "seasonal"}},
 	"intermarket": {{Label: "🌐 Macro", Callback: "macro"}, {Label: "📈 Price", Callback: "price"}, {Label: "📊 Sentiment", Callback: "sentiment"}},
+	"briefing":    {{Label: "📅 Calendar", Callback: "calendar"}, {Label: "🎯 COT Bias", Callback: "bias"}, {Label: "🌐 Macro", Callback: "macro"}},
 }
 
 // RelatedCommandsRow returns a keyboard row with 2–3 related command buttons.
@@ -1545,15 +1546,35 @@ func (kb *KeyboardBuilder) RelatedCommandsKeyboard(command, currency string) por
 	if len(row) == 0 {
 		return ports.InlineKeyboard{}
 	}
-	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{row}}}
+	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{row}}
+}
+
+// ---------------------------------------------------------------------------
+// Briefing Keyboard
+// ---------------------------------------------------------------------------
+
+// BriefingMenu returns the inline keyboard for the /briefing command.
+// Provides quick refresh and deep-dive shortcuts.
+func (kb *KeyboardBuilder) BriefingMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "🔄 Refresh", CallbackData: "briefing:refresh"},
+				{Text: "📅 Calendar", CallbackData: "cmd:calendar"},
+			},
+			{
+				{Text: "📊 COT Detail", CallbackData: "cmd:cot"},
+				{Text: "🏠 Home", CallbackData: "cmd:help"},
+			},
+		},
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Feedback Buttons — 👍/👎 Reactions on Analysis Messages (TASK-051)
 // ---------------------------------------------------------------------------
 
 // FeedbackRow returns a row with thumbs-up/down buttons for user feedback.
-// callbackBase encodes the analysis type and key, e.g. "fb:cot:099741" or "fb:outlook:latest".
-// The full callback_data becomes "fb:<type>:<key>:up" or "fb:<type>:<key>:down".
 func (kb *KeyboardBuilder) FeedbackRow(callbackBase string) []ports.InlineButton {
 	return []ports.InlineButton{
 		{Text: "👍 Helpful", CallbackData: callbackBase + ":up"},
@@ -1562,7 +1583,6 @@ func (kb *KeyboardBuilder) FeedbackRow(callbackBase string) []ports.InlineButton
 }
 
 // AppendFeedbackRow appends a feedback row to an existing InlineKeyboard.
-// If feedbackEnabled is false, returns the keyboard unchanged (nil-safe).
 func AppendFeedbackRow(kb ports.InlineKeyboard, kbb *KeyboardBuilder, callbackBase string, feedbackEnabled bool) ports.InlineKeyboard {
 	if !feedbackEnabled || kbb == nil {
 		return kb
@@ -1575,10 +1595,7 @@ func AppendFeedbackRow(kb ports.InlineKeyboard, kbb *KeyboardBuilder, callbackBa
 // Error Retry Keyboard
 // ---------------------------------------------------------------------------
 
-// ErrorRetryKeyboard returns a keyboard with a retry button that re-executes
-// the given command (with args) and a home button. Reuses the existing
-// "cmd:" callback prefix so cbQuickCommand handles the re-execution.
-// Example: ErrorRetryKeyboard("wyckoff", "EUR 4h") -> callback "cmd:wyckoff:EUR 4h"
+// ErrorRetryKeyboard returns a keyboard with a retry button.
 func (kb *KeyboardBuilder) ErrorRetryKeyboard(command, args string) ports.InlineKeyboard {
 	cb := "cmd:" + command
 	if args != "" {
@@ -1590,3 +1607,4 @@ func (kb *KeyboardBuilder) ErrorRetryKeyboard(command, args string) ports.Inline
 	}
 	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{retryRow}}
 }
+
