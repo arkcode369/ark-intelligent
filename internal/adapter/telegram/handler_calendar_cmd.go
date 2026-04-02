@@ -281,6 +281,8 @@ func (h *Handler) cbQuickCommand(ctx context.Context, chatID string, msgID int, 
 		return h.cmdTransition(ctx, chatID, 0, args)
 	case "cryptoalpha":
 		return h.cmdCryptoAlpha(ctx, chatID, 0, args)
+	case "session":
+		return h.cmdSession(ctx, chatID, userID, args)
 	default:
 		return nil
 	}
