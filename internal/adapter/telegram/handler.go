@@ -234,6 +234,7 @@ func NewHandler(
 	bot.RegisterCommand("/flows", h.cmdFlows)             // Cross-asset flow divergence detection
 	bot.RegisterCommand("/treasury", h.cmdTreasury)     // US Treasury auction results
 	bot.RegisterCommand("/signal", h.cmdSignal)         // Unified directional signal (COT+CTA+Quant+Sentiment+Seasonal)
+	bot.RegisterCommand("/setalert", h.cmdSetAlert)  // Per-pair COT alert management
 	bot.RegisterCommand("/onchain", h.cmdOnChain)    // On-chain exchange flow metrics (CoinMetrics)
 	bot.RegisterCommand("/defi", h.cmdDeFi)          // DeFi health dashboard (DefiLlama)
 	bot.RegisterCommand("/carry", h.cmdCarry)         // Carry trade monitor & unwind detector
@@ -295,6 +296,7 @@ func NewHandler(
 	bot.RegisterCallback("imp:", h.cbImpact)
 	bot.RegisterCallback("nav:", h.cbNav)
 	bot.RegisterCallback("help:", h.cbHelp)
+	bot.RegisterCallback("setalert:", h.cbSetAlert) // Per-pair alert management keyboard
 	bot.RegisterCallback("share:", h.cbShare)
 	bot.RegisterCallback("adm_cf:", h.cbAdminConfirm)
 	bot.RegisterCallback("briefing:", h.cbBriefingRefresh)

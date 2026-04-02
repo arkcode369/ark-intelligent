@@ -110,6 +110,9 @@ type UserPrefs struct {
 	// Optimised for narrow screens (320px mobile).
 	MobileMode bool `json:"mobile_mode,omitempty"`
 
+	// PairAlerts defines per-currency alert configurations for granular COT alerts.
+	PairAlerts []PairAlert `json:"pair_alerts,omitempty"`
+
 	// OnboardingStep tracks the user's progress through the guided onboarding flow.
 	// 0=not started, 1=role chosen, 2=first command run, 3=settings opened, 4=second feature explored.
 	OnboardingStep int `json:"onboarding_step,omitempty"`
@@ -186,4 +189,31 @@ func ResolveDefaultTimeframe(pref string) string {
 		return pref
 	}
 	return "daily"
+}
+
+// ---------------------------------------------------------------------------
+// Per-Pair Alert Configuration (TASK-052)
+// ---------------------------------------------------------------------------
+
+// PairAlert defines alert criteria for a specific currency pair.
+type PairAlert struct {
+	Currency        string  `json:"currency"`          // "EUR", "GBP", etc.
+	ConvictionDelta float64 `json:"conviction_delta"`  // Alert if conviction changes by this amount (0 = any change)
+	BiasFlip        bool    `json:"bias_flip"`         // Alert on bullish↔bearish flip
+	Enabled         bool    `json:"enabled"`
+}
+
+// ValidAlertCurrencies returns the list of currencies that support per-pair alerts.
+func ValidAlertCurrencies() []string {
+	return []string{"EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "USD"}
+}
+
+// IsValidAlertCurrency returns true if the currency supports per-pair alerts.
+func IsValidAlertCurrency(c string) bool {
+	for _, v := range ValidAlertCurrencies() {
+		if v == c {
+			return true
+		}
+	}
+	return false
 }
