@@ -1148,13 +1148,13 @@ func alphaSignalEmoji(sig string) string {
 	case "STRONG_LONG":
 		return "🟢🟢"
 	case "LONG":
-		return "🟢"
+		return "🟢 Bullish"
 	case "STRONG_SHORT":
 		return "🔴🔴"
 	case "SHORT":
-		return "🔴"
+		return "🔴 Bearish"
 	default:
-		return "⚪"
+		return "⚪ Neutral"
 	}
 }
 
@@ -1202,22 +1202,22 @@ func alphaHeatEmoji(h strategy.HeatLevel) string {
 	case strategy.HeatHot:
 		return "🟠"
 	case strategy.HeatOverheat:
-		return "🔴"
+		return "🔴 Bearish"
 	default:
-		return "⚪"
+		return "⚪ Neutral"
 	}
 }
 
 func alphaMicroEmoji(b microstructure.Bias) string {
 	switch b {
 	case microstructure.BiasBullish:
-		return "🟢"
+		return "🟢 Bullish"
 	case microstructure.BiasBearish:
-		return "🔴"
+		return "🔴 Bearish"
 	case microstructure.BiasConflict:
 		return "🟡"
 	default:
-		return "⚪"
+		return "⚪ Neutral"
 	}
 }
 
