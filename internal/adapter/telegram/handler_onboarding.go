@@ -191,6 +191,7 @@ func (h *Handler) cbOnboard(ctx context.Context, chatID string, msgID int, userI
 	// Persist experience level
 	prefs, _ := h.prefsRepo.Get(ctx, userID)
 	prefs.ExperienceLevel = level
+	prefs.OnboardingStep = 1 // Step 1: role chosen
 	_ = h.prefsRepo.Set(ctx, userID, prefs)
 
 	// Delete the role selector message
@@ -319,7 +320,10 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /levels — Support/resistance levels · <code>/levels EUR</code>
 /history — COT history comparison · <code>/history EUR</code>
 /ecb — ECB monetary policy dashboard · <code>/ecb</code>
-/intermarket — Cross-asset correlation signals`
+/leading — OECD leading indicators (G7+ CLI) · <code>/leading</code>
+/intermarket — Cross-asset correlation signals
+/defi — DeFi health dashboard (TVL, DEX, stablecoins)
+/onchain — On-chain exchange flows (BTC, ETH)`
 
 	case "research":
 		text = `🔬 <b>Research &amp; Alpha Commands</b>

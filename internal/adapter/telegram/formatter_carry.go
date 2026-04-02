@@ -27,9 +27,9 @@ func (f *Formatter) FormatCarryMonitor(r *domain.CarryMonitorResult) string {
 			medal = "🥉"
 		}
 
-		dirIcon := "🟢"
+		dirIcon := "🟢 Long"
 		if p.Spread < 0 {
-			dirIcon = "🔴"
+			dirIcon = "🔴 Short"
 		}
 
 		bar := spreadBar(p.Spread)

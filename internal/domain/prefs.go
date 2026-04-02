@@ -113,6 +113,17 @@ type UserPrefs struct {
 	// PairAlerts defines per-currency alert configurations for granular COT alerts.
 	PairAlerts []PairAlert `json:"pair_alerts,omitempty"`
 
+	// OnboardingStep tracks the user's progress through the guided onboarding flow.
+	// 0=not started, 1=role chosen, 2=first command run, 3=settings opened, 4=second feature explored.
+	OnboardingStep int `json:"onboarding_step,omitempty"`
+
+	// OnboardingDismissed is true when the user has skipped/dismissed the onboarding guide.
+	OnboardingDismissed bool `json:"onboarding_dismissed,omitempty"`
+
+	// OnboardingFirstFeature records the feature group of the first analysis command
+	// so step 4 requires exploring a *different* feature.
+	OnboardingFirstFeature string `json:"onboarding_first_feature,omitempty"`
+
 	// ReferrerID stores the user ID of whoever referred this user via deep link.
 	// Set when /start is invoked with ?start=ref_<userID>.
 	ReferrerID int64 `json:"referrer_id,omitempty"`

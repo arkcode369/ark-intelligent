@@ -1505,6 +1505,7 @@ var relatedCommands = map[string][]struct {
 	"quant":       {{Label: "📈 CTA", Callback: "cta"}, {Label: "📊 Backtest", Callback: "backtest"}, {Label: "📈 Price", Callback: "price"}},
 	"calendar":    {{Label: "💥 Impact", Callback: "impact"}, {Label: "🌐 Macro", Callback: "macro"}, {Label: "📈 Price", Callback: "price"}},
 	"gex":         {{Label: "🔬 Alpha", Callback: "alpha"}, {Label: "📊 Sentiment", Callback: "sentiment"}, {Label: "📈 CryptoAlpha", Callback: "cryptoalpha"}},
+	"skew":        {{Label: "📊 GEX", Callback: "gex"}, {Label: "📈 IV Surface", Callback: "ivol"}, {Label: "🔬 Alpha", Callback: "alpha"}},
 	"sentiment":   {{Label: "🌐 Macro", Callback: "macro"}, {Label: "📈 Bias", Callback: "bias"}, {Label: "📊 Rank", Callback: "rank"}},
 	"price":       {{Label: "🔑 Levels", Callback: "levels"}, {Label: "📊 Quant", Callback: "quant"}, {Label: "🎯 CTA", Callback: "cta"}},
 	"levels":      {{Label: "📈 Price", Callback: "price"}, {Label: "🎯 CTA", Callback: "cta"}, {Label: "📊 Quant", Callback: "quant"}},
@@ -1515,6 +1516,9 @@ var relatedCommands = map[string][]struct {
 	"seasonal":    {{Label: "📉 COT", Callback: "cot"}, {Label: "📊 Backtest", Callback: "backtest"}, {Label: "📈 Bias", Callback: "bias"}},
 	"backtest":    {{Label: "📊 Quant", Callback: "quant"}, {Label: "🎯 CTA", Callback: "cta"}, {Label: "📈 Seasonal", Callback: "seasonal"}},
 	"intermarket": {{Label: "🌐 Macro", Callback: "macro"}, {Label: "📈 Price", Callback: "price"}, {Label: "📊 Sentiment", Callback: "sentiment"}},
+	"briefing":    {{Label: "📅 Calendar", Callback: "calendar"}, {Label: "🎯 COT Bias", Callback: "bias"}, {Label: "🌐 Macro", Callback: "macro"}},
+	"elliott":     {{Label: "📈 CTA", Callback: "cta"}, {Label: "📊 Quant", Callback: "quant"}, {Label: "🔑 Levels", Callback: "levels"}},
+	"regime":      {{Label: "📊 Quant", Callback: "quant"}, {Label: "🌐 Macro", Callback: "macro"}, {Label: "📈 Price", Callback: "price"}},
 }
 
 // RelatedCommandsRow returns a keyboard row with 2–3 related command buttons.
@@ -1545,4 +1549,153 @@ func (kb *KeyboardBuilder) RelatedCommandsKeyboard(command, currency string) por
 	if len(row) == 0 {
 		return ports.InlineKeyboard{}
 	}
-	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{row}}}
+	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{row}}
+}
+
+// ---------------------------------------------------------------------------
+// Briefing Keyboard
+// ---------------------------------------------------------------------------
+
+// BriefingMenu returns the inline keyboard for the /briefing command.
+// Provides quick refresh and deep-dive shortcuts.
+func (kb *KeyboardBuilder) BriefingMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "🔄 Refresh", CallbackData: "briefing:refresh"},
+				{Text: "📅 Calendar", CallbackData: "cmd:calendar"},
+			},
+			{
+				{Text: "📊 COT Detail", CallbackData: "cmd:cot"},
+				{Text: "🏠 Home", CallbackData: "cmd:help"},
+			},
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Feedback Buttons — 👍/👎 Reactions on Analysis Messages (TASK-051)
+// ---------------------------------------------------------------------------
+
+// FeedbackRow returns a row with thumbs-up/down buttons for user feedback.
+func (kb *KeyboardBuilder) FeedbackRow(callbackBase string) []ports.InlineButton {
+	return []ports.InlineButton{
+		{Text: "👍 Helpful", CallbackData: callbackBase + ":up"},
+		{Text: "👎 Not Helpful", CallbackData: callbackBase + ":down"},
+	}
+}
+
+// AppendFeedbackRow appends a feedback row to an existing InlineKeyboard.
+func AppendFeedbackRow(kb ports.InlineKeyboard, kbb *KeyboardBuilder, callbackBase string, feedbackEnabled bool) ports.InlineKeyboard {
+	if !feedbackEnabled || kbb == nil {
+		return kb
+	}
+	kb.Rows = append(kb.Rows, kbb.FeedbackRow(callbackBase))
+	return kb
+}
+
+// ---------------------------------------------------------------------------
+// Session Analysis Keyboards
+// ---------------------------------------------------------------------------
+
+// SessionMenu builds a currency selector keyboard for the /session command.
+func (kb *KeyboardBuilder) SessionMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "EUR", CallbackData: "cmd:session:EUR"},
+				{Text: "GBP", CallbackData: "cmd:session:GBP"},
+				{Text: "JPY", CallbackData: "cmd:session:JPY"},
+				{Text: "CHF", CallbackData: "cmd:session:CHF"},
+			},
+			{
+				{Text: "AUD", CallbackData: "cmd:session:AUD"},
+				{Text: "NZD", CallbackData: "cmd:session:NZD"},
+				{Text: "CAD", CallbackData: "cmd:session:CAD"},
+				{Text: "DXY", CallbackData: "cmd:session:USD"},
+			},
+			{
+				{Text: "🥇 Gold", CallbackData: "cmd:session:XAU"},
+				{Text: "₿ BTC", CallbackData: "cmd:session:BTC"},
+				{Text: "Ξ ETH", CallbackData: "cmd:session:ETH"},
+			},
+			{
+				{Text: btnHome, CallbackData: "nav:home"},
+			},
+		},
+	}
+}
+
+// SessionDetailMenu builds a navigation keyboard for a single-currency session view.
+func (kb *KeyboardBuilder) SessionDetailMenu(currency string) ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "◀ Grid", CallbackData: "cmd:session"},
+				{Text: "💹 Price", CallbackData: fmt.Sprintf("cmd:price:%s", currency)},
+				{Text: "📈 Seasonal", CallbackData: fmt.Sprintf("cmd:seasonal:%s", currency)},
+				{Text: btnHome, CallbackData: "nav:home"},
+			},
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Error Retry Keyboard
+// ---------------------------------------------------------------------------
+
+// ErrorRetryKeyboard returns a keyboard with a retry button that re-executes
+// the given command (with args) and a home button. Reuses the existing
+// "cmd:" callback prefix so cbQuickCommand handles the re-execution.
+// Example: ErrorRetryKeyboard("wyckoff", "EUR 4h") -> callback "cmd:wyckoff:EUR 4h"
+func (kb *KeyboardBuilder) ErrorRetryKeyboard(command, args string) ports.InlineKeyboard {
+	cb := "cmd:" + command
+	if args != "" {
+		cb += ":" + args
+	}
+	retryRow := []ports.InlineButton{
+		{Text: "🔄 Coba Lagi", CallbackData: cb},
+		{Text: btnHome, CallbackData: "nav:home"},
+	}
+	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{retryRow}}
+}
+
+
+// ---------------------------------------------------------------------------
+// Elliott Wave Keyboard
+// ---------------------------------------------------------------------------
+
+// ElliottKeyboard returns the inline keyboard for the /elliott command,
+// showing timeframe toggle buttons for the given symbol.
+func (kb *KeyboardBuilder) ElliottKeyboard(symbol, currentTF string) ports.InlineKeyboard {
+	timeframes := []struct {
+		Label string
+		TF    string
+	}{
+		{"Daily", "daily"},
+		{"4H", "4h"},
+		{"1H", "1h"},
+	}
+
+	var tfRow []ports.InlineButton
+	for _, tf := range timeframes {
+		label := tf.Label
+		if tf.TF == currentTF {
+			label = "✅ " + label
+		}
+		tfRow = append(tfRow, ports.InlineButton{
+			Text:         label,
+			CallbackData: "cmd:elliott:" + symbol + " " + tf.TF,
+		})
+	}
+
+	relatedRow := kb.RelatedCommandsRow("elliott", symbol)
+
+	rows := [][]ports.InlineButton{tfRow}
+	if len(relatedRow) > 0 {
+		rows = append(rows, relatedRow)
+	}
+	rows = append(rows, []ports.InlineButton{{Text: btnHome, CallbackData: "nav:home"}})
+
+	return ports.InlineKeyboard{Rows: rows}
+}
