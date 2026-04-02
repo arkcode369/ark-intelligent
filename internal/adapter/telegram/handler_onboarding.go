@@ -191,6 +191,7 @@ func (h *Handler) cbOnboard(ctx context.Context, chatID string, msgID int, userI
 	// Persist experience level
 	prefs, _ := h.prefsRepo.Get(ctx, userID)
 	prefs.ExperienceLevel = level
+	prefs.OnboardingStep = 1 // Step 1: role chosen
 	_ = h.prefsRepo.Set(ctx, userID, prefs)
 
 	// Delete the role selector message
@@ -292,11 +293,15 @@ func (h *Handler) sendHelp(ctx context.Context, chatID string, userID int64) err
 
 <i>Pilih kategori untuk melihat commands tersedia:</i>`
 
+	// Fetch user pins for personalized keyboard (TASK-078)
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+	pins := prefs.PinnedCommands
+
 	var kb ports.InlineKeyboard
 	if isAdmin {
-		kb = h.kb.HelpCategoryMenuWithAdmin()
+		kb = h.kb.HelpCategoryMenuWithAdmin(pins...)
 	} else {
-		kb = h.kb.HelpCategoryMenu()
+		kb = h.kb.HelpCategoryMenu(pins...)
 	}
 
 	_, err := h.bot.SendWithKeyboard(ctx, chatID, header, kb)
@@ -319,7 +324,10 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /levels — Support/resistance levels · <code>/levels EUR</code>
 /history — COT history comparison · <code>/history EUR</code>
 /ecb — ECB monetary policy dashboard · <code>/ecb</code>
-/intermarket — Cross-asset correlation signals`
+/leading — OECD leading indicators (G7+ CLI) · <code>/leading</code>
+/intermarket — Cross-asset correlation signals
+/defi — DeFi health dashboard (TVL, DEX, stablecoins)
+/onchain — On-chain exchange flows (BTC, ETH)`
 
 	case "research":
 		text = `🔬 <b>Research &amp; Alpha Commands</b>
@@ -452,11 +460,15 @@ func (h *Handler) cbHelp(ctx context.Context, chatID string, msgID int, userID i
 
 <i>Pilih kategori untuk melihat commands tersedia:</i>`
 
+		// Fetch user pins for personalized keyboard (TASK-078)
+		prefs, _ := h.prefsRepo.Get(ctx, userID)
+		pins := prefs.PinnedCommands
+
 		var kb ports.InlineKeyboard
 		if isAdmin {
-			kb = h.kb.HelpCategoryMenuWithAdmin()
+			kb = h.kb.HelpCategoryMenuWithAdmin(pins...)
 		} else {
-			kb = h.kb.HelpCategoryMenu()
+			kb = h.kb.HelpCategoryMenu(pins...)
 		}
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, header, kb)
 	}

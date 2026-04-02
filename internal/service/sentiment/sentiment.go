@@ -169,6 +169,7 @@ func (f *SentimentFetcher) Fetch(ctx context.Context) (*SentimentData, error) {
 			data.VolGVZ = ts.VolSuite.GVZ
 			data.VolRVX = ts.VolSuite.RVX
 			data.VolVIX9D = ts.VolSuite.VIX9D
+			data.VolCOR3M = ts.VolSuite.COR3M
 			data.SKEWVIXRatio = ts.VolSuite.SKEWVIXRatio
 			data.RVXVIXRatio = ts.VolSuite.RVXVIXRatio
 			data.VIX9D30Ratio = ts.VolSuite.VIX9D30Ratio
@@ -177,7 +178,19 @@ func (f *SentimentFetcher) Fetch(ctx context.Context) (*SentimentData, error) {
 			data.SKEWPctile = ts.VolSuite.SKEWPercentile
 			data.TailRiskCtx = ts.VolSuite.TailRiskContext()
 			data.VolDivergences = ts.VolSuite.Divergences
+			data.OVXVIXRatio = ts.VolSuite.OVXVIXRatio
+			data.GVZVIXRatio = ts.VolSuite.GVZVIXRatio
 			data.VolSuiteAvail = true
+			// Cross-asset vol dashboard
+			if ts.VolSuite.CrossVol != nil {
+				data.CrossVolRegime = string(ts.VolSuite.CrossVol.Regime)
+				data.CrossVolRegimeLabel = ts.VolSuite.CrossVol.RegimeLabel
+				data.OVXVIXPctile = ts.VolSuite.CrossVol.OVXVIXPercentile
+				data.GVZVIXPctile = ts.VolSuite.CrossVol.GVZVIXPercentile
+				data.RVXVIXPctile = ts.VolSuite.CrossVol.RVXVIXPercentile
+				data.VIX9D30Pctile = ts.VolSuite.CrossVol.VIX9D30Percentile
+				data.CrossVolAvail = true
+			}
 		}
 		return nil
 	}); err != nil {
@@ -305,6 +318,7 @@ type SentimentData struct {
 	VolGVZ         float64  // Gold volatility
 	VolRVX         float64  // Russell 2000 volatility
 	VolVIX9D       float64  // 9-day VIX (event pricing)
+	VolCOR3M       float64  // CBOE 3-month implied correlation (dispersion signal)
 	SKEWVIXRatio   float64  // SKEW/VIX — >8 historically dangerous
 	RVXVIXRatio    float64  // RVX/VIX — >1.3 risk appetite declining
 	VIX9D30Ratio   float64  // VIX9D/VIX — >1 near-term event
@@ -313,7 +327,18 @@ type SentimentData struct {
 	SKEWPctile     float64  // Historical percentile of SKEW level (0-100)
 	TailRiskCtx    string   // Human-readable tail risk historical context
 	VolDivergences []string // detected cross-asset divergences
-	VolSuiteAvail  bool
+	OVXVIXRatio    float64  // OVX/VIX — oil vol vs equity vol
+	GVZVIXRatio    float64  // GVZ/VIX — gold vol vs equity vol
+
+	// Cross-asset vol dashboard
+	CrossVolRegime      string  // regime classification
+	CrossVolRegimeLabel string  // human-readable regime
+	OVXVIXPctile        float64 // historical percentile
+	GVZVIXPctile        float64 // historical percentile
+	RVXVIXPctile        float64 // historical percentile
+	VIX9D30Pctile       float64 // historical percentile
+	CrossVolAvail       bool
+	VolSuiteAvail       bool
 
 	// Myfxbook Retail Positioning (Firecrawl)
 	MyfxbookPairs     []MyfxbookPairSentiment

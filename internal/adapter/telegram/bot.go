@@ -161,6 +161,14 @@ type Bot struct {
 	// Default capacity is config.MaxConcurrentHandlers (20).
 	// Overridable via HANDLER_CONCURRENCY env var.
 	workerSem chan struct{}
+
+	// Chunk tracker: records overflow message IDs for multi-part messages
+	// so that subsequent edits can clean up old overflow chunks.
+	chunks *chunkTracker
+
+	// postCommandHook is called after every successful command execution.
+	// Used by the onboarding progress tracker.
+	postCommandHook func(ctx context.Context, chatID string, userID int64, cmd string)
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +375,11 @@ func (b *Bot) handleMessage(ctx context.Context, msg *Message) {
 	// Structured metrics logging (see pkg/metrics for format docs)
 	metrics.RecordCommand(cmd, userID, elapsed, err)
 
+	// Post-command hook (onboarding progress tracking)
+	if err == nil && b.postCommandHook != nil && userID != 0 {
+		b.postCommandHook(ctx, chatID, userID, cmd)
+	}
+
 	if err != nil {
 		if _, err := b.SendHTML(ctx, chatID,
 			fmt.Sprintf("Error processing <code>%s</code>. Please try again later.", html.EscapeString(cmd))); err != nil {
@@ -429,6 +442,12 @@ func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
 			metrics.RecordCallback(cb.Data, userID, cbElapsed, cbErr)
 
 			if cbErr != nil {
+				// callbackToast is a success sentinel — show toast, no error logging.
+				if toastMsg, ok := isCallbackToast(cbErr); ok {
+					_ = b.AnswerCallback(ctx, cb.ID, toastMsg)
+					return
+				}
+
 				log.Error().
 					Err(cbErr).
 					Str("callback_data", cb.Data).
@@ -495,3 +514,8 @@ func (b *Bot) StopRateLimiter() {
 }
 
 // handleChatMessage is defined in chat.go.
+
+// SetPostCommandHook registers a hook called after every successful command.
+func (b *Bot) SetPostCommandHook(hook func(ctx context.Context, chatID string, userID int64, cmd string)) {
+	b.postCommandHook = hook
+}

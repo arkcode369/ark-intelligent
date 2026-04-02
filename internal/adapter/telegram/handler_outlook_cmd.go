@@ -172,6 +172,9 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	// Eurostat EU macro data (HICP, unemployment, GDP — graceful degradation on error)
 	eurostatData, _ := macro.GetEurostatData(ctx)
 
+	// Fed speeches — recent FOMC communication (graceful degradation on error)
+	fedSpeeches := fred.FetchRecentSpeeches(ctx)
+
 	// Daily price contexts (for daily technical analysis in outlook)
 	var dailyPriceCtxs map[string]*domain.DailyPriceContext
 	if h.dailyPriceRepo != nil {
@@ -215,6 +218,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		BISData:            bisData,
 		IMFData:            imfData,
 		EurostatData:       eurostatData,
+		FedSpeeches:        fedSpeeches,
 		Language:           prefs.Language,
 	}
 
@@ -269,6 +273,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 
 	html := h.fmt.FormatWeeklyOutlook(result, now)
 	kb := h.kb.RelatedCommandsKeyboard("outlook", "")
+	kb = AppendFeedbackRow(kb, h.kb, "fb:outlook:latest", h.feedbackEnabled())
 	if editMsgID > 0 {
 		if len(kb.Rows) > 0 {
 			return h.bot.EditWithKeyboard(ctx, chatID, editMsgID, html, kb)

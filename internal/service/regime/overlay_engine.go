@@ -1,11 +1,5 @@
 package regime
 
-// overlay_engine.go — Market Regime Overlay Engine (TASK-110)
-//
-// Combines HMM (30%), GARCH (25%), ADX (25%), COT (20%) into a unified
-// market health score (-100 to +100). Graceful degradation: if a sub-model
-// fails, remaining weights are re-normalised so the score remains valid.
-
 import (
 	"context"
 	"fmt"
@@ -15,369 +9,475 @@ import (
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
-	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	"github.com/arkcode369/ark-intelligent/internal/ports"
+	priceSvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
 // ---------------------------------------------------------------------------
-// Weights
+// OverlayEngine — unified market regime orchestrator
 // ---------------------------------------------------------------------------
+//
+// Combines HMM (30%), GARCH (25%), ADX (25%), COT (20%) into a single
+// UnifiedScore (-100..+100) with graceful degradation when sub-models fail.
 
-const (
-	weightHMM   = 0.30
-	weightGARCH = 0.25
-	weightADX   = 0.25
-	weightCOT   = 0.20
-)
-
-// ---------------------------------------------------------------------------
-// Interfaces
-// ---------------------------------------------------------------------------
-
-// WeeklyPriceProvider fetches weekly OHLC records for HMM / GARCH.
-type WeeklyPriceProvider interface {
-	FetchWeekly(ctx context.Context, mapping domain.PriceSymbolMapping, weeks int) ([]domain.PriceRecord, error)
+// OverlayEngine computes and caches RegimeOverlay results.
+type OverlayEngine struct {
+	dailyRepo  DailyStore
+	cotRepo    ports.COTRepository
+	mu         sync.Mutex
+	cache      map[string]*cacheEntry // key: "symbol:timeframe"
 }
 
-// DailyPriceProvider fetches daily bars for ADX computation.
-type DailyPriceProvider interface {
+// DailyStore is the minimal interface needed by the overlay engine.
+type DailyStore interface {
 	GetDailyHistory(ctx context.Context, contractCode string, days int) ([]domain.DailyPrice, error)
 }
 
-// COTProvider fetches the latest COT analysis for a single contract code.
-type COTProvider interface {
-	AnalyzeContract(ctx context.Context, contractCode string) (*domain.COTAnalysis, error)
+type cacheEntry struct {
+	result    *RegimeOverlay
+	expiresAt time.Time
 }
 
-// ---------------------------------------------------------------------------
-// Engine
-// ---------------------------------------------------------------------------
-
-// Engine orchestrates all sub-models and returns a RegimeOverlay.
-type Engine struct {
-	weekly     WeeklyPriceProvider
-	daily      DailyPriceProvider
-	cotProvider COTProvider
-
-	mu    sync.Mutex
-	cache map[string]*cachedOverlay
-}
-
-type cachedOverlay struct {
-	overlay   *RegimeOverlay
-	cachedAt  time.Time
-	ttl       time.Duration
-}
-
-// NewEngine creates a new regime overlay engine.
-// cotProvider is optional — pass nil to skip COT scoring.
-func NewEngine(weekly WeeklyPriceProvider, daily DailyPriceProvider, cot COTProvider) *Engine {
-	return &Engine{
-		weekly:      weekly,
-		daily:       daily,
-		cotProvider: cot,
-		cache:       make(map[string]*cachedOverlay),
-	}
-}
-
-// cacheTTL returns the appropriate cache TTL based on timeframe.
+// cacheTTL returns the cache TTL based on timeframe.
+// Intraday (1h/4h): 1h. Daily+: 4h.
 func cacheTTL(timeframe string) time.Duration {
 	switch strings.ToLower(timeframe) {
-	case "1h", "4h", "intraday":
-		return 1 * time.Hour
+	case "1h", "4h", "15m", "30m":
+		return time.Hour
 	default:
 		return 4 * time.Hour
 	}
 }
 
-// cacheKey builds a cache key from symbol + timeframe.
-func cacheKey(symbol, timeframe string) string {
-	return strings.ToUpper(symbol) + ":" + strings.ToLower(timeframe)
+// NewOverlayEngine creates a new OverlayEngine.
+// cotRepo may be nil — COT sub-model will be skipped gracefully.
+func NewOverlayEngine(dailyRepo DailyStore, cotRepo ports.COTRepository) *OverlayEngine {
+	return &OverlayEngine{
+		dailyRepo: dailyRepo,
+		cotRepo:   cotRepo,
+		cache:     make(map[string]*cacheEntry),
+	}
 }
 
-// ComputeOverlay orchestrates all sub-models and returns a unified RegimeOverlay.
-// symbol is a display currency symbol (e.g. "EUR", "XAU", "BTC").
-// mapping is the full PriceSymbolMapping for the contract.
-func (e *Engine) ComputeOverlay(ctx context.Context, mapping domain.PriceSymbolMapping, timeframe string) (*RegimeOverlay, error) {
-	key := cacheKey(mapping.Currency, timeframe)
+// ---------------------------------------------------------------------------
+// ComputeOverlay — main entry point
+// ---------------------------------------------------------------------------
 
-	// Check cache
-	e.mu.Lock()
-	if c, ok := e.cache[key]; ok && time.Since(c.cachedAt) < c.ttl {
-		e.mu.Unlock()
-		return c.overlay, nil
+// ComputeOverlay computes the unified regime overlay for a symbol+timeframe.
+// contractCode is the CFTC code used to fetch price and COT data.
+// symbol is the display name (e.g. "EUR/USD").
+func (e *OverlayEngine) ComputeOverlay(ctx context.Context, contractCode, symbol, timeframe string) (*RegimeOverlay, error) {
+	cacheKey := symbol + ":" + timeframe
+	if r := e.getCached(cacheKey); r != nil {
+		return r, nil
 	}
-	e.mu.Unlock()
 
-	overlay := &RegimeOverlay{}
+	result, err := e.compute(ctx, contractCode, symbol, timeframe)
+	if err != nil {
+		return nil, err
+	}
 
-	// ---- 1. HMM (30%) ----
-	hmmScore, hmmOK := e.computeHMM(ctx, overlay, mapping)
+	e.setCached(cacheKey, result, cacheTTL(timeframe))
+	return result, nil
+}
 
-	// ---- 2. GARCH (25%) ----
-	garchScore, garchOK := e.computeGARCH(ctx, overlay, mapping)
+func (e *OverlayEngine) compute(ctx context.Context, contractCode, symbol, timeframe string) (*RegimeOverlay, error) {
+	overlay := &RegimeOverlay{
+		Symbol:     symbol,
+		Timeframe:  timeframe,
+		ComputedAt: time.Now(),
+	}
 
-	// ---- 3. ADX (25%) ----
-	adxScore, adxOK := e.computeADX(ctx, overlay, mapping)
+	// Fetch daily price history (shared across sub-models)
+	dailyPrices, err := e.dailyRepo.GetDailyHistory(ctx, contractCode, 250)
+	if err != nil || len(dailyPrices) < 30 {
+		return nil, fmt.Errorf("regime overlay: insufficient daily price data for %s: %w", symbol, err)
+	}
 
-	// ---- 4. COT (20%) ----
-	cotScore, cotOK := e.computeCOT(ctx, overlay, mapping)
+	// Convert DailyPrice → domain.PriceRecord (for HMM/GARCH)
+	weeklyRecords := dailyToPriceRecords(dailyPrices)
 
-	// ---- 5. Weighted composite with graceful degradation ----
+	// Convert DailyPrice → ta.OHLCV (for ADX)
+	ohlcvBars := dailyToOHLCV(dailyPrices)
+
+	// -------------------------------------------------------------------
+	// Sub-model 1: HMM Regime (weight 30%)
+	// -------------------------------------------------------------------
+	hmmScore, hmmOK := e.runHMM(weeklyRecords, overlay)
+
+	// -------------------------------------------------------------------
+	// Sub-model 2: GARCH Volatility (weight 25%)
+	// -------------------------------------------------------------------
+	garchScore, garchOK := e.runGARCH(weeklyRecords, overlay)
+
+	// -------------------------------------------------------------------
+	// Sub-model 3: ADX Trend Strength (weight 25%)
+	// -------------------------------------------------------------------
+	adxScore, adxOK := e.runADX(ohlcvBars, overlay)
+
+	// -------------------------------------------------------------------
+	// Sub-model 4: COT Sentiment (weight 20%)
+	// -------------------------------------------------------------------
+	cotScore, cotOK := e.runCOT(ctx, contractCode, overlay)
+
+	// -------------------------------------------------------------------
+	// Weighted aggregation with graceful degradation
+	// -------------------------------------------------------------------
+	baseWeights := map[string]float64{
+		"hmm":   0.30,
+		"garch": 0.25,
+		"adx":   0.25,
+		"cot":   0.20,
+	}
+	available := map[string]bool{
+		"hmm":   hmmOK,
+		"garch": garchOK,
+		"adx":   adxOK,
+		"cot":   cotOK,
+	}
+	scores := map[string]float64{
+		"hmm":   hmmScore,
+		"garch": garchScore,
+		"adx":   adxScore,
+		"cot":   cotScore,
+	}
+
 	totalWeight := 0.0
-	weightedSum := 0.0
-
-	if hmmOK {
-		weightedSum += hmmScore * weightHMM
-		totalWeight += weightHMM
+	for k, avail := range available {
+		if avail {
+			totalWeight += baseWeights[k]
+		}
 	}
-	if garchOK {
-		weightedSum += garchScore * weightGARCH
-		totalWeight += weightGARCH
-	}
-	if adxOK {
-		weightedSum += adxScore * weightADX
-		totalWeight += weightADX
-	}
-	if cotOK {
-		weightedSum += cotScore * weightCOT
-		totalWeight += weightCOT
-	}
-
 	if totalWeight == 0 {
-		return nil, fmt.Errorf("all regime sub-models failed for %s", mapping.Currency)
+		return nil, fmt.Errorf("regime overlay: all sub-models failed for %s", symbol)
 	}
 
-	// Re-normalise to keep score in -100..+100 range
-	unified := weightedSum / totalWeight * 100
-	unified = math.Max(-100, math.Min(100, unified))
+	unifiedScore := 0.0
+	var modelsUsed []string
+	for k, avail := range available {
+		if avail {
+			// Normalize weight proportionally
+			adjustedWeight := baseWeights[k] / totalWeight
+			unifiedScore += scores[k] * adjustedWeight
+			modelsUsed = append(modelsUsed, k)
 
-	overlay.UnifiedScore = math.Round(unified*10) / 10
-	overlay.WeightsUsed = totalWeight
+			// Store effective weights
+			switch k {
+			case "hmm":
+				overlay.WeightHMM = adjustedWeight
+			case "garch":
+				overlay.WeightGARCH = adjustedWeight
+			case "adx":
+				overlay.WeightADX = adjustedWeight
+			case "cot":
+				overlay.WeightCOT = adjustedWeight
+			}
+		}
+	}
 
-	// ---- 6. Classify ----
-	overlay.OverlayColor, overlay.Label = classifyScore(unified)
+	overlay.UnifiedScore = clamp(unifiedScore, -100, 100)
+	overlay.ModelsUsed = modelsUsed
+	overlay.OverlayColor = scoreToColor(overlay.UnifiedScore)
+	overlay.Label = scoreToLabel(overlay.UnifiedScore, overlay.HMMState)
 	overlay.Description = buildDescription(overlay)
-
-	// ---- 7. Store cache ----
-	ttl := cacheTTL(timeframe)
-	e.mu.Lock()
-	e.cache[key] = &cachedOverlay{overlay: overlay, cachedAt: time.Now(), ttl: ttl}
-	e.mu.Unlock()
 
 	return overlay, nil
 }
 
 // ---------------------------------------------------------------------------
-// Sub-model helpers
+// Sub-model runners
 // ---------------------------------------------------------------------------
 
-// computeHMM fetches weekly prices and runs the HMM regime detector.
-// Returns a score in -1..+1 and whether it succeeded.
-func (e *Engine) computeHMM(ctx context.Context, out *RegimeOverlay, mapping domain.PriceSymbolMapping) (float64, bool) {
-	records, err := e.weekly.FetchWeekly(ctx, mapping, 120)
-	if err != nil || len(records) < 60 {
+func (e *OverlayEngine) runHMM(records []domain.PriceRecord, overlay *RegimeOverlay) (float64, bool) {
+	if len(records) < 60 {
 		return 0, false
 	}
-
-	result, err := pricesvc.EstimateHMMRegime(records)
+	result, err := priceSvc.EstimateHMMRegime(records)
 	if err != nil || result == nil {
 		return 0, false
 	}
 
-	out.HMMState = result.CurrentState
-	// Confidence = probability of the current state
+	overlay.HMMState = result.CurrentState
+	overlay.HMMConfidence = maxFloat64(result.StateProbabilities[0], result.StateProbabilities[1], result.StateProbabilities[2])
+
+	// Map HMM state to score contribution
+	var score float64
 	switch result.CurrentState {
-	case pricesvc.HMMRiskOn:
-		out.HMMConfidence = result.StateProbabilities[0]
-	case pricesvc.HMMRiskOff:
-		out.HMMConfidence = result.StateProbabilities[1]
-	case pricesvc.HMMCrisis:
-		out.HMMConfidence = result.StateProbabilities[2]
+	case priceSvc.HMMRiskOn:
+		// Risk-on: score proportional to confidence, max +100
+		score = overlay.HMMConfidence * 100
+	case priceSvc.HMMRiskOff:
+		// Risk-off: slightly negative, uncertainty
+		score = -(overlay.HMMConfidence * 40)
+	case priceSvc.HMMCrisis:
+		// Crisis: strongly negative
+		score = -(overlay.HMMConfidence * 100)
 	}
-	out.HMMAvailable = true
-
-	score := hmmStateScore(result.CurrentState, out.HMMConfidence)
-	out.HMMScore = score * 100
-	return score, true
+	overlay.HMMScore = clamp(score, -100, 100)
+	return overlay.HMMScore, true
 }
 
-// hmmStateScore maps HMM state + confidence to -1..+1.
-func hmmStateScore(state string, confidence float64) float64 {
-	base := 0.0
-	switch state {
-	case pricesvc.HMMRiskOn:
-		base = 1.0
-	case pricesvc.HMMRiskOff:
-		base = 0.0
-	case pricesvc.HMMCrisis:
-		base = -1.0
-	}
-	// Scale by confidence; un-confident result contributes less signal
-	clampedConf := math.Max(0.33, math.Min(1.0, confidence))
-	return base * clampedConf
-}
-
-// computeGARCH fetches weekly prices and runs GARCH(1,1).
-// Low vol (contracting) is positive; high vol (expanding) is negative.
-func (e *Engine) computeGARCH(ctx context.Context, out *RegimeOverlay, mapping domain.PriceSymbolMapping) (float64, bool) {
-	records, err := e.weekly.FetchWeekly(ctx, mapping, 80)
-	if err != nil || len(records) < 30 {
+func (e *OverlayEngine) runGARCH(records []domain.PriceRecord, overlay *RegimeOverlay) (float64, bool) {
+	if len(records) < 30 {
 		return 0, false
 	}
-
-	result, err := pricesvc.EstimateGARCH(records)
+	result, err := priceSvc.EstimateGARCH(records)
 	if err != nil || result == nil || !result.Converged {
 		return 0, false
 	}
 
-	out.VolRatio = result.VolRatio
-	out.GARCHVolRegime = volRegimeLabel(result.VolRatio)
-	out.GARCHAvailable = true
+	overlay.VolRatio = result.VolRatio
 
-	score := garchVolScore(result.VolRatio)
-	out.GARCHScore = score * 100
-	return score, true
-}
-
-// garchVolScore maps VolRatio to -1..+1.
-// VolRatio > 1 means above-average vol → negative (risk-off signal).
-// VolRatio < 1 means below-average vol → positive.
-func garchVolScore(volRatio float64) float64 {
-	// Map [0.3 .. 2.5] → [+1 .. -1]
-	clamped := math.Max(0.3, math.Min(2.5, volRatio))
-	// Linear: at 1.0 → 0, at 0.3 → +1, at 2.5 → -1
-	return -(clamped - 1.0) / 1.5
-}
-
-// computeADX fetches daily bars and computes ADX(14).
-// Strong trending = positive signal; weak/ranging = neutral.
-func (e *Engine) computeADX(ctx context.Context, out *RegimeOverlay, mapping domain.PriceSymbolMapping) (float64, bool) {
-	if e.daily == nil {
-		return 0, false
-	}
-	dailyBars, err := e.daily.GetDailyHistory(ctx, mapping.ContractCode, 80)
-	if err != nil || len(dailyBars) < 28 {
-		return 0, false
+	// Classify vol regime
+	switch {
+	case result.VolRatio > 1.5:
+		overlay.GARCHVolRegime = "EXPANDING"
+	case result.VolRatio < 0.75:
+		overlay.GARCHVolRegime = "CONTRACTING"
+	default:
+		overlay.GARCHVolRegime = "NORMAL"
 	}
 
-	// Convert domain.DailyPrice to ta.OHLCV
-	ohlcv := make([]ta.OHLCV, len(dailyBars))
-	for i, b := range dailyBars {
-		ohlcv[i] = ta.OHLCV{
-			Date:  b.Date,
-			Open:  b.Open,
-			High:  b.High,
-			Low:   b.Low,
-			Close: b.Close,
+	// GARCH score: low/contracting vol is friendly (positive), high vol is negative
+	// VolRatio 0.5 → +80, 1.0 → 0, 1.5 → -40, 2.0+ → -80
+	var score float64
+	switch overlay.GARCHVolRegime {
+	case "CONTRACTING":
+		// Vol below normal = benign environment
+		score = 60 * (1 - result.VolRatio/0.75)
+		if score < 0 {
+			score = 0
 		}
+		score = clamp(score+20, 0, 80)
+	case "NORMAL":
+		// Near long-run vol = neutral
+		score = 0
+	case "EXPANDING":
+		// Elevated vol = risk-off signal
+		excess := result.VolRatio - 1.0
+		score = -clamp(excess*50, 0, 80)
 	}
+	overlay.GARCHScore = clamp(score, -100, 100)
+	return overlay.GARCHScore, true
+}
 
-	result := ta.CalcADX(ohlcv, 14)
+func (e *OverlayEngine) runADX(bars []ta.OHLCV, overlay *RegimeOverlay) (float64, bool) {
+	if len(bars) < 30 {
+		return 0, false
+	}
+	result := ta.CalcADX(bars, 14)
 	if result == nil {
 		return 0, false
 	}
 
-	out.ADXValue = result.ADX
-	out.ADXStrength = result.TrendStrength
-	out.ADXAvailable = true
+	overlay.ADXValue = result.ADX
+	overlay.ADXStrength = result.TrendStrength
 
-	score := adxScore(result.ADX, result.PlusDI, result.MinusDI)
-	out.ADXScore = score * 100
-	return score, true
-}
-
-// adxScore maps ADX + direction to -1..+1.
-// Strong trend with +DI > -DI = bullish; strong with -DI > +DI = bearish; weak = neutral.
-func adxScore(adx, plusDI, minusDI float64) float64 {
-	// ADX strength: 0..25 weak, 25..50 moderate, 50+ strong
-	strengthFactor := math.Min(adx/50.0, 1.0) // 0..1
-
-	direction := 0.0
-	if plusDI > minusDI {
-		direction = 1.0
-	} else if minusDI > plusDI {
-		direction = -1.0
+	// ADX score: strong trend is regime-positive (momentum), weak is neutral/negative
+	// Also factor in direction via +DI vs -DI
+	directionMult := 1.0
+	if result.MinusDI > result.PlusDI {
+		directionMult = -1.0 // bearish trend
 	}
 
-	return direction * strengthFactor
+	var score float64
+	switch result.TrendStrength {
+	case "STRONG":
+		score = directionMult * clamp((result.ADX-25)/25*80+40, 40, 90)
+	case "MODERATE":
+		score = directionMult * 30
+	case "WEAK":
+		// Ranging market — slightly negative for directional bias
+		score = -10
+	}
+	overlay.ADXScore = clamp(score, -100, 100)
+	return overlay.ADXScore, true
 }
 
-// computeCOT fetches COT analysis and extracts SentimentScore.
-func (e *Engine) computeCOT(ctx context.Context, out *RegimeOverlay, mapping domain.PriceSymbolMapping) (float64, bool) {
-	if e.cotProvider == nil {
+func (e *OverlayEngine) runCOT(ctx context.Context, contractCode string, overlay *RegimeOverlay) (float64, bool) {
+	if e.cotRepo == nil || contractCode == "" {
 		return 0, false
 	}
 
-	analysis, err := e.cotProvider.AnalyzeContract(ctx, mapping.ContractCode)
+	analysis, err := e.cotRepo.GetLatestAnalysis(ctx, contractCode)
 	if err != nil || analysis == nil {
 		return 0, false
 	}
 
-	out.COTSentiment = analysis.SentimentScore
-	out.COTAvailable = true
+	overlay.COTSentiment = analysis.SentimentScore
 
-	// SentimentScore is already -1..+1 per domain definition
-	score := math.Max(-1.0, math.Min(1.0, analysis.SentimentScore))
-	out.COTScore = score * 100
-	return score, true
-}
-
-// ---------------------------------------------------------------------------
-// Classification helpers
-// ---------------------------------------------------------------------------
-
-// classifyScore maps unified score to color emoji and label.
-func classifyScore(score float64) (color, label string) {
+	// Map COT sentiment to bias label
 	switch {
-	case score >= 50:
-		return "🟢", "BULLISH"
-	case score >= 15:
-		return "🟡", "MILDLY BULLISH"
-	case score > -15:
-		return "🟡", "NEUTRAL"
-	case score > -50:
-		return "🔴", "MILDLY BEARISH"
+	case analysis.SentimentScore > 20:
+		overlay.COTBias = "BULLISH"
+	case analysis.SentimentScore < -20:
+		overlay.COTBias = "BEARISH"
 	default:
-		return "🔴", "BEARISH/CRISIS"
+		overlay.COTBias = "NEUTRAL"
+	}
+
+	// Clamp COT score to -100..+100 (SentimentScore already in that range but verify)
+	overlay.COTScore = clamp(analysis.SentimentScore, -100, 100)
+	return overlay.COTScore, true
+}
+
+// ---------------------------------------------------------------------------
+// Label / color / description helpers
+// ---------------------------------------------------------------------------
+
+func scoreToColor(score float64) string {
+	switch {
+	case score >= 30:
+		return "🟢"
+	case score <= -30:
+		return "🔴"
+	default:
+		return "🟡"
 	}
 }
 
-// buildDescription builds a compact one-line overlay header.
+func scoreToLabel(score float64, hmmState string) string {
+	if hmmState == priceSvc.HMMCrisis {
+		return "CRISIS"
+	}
+	switch {
+	case score >= 60:
+		return "BULLISH"
+	case score >= 30:
+		return "MILDLY BULLISH"
+	case score > -30:
+		return "NEUTRAL"
+	case score > -60:
+		return "MILDLY BEARISH"
+	default:
+		return "BEARISH"
+	}
+}
+
 func buildDescription(o *RegimeOverlay) string {
-	score := fmt.Sprintf("%+.0f", o.UnifiedScore)
-	header := fmt.Sprintf("📊 Regime: %s %s (%s)", o.OverlayColor, o.Label, score)
-
 	parts := []string{}
-	if o.ADXAvailable {
-		parts = append(parts, o.ADXStrength+" Trend")
-	}
-	if o.GARCHAvailable {
-		switch o.GARCHVolRegime {
-		case "EXPANDING":
-			parts = append(parts, "High Vol")
-		case "CONTRACTING":
-			parts = append(parts, "Low Vol")
-		default:
-			parts = append(parts, "Norm Vol")
+
+	// Trend component
+	switch o.ADXStrength {
+	case "STRONG":
+		if o.ADXScore > 0 {
+			parts = append(parts, "Trending↑")
+		} else {
+			parts = append(parts, "Trending↓")
 		}
-	}
-	if o.COTAvailable {
-		switch {
-		case o.COTSentiment > 0.3:
-			parts = append(parts, "COT Long")
-		case o.COTSentiment < -0.3:
-			parts = append(parts, "COT Short")
-		default:
-			parts = append(parts, "COT Neutral")
-		}
-	}
-	if o.HMMAvailable {
-		parts = append(parts, "HMM:"+o.HMMState)
+	case "MODERATE":
+		parts = append(parts, "Moderate Trend")
+	default:
+		parts = append(parts, "Ranging")
 	}
 
-	if len(parts) > 0 {
-		header += " | " + strings.Join(parts, ", ")
+	// Vol component
+	switch o.GARCHVolRegime {
+	case "CONTRACTING":
+		parts = append(parts, "Low Vol")
+	case "EXPANDING":
+		parts = append(parts, "High Vol")
+	default:
+		parts = append(parts, "Normal Vol")
 	}
-	return header
+
+	// COT component
+	switch o.COTBias {
+	case "BULLISH":
+		parts = append(parts, "COT Long")
+	case "BEARISH":
+		parts = append(parts, "COT Short")
+	}
+
+	return strings.Join(parts, ", ")
 }
+
+// ---------------------------------------------------------------------------
+// Conversion helpers
+// ---------------------------------------------------------------------------
+
+// dailyToPriceRecords converts DailyPrice slice to PriceRecord slice (newest-first).
+func dailyToPriceRecords(daily []domain.DailyPrice) []domain.PriceRecord {
+	// daily is assumed newest-first from repository
+	out := make([]domain.PriceRecord, len(daily))
+	for i, d := range daily {
+		out[i] = domain.PriceRecord{
+			ContractCode: d.ContractCode,
+			Symbol:       d.Symbol,
+			Date:         d.Date,
+			Open:         d.Open,
+			High:         d.High,
+			Low:          d.Low,
+			Close:        d.Close,
+			Volume:       d.Volume,
+			Source:       d.Source,
+		}
+	}
+	return out
+}
+
+// dailyToOHLCV converts DailyPrice slice to ta.OHLCV slice (newest-first).
+func dailyToOHLCV(daily []domain.DailyPrice) []ta.OHLCV {
+	out := make([]ta.OHLCV, len(daily))
+	for i, d := range daily {
+		out[i] = ta.OHLCV{
+			Open:   d.Open,
+			High:   d.High,
+			Low:    d.Low,
+			Close:  d.Close,
+			Volume: d.Volume,
+		}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// Cache helpers
+// ---------------------------------------------------------------------------
+
+func (e *OverlayEngine) getCached(key string) *RegimeOverlay {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	entry, ok := e.cache[key]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil
+	}
+	return entry.result
+}
+
+func (e *OverlayEngine) setCached(key string, r *RegimeOverlay, ttl time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.cache[key] = &cacheEntry{result: r, expiresAt: time.Now().Add(ttl)}
+}
+
+// ---------------------------------------------------------------------------
+// Math helpers
+// ---------------------------------------------------------------------------
+
+func clamp(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+func maxFloat64(vals ...float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	m := vals[0]
+	for _, v := range vals[1:] {
+		if v > m {
+			m = v
+		}
+	}
+	return m
+}
+
+// Ensure math import is used (for potential future extensions).
+var _ = math.Abs

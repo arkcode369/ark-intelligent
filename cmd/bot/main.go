@@ -29,6 +29,8 @@ import (
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
 	"github.com/arkcode369/ark-intelligent/internal/service/fred"
 	factorsvc "github.com/arkcode369/ark-intelligent/internal/service/factors"
+	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
+	"github.com/arkcode369/ark-intelligent/internal/service/marketdata/finviz"
 	microsvc "github.com/arkcode369/ark-intelligent/internal/service/microstructure"
 	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
@@ -36,6 +38,7 @@ import (
 	ta "github.com/arkcode369/ark-intelligent/internal/service/ta"
 	ictsvc "github.com/arkcode369/ark-intelligent/internal/service/ict"
 	gexsvc "github.com/arkcode369/ark-intelligent/internal/service/gex"
+	elliottsvc "github.com/arkcode369/ark-intelligent/internal/service/elliott"
 	bybitpkg "github.com/arkcode369/ark-intelligent/internal/service/marketdata/bybit"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
@@ -101,6 +104,7 @@ func main() {
 	impactRepo := storage.NewImpactRepo(db)
 	dailyPriceRepo := storage.NewDailyPriceRepo(db)
 	intradayRepo := storage.NewIntradayRepo(db)
+	feedbackRepo := storage.NewFeedbackRepo(db)
 	fredRepo := storage.NewFREDRepo(db)
 	fredPersistence := fred.NewPersistenceService(&fredPersistAdapter{repo: fredRepo})
 	fred.SetPostFetchHook(func(ctx context.Context, data *fred.MacroData) {
@@ -108,6 +112,12 @@ func main() {
 			log.Warn().Err(err).Msg("FRED snapshot persistence failed (non-fatal)")
 		}
 	})
+
+	// Sentiment cache: inject BadgerDB for persistence across restarts.
+	// Saves Firecrawl API quota by avoiding re-fetches on every restart.
+	sentiment.InitSentimentCache(db.Badger())
+	finviz.InitCache(db.Badger())
+	log.Info().Msg("Sentiment cache persistence initialized (BadgerDB-backed)")
 
 	log.Info().Msg("Storage layer initialized")
 	logStorageSize(db)
@@ -321,6 +331,10 @@ func main() {
 	impactRecorder := newssvc.NewImpactRecorder(impactRepo, priceRepo, priceFetcher)
 	newsSched.SetImpactRecorder(impactRecorder)
 
+	// TASK-202: Wire alert gate into news scheduler (quiet hours, per-type toggle, daily cap).
+	newsSched.SetAlertGateFunc(sched.ShouldDeliverAlert)
+	newsSched.SetRecordDeliveryFunc(sched.RecordAlertDelivery)
+
 	newsSched.Start(ctx)
 
 	// Wire Fed speech provider into AI context builder for enriched chatbot prompts.
@@ -371,6 +385,9 @@ func main() {
 		dailyPriceRepo,  // Daily price data for /price command (nil-safe)
 		intradayRepo,    // 4H intraday data for /intraday command (nil-safe)
 	)
+
+	// Wire feedback repo for 👍/👎 reaction buttons on analysis messages (TASK-051)
+	handler.WithFeedback(feedbackRepo)
 
 	// Wire alpha services (Factor + Strategy + Microstructure engines)
 	if alphaServices != nil {
@@ -431,7 +448,21 @@ func main() {
 		}
 		handler.WithGEX(gexServices)
 		log.Info().Msg("GEX commands registered (/gex)")
+
+		// Wire Elliott Wave services (automated wave counting and projection)
+		elliottServices := tgbot.ElliottServices{
+			DailyPriceRepo: dailyPriceRepo,
+			IntradayRepo:   intradayRepo,
+			Engine:         elliottsvc.NewEngine(),
+		}
+		handler.WithElliott(elliottServices)
+		log.Info().Msg("Elliott Wave commands registered (/elliott)")
 	}
+
+	// Wire regime alert provider for /regime command (TASK-138)
+	// sched implements RegimeAlertProvider via GetRegimeStates + GetRegimeDivergence.
+	handler.WithRegime(sched)
+	log.Info().Msg("Regime alert commands registered (/regime)")
 
 	// Register free-text handler for chatbot mode
 	if chatService != nil {

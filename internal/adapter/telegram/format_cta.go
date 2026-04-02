@@ -11,15 +11,23 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
-func formatCTASummary(state *ctaState) string {
+// RegimeHeaderProvider is a minimal interface for overlay types to provide a header line.
+type RegimeHeaderProvider interface {
+	HeaderLine() string
+}
+
+// formatCTASummary formats the CTA analysis summary.
+// overlayHeader is optional — pass nil to omit the regime overlay line.
+func formatCTASummary(state *ctaState, overlayHeader ...RegimeHeaderProvider) string {
 	var sb strings.Builder
+
+	// Optional regime overlay header
+	if len(overlayHeader) > 0 && overlayHeader[0] != nil {
+		sb.WriteString(overlayHeader[0].HeaderLine() + "\n")
+	}
 
 	sb.WriteString(fmt.Sprintf("<b>⚡ Technical Analysis: %s</b>\n", html.EscapeString(state.symbol)))
 	sb.WriteString(fmt.Sprintf("📅 <i>%s</i>\n", state.computedAt.UTC().Format("02 Jan 2006 15:04 UTC")))
-	// Regime overlay header (prepended if available)
-	if state.overlay != nil {
-		sb.WriteString(html.EscapeString(state.overlay.Description) + "\n")
-	}
 	sb.WriteString("\n")
 
 	d := state.daily
@@ -34,9 +42,9 @@ func formatCTASummary(state *ctaState) string {
 	dirEmoji := "🔵"
 	dirLabel := conf.Direction
 	if conf.Direction == "BULLISH" {
-		dirEmoji = "🟢"
+		dirEmoji = "🟢 Long"
 	} else if conf.Direction == "BEARISH" {
-		dirEmoji = "🔴"
+		dirEmoji = "🔴 Short"
 	}
 
 	sb.WriteString(fmt.Sprintf("🎯 <b>KEPUTUSAN: %s %s</b> (Skor: %+.0f/100, Grade: %s)\n",
@@ -234,11 +242,11 @@ func formatCTASummary(state *ctaState) string {
 		sb.WriteString("📊 <b>Multi-Timeframe:</b>\n")
 		var mtfParts []string
 		for _, row := range state.mtf.Matrix {
-			dirE := "⚪"
+			dirE := "⚪ Neutral"
 			if row.Direction == "BULLISH" {
-				dirE = "🟢"
+				dirE = "🟢 Long"
 			} else if row.Direction == "BEARISH" {
-				dirE = "🔴"
+				dirE = "🔴 Short"
 			}
 			mtfParts = append(mtfParts, fmt.Sprintf("%s%s %s", dirE, row.Timeframe, row.Grade))
 		}
@@ -345,16 +353,16 @@ func formatCTAIchimoku(state *ctaState) string {
 		}
 		ich := entry.result.Snapshot.Ichimoku
 
-		overallEmoji := "⚪"
+		overallEmoji := "⚪ Neutral"
 		switch ich.Overall {
 		case "STRONG_BULLISH":
 			overallEmoji = "🟢🟢"
 		case "BULLISH":
-			overallEmoji = "🟢"
+			overallEmoji = "🟢 Bullish"
 		case "STRONG_BEARISH":
 			overallEmoji = "🔴🔴"
 		case "BEARISH":
-			overallEmoji = "🔴"
+			overallEmoji = "🔴 Bearish"
 		}
 
 		sb.WriteString(fmt.Sprintf("<b>%s: %s %s</b>\n", entry.tf, overallEmoji, ich.Overall))
@@ -462,11 +470,11 @@ func formatCTAPatterns(state *ctaState) string {
 		found = true
 		sb.WriteString(fmt.Sprintf("<b>%s:</b>\n", entry.tf))
 		for _, p := range entry.result.Patterns {
-			dirEmoji := "⚪"
+			dirEmoji := "⚪ Neutral"
 			if p.Direction == "BULLISH" {
-				dirEmoji = "🟢"
+				dirEmoji = "🟢 Long"
 			} else if p.Direction == "BEARISH" {
-				dirEmoji = "🔴"
+				dirEmoji = "🔴 Short"
 			}
 			stars := strings.Repeat("★", p.Reliability) + strings.Repeat("☆", 3-p.Reliability)
 			sb.WriteString(fmt.Sprintf("  %s <b>%s</b> %s\n", dirEmoji, p.Name, stars))
@@ -495,11 +503,11 @@ func formatCTAConfluence(state *ctaState) string {
 	}
 
 	conf := state.daily.Confluence
-	dirEmoji := "⚪"
+	dirEmoji := "⚪ Neutral"
 	if conf.Direction == "BULLISH" {
-		dirEmoji = "🟢"
+		dirEmoji = "🟢 Long"
 	} else if conf.Direction == "BEARISH" {
-		dirEmoji = "🔴"
+		dirEmoji = "🔴 Short"
 	}
 
 	sb.WriteString(fmt.Sprintf("%s Skor: <b>%+.1f</b> | Grade: <b>%s</b> | Arah: <b>%s</b>\n",
@@ -509,11 +517,11 @@ func formatCTAConfluence(state *ctaState) string {
 
 	sb.WriteString("<b>Sinyal per-indikator:</b>\n")
 	for _, sig := range conf.Signals {
-		signalEmoji := "⚪"
+		signalEmoji := "⚪ Neutral"
 		if sig.Value > 0.05 {
-			signalEmoji = "🟢"
+			signalEmoji = "🟢 Bullish"
 		} else if sig.Value < -0.05 {
-			signalEmoji = "🔴"
+			signalEmoji = "🔴 Bearish"
 		}
 		sb.WriteString(fmt.Sprintf("  %s <b>%s</b>: %+.2f (bobot: %.0f%%)\n",
 			signalEmoji, sig.Indicator, sig.Value, sig.Weight*100))
@@ -553,20 +561,20 @@ func formatCTAMTF(state *ctaState) string {
 	}
 
 	// Alignment with explanation
-	alignEmoji := "⚪"
+	alignEmoji := "⚪ Mixed"
 	alignNote := ""
 	switch state.mtf.Alignment {
 	case "STRONG_BULLISH":
 		alignEmoji = "🟢🟢"
 		alignNote = "Semua timeframe bullish — kepercayaan sangat tinggi"
 	case "BULLISH":
-		alignEmoji = "🟢"
+		alignEmoji = "🟢 Aligned"
 		alignNote = "Mayoritas timeframe bullish"
 	case "STRONG_BEARISH":
 		alignEmoji = "🔴🔴"
 		alignNote = "Semua timeframe bearish — kepercayaan sangat tinggi"
 	case "BEARISH":
-		alignEmoji = "🔴"
+		alignEmoji = "🔴 Divergent"
 		alignNote = "Mayoritas timeframe bearish"
 	default:
 		alignEmoji = "🟡"
@@ -579,11 +587,11 @@ func formatCTAMTF(state *ctaState) string {
 
 	// Matrix as clean list (better for mobile than <code> table)
 	for _, row := range state.mtf.Matrix {
-		dirEmoji := "⚪"
+		dirEmoji := "⚪ Neutral"
 		if row.Direction == "BULLISH" {
-			dirEmoji = "🟢"
+			dirEmoji = "🟢 Long"
 		} else if row.Direction == "BEARISH" {
-			dirEmoji = "🔴"
+			dirEmoji = "🔴 Short"
 		}
 		weightStr := ""
 		if row.Weight > 0 {
@@ -620,10 +628,10 @@ func formatCTAZones(state *ctaState) string {
 			continue
 		}
 
-		dirEmoji := "🟢"
+		dirEmoji := "🟢 Long"
 		dirNote := "BUY (masuk posisi beli)"
 		if z.Direction == "SHORT" {
-			dirEmoji = "🔴"
+			dirEmoji = "🔴 Short"
 			dirNote = "SELL (masuk posisi jual)"
 		}
 
@@ -679,12 +687,12 @@ func formatCTAVWAPDelta(state *ctaState) string {
 			if r == nil {
 				return
 			}
-			posEmoji := "⚪"
+			posEmoji := "⚪ Neutral"
 			switch r.Position {
 			case "ABOVE":
-				posEmoji = "🟢"
+				posEmoji = "🟢 Long"
 			case "BELOW":
-				posEmoji = "🔴"
+				posEmoji = "🔴 Short"
 			}
 			sb.WriteString(fmt.Sprintf("  %s <b>%s:</b> %.5f (%s, %.1fσ)\n",
 				posEmoji, label, r.VWAP, r.Position, r.Deviation))
@@ -712,12 +720,12 @@ func formatCTAVWAPDelta(state *ctaState) string {
 	} else {
 		d := snap.Delta
 
-		biasEmoji := "⚪"
+		biasEmoji := "⚪ Neutral"
 		switch d.Bias {
 		case "BUYING_PRESSURE":
-			biasEmoji = "🟢"
+			biasEmoji = "🟢 Bullish"
 		case "SELLING_PRESSURE":
-			biasEmoji = "🔴"
+			biasEmoji = "🔴 Bearish"
 		}
 
 		sb.WriteString("📈 <b>Estimated Delta (Tick Rule)</b>\n")
@@ -756,9 +764,9 @@ func formatCTATimeframeDetail(state *ctaState, tf string, result *ta.FullResult)
 	conf := result.Confluence
 	dirEmoji := "🔵"
 	if conf.Direction == "BULLISH" {
-		dirEmoji = "🟢"
+		dirEmoji = "🟢 Long"
 	} else if conf.Direction == "BEARISH" {
-		dirEmoji = "🔴"
+		dirEmoji = "🔴 Short"
 	}
 
 	sb.WriteString(fmt.Sprintf("%s <b>%s</b> Skor: %+.0f Grade: %s\n",
@@ -842,9 +850,9 @@ func formatCTATimeframeDetail(state *ctaState, tf string, result *ta.FullResult)
 			smc := snap.SMC
 			structEmoji := "🔵"
 			if string(smc.Structure) == "BULLISH" {
-				structEmoji = "🟢"
+				structEmoji = "🟢 Bullish"
 			} else if string(smc.Structure) == "BEARISH" {
-				structEmoji = "🔴"
+				structEmoji = "🔴 Bearish"
 			}
 			sb.WriteString(fmt.Sprintf("\n🏗 <b>SMC Structure:</b> %s %s (zone: %s)\n",
 				structEmoji, smc.Structure, smc.CurrentZone))
@@ -867,16 +875,73 @@ func formatCTATimeframeDetail(state *ctaState, tf string, result *ta.FullResult)
 				sb.WriteString(fmt.Sprintf("  %s BOS %s @ %.4f\n", bosEmoji, bos.Dir, bos.Price))
 			}
 		}
+
+		// Wyckoff Phase (ta-level simplified analysis)
+		if snap.Wyckoff != nil {
+			w := snap.Wyckoff
+			confPct := int(w.PhaseConf * 100)
+			biasEmoji := "🔵"
+			switch w.Bias {
+			case "BULLISH":
+				biasEmoji = "🟢"
+			case "BEARISH":
+				biasEmoji = "🔴"
+			}
+			sb.WriteString(fmt.Sprintf("\n🎯 <b>Wyckoff Phase:</b> %s %s (conf: %d%%)\n",
+				biasEmoji, w.Phase, confPct))
+			if w.TradingRange != nil {
+				tr := w.TradingRange
+				volSign := ""
+				if tr.VolumeDecl {
+					volSign = "✅ declining"
+				} else {
+					volSign = "📈 expanding"
+				}
+				sb.WriteString(fmt.Sprintf("  Range: %.4f – %.4f (%.1f ATR wide, %d bars)\n",
+					tr.Low, tr.High, tr.Width, tr.BarsInRange))
+				sb.WriteString(fmt.Sprintf("  Volume: %s in range\n", volSign))
+			}
+			if len(w.KeyEvents) > 0 {
+				var evNames []string
+				seen := map[string]bool{}
+				for _, ev := range w.KeyEvents {
+					if !seen[ev.Name] {
+						evNames = append(evNames, ev.Name+" ✓")
+						seen[ev.Name] = true
+					}
+				}
+				sb.WriteString(fmt.Sprintf("  Events: %s\n", strings.Join(evNames, " | ")))
+			}
+			sb.WriteString(fmt.Sprintf("  Bias: %s\n", w.Description))
+		}
 	}
+
+	// Elliott Wave (daily/weekly only)
+	if snap.Elliott != nil {
+		ew := snap.Elliott
+		biasEmoji := "🔵"
+		switch ew.Bias {
+		case "BULLISH":
+			biasEmoji = "🟢"
+		case "BEARISH":
+			biasEmoji = "🔴"
+		}
+		sb.WriteString(fmt.Sprintf("\n〽️ <b>Elliott:</b> Kemungkinan %s (%s bias, confidence %d%%)\n",
+			ew.PossibleWavePosition, biasEmoji+" "+ew.Bias, ew.Confidence))
+		if len(ew.RulesViolated) > 0 {
+			sb.WriteString(fmt.Sprintf("  ⚠️ Violations: %s\n", strings.Join(ew.RulesViolated, "; ")))
+		}
+	}
+
 
 	if len(result.Patterns) > 0 {
 		sb.WriteString("\n🕯 <b>Pola:</b>\n")
 		for _, p := range result.Patterns {
-			dirE := "⚪"
+			dirE := "⚪ Neutral"
 			if p.Direction == "BULLISH" {
-				dirE = "🟢"
+				dirE = "🟢 Long"
 			} else if p.Direction == "BEARISH" {
-				dirE = "🔴"
+				dirE = "🔴 Short"
 			}
 			stars := strings.Repeat("★", p.Reliability) + strings.Repeat("☆", 3-p.Reliability)
 			sb.WriteString(fmt.Sprintf("  %s %s %s\n", dirE, p.Name, stars))

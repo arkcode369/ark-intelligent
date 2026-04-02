@@ -37,12 +37,12 @@ func parseNumeric(s string) *float64 {
 //   2 = higher actual is bearish for the currency (e.g. Unemployment Claims, CPI when above target)
 func directionArrow(actual, forecast string, impactDirection ...int) string {
 	if actual == "" || forecast == "" {
-		return "⚪"
+		return "⚪ Pending"
 	}
 	aVal := parseNumeric(actual)
 	fVal := parseNumeric(forecast)
 	if aVal == nil || fVal == nil {
-		return "⚪"
+		return "⚪ N/A"
 	}
 
 	diff := *aVal - *fVal
@@ -67,11 +67,11 @@ func directionArrow(actual, forecast string, impactDirection ...int) string {
 	}
 
 	if effectiveDiff > 0 {
-		return "🟢"
+		return "🟢 Beat"
 	} else if effectiveDiff < 0 {
-		return "🔴"
+		return "🔴 Miss"
 	}
-	return "⚪"
+	return "⚪ In-line"
 }
 
 // FormatSettings formats the user preferences display.
@@ -134,7 +134,53 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 		b.WriteString("<code>Alert Currencies   : All Currencies</code>\n")
 	}
 
+	// Quiet hours status (TASK-202)
+	if prefs.QuietHoursEnabled {
+		b.WriteString(fmt.Sprintf("<code>🌙 Quiet Hours  : %02d:00–%02d:00 WIB</code>\n", prefs.QuietHoursStart, prefs.QuietHoursEnd))
+	}
+	if prefs.MaxAlertsPerDay > 0 {
+		b.WriteString(fmt.Sprintf("<code>📋 Daily Cap    : %d alerts/day</code>\n", prefs.MaxAlertsPerDay))
+	}
+
 	b.WriteString("\n<i>Use the buttons below to adjust preferences</i>")
+
+	return b.String()
+}
+
+
+// FormatAlertManagement formats the alert management sub-menu display (TASK-202).
+func (f *Formatter) FormatAlertManagement(prefs domain.UserPrefs) string {
+	var b strings.Builder
+
+	b.WriteString("🔔 <b>Alert Management</b>\n\n")
+
+	// Quiet hours status
+	if prefs.QuietHoursEnabled {
+		b.WriteString(fmt.Sprintf("<code>🌙 Quiet Hours : ON (%02d:00–%02d:00 WIB)</code>\n",
+			prefs.QuietHoursStart, prefs.QuietHoursEnd))
+	} else {
+		b.WriteString("<code>🌙 Quiet Hours : OFF</code>\n")
+	}
+
+	// Alert types status
+	b.WriteString("\n<b>Alert Types:</b>\n")
+	for _, key := range domain.ValidAlertTypes() {
+		status := "✅ ON"
+		if !prefs.IsAlertTypeEnabled(key) {
+			status = "❌ OFF"
+		}
+		b.WriteString(fmt.Sprintf("<code>  %s: %s</code>\n", domain.AlertTypeLabel(key), status))
+	}
+
+	// Daily cap
+	b.WriteString("\n")
+	if prefs.MaxAlertsPerDay > 0 {
+		b.WriteString(fmt.Sprintf("<code>📋 Daily Cap   : %d alerts/day</code>\n", prefs.MaxAlertsPerDay))
+	} else {
+		b.WriteString("<code>📋 Daily Cap   : Unlimited</code>\n")
+	}
+
+	b.WriteString("\n<i>Use the buttons below to adjust alert preferences</i>")
 
 	return b.String()
 }
@@ -216,11 +262,11 @@ func scoreArrow(score float64) string {
 // scoreDot returns a colored dot based on score direction.
 func scoreDot(score float64) string {
 	if score > 15 {
-		return "🟢"
+		return "🟢 Bullish"
 	} else if score < -15 {
-		return "🔴"
+		return "🔴 Bearish"
 	}
-	return "⚪"
+	return "⚪ Neutral"
 }
 
 // trendLabel converts a direction string to a human-readable trend label.
@@ -239,9 +285,9 @@ func trendLabel(direction string) string {
 func shortDirection(d string) string {
 	switch d {
 	case "BULLISH":
-		return "\xF0\x9F\x9F\xA2 BULL"
+		return "\xF0\x9F\x9F\xA2 Bullish BULL"
 	case "BEARISH":
-		return "\xF0\x9F\x94\xB4 BEAR"
+		return "\xF0\x9F\x94\xB4 Bearish BEAR"
 	default:
 		return d
 	}
@@ -293,4 +339,14 @@ func (f *Formatter) FormatTrackedEvents(events []string) string {
 	b.WriteString("\nUsage: <code>/impact Event Name</code>\n")
 	b.WriteString("Example: <code>/impact Non-Farm Employment Change</code>")
 	return b.String()
+}
+
+// FormatRegimeOverlayHeader formats a one-line regime overlay header for embedding
+// at the top of analysis output (e.g. /cta, /quant).
+// Returns empty string if overlay is nil.
+func (f *Formatter) FormatRegimeOverlayHeader(overlay interface{ HeaderLine() string }) string {
+	if overlay == nil {
+		return ""
+	}
+	return overlay.HeaderLine() + "\n"
 }

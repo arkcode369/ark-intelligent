@@ -204,6 +204,7 @@ func (h *Handler) cmdAlpha(ctx context.Context, chatID string, _ int64, _ string
 
 	summary := formatAlphaSummary(state)
 	kb := h.kb.AlphaMenu()
+	kb = AppendFeedbackRow(kb, h.kb, "fb:alpha:summary", h.feedbackEnabled())
 	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, summary, kb)
 	return err
 }
@@ -876,6 +877,70 @@ Total: %.0f%%
 		fmtutil.FormatDateTimeUTC(heat.UpdatedAt))
 }
 
+// formatRiskParity renders a risk-parity sizing analysis for Telegram HTML.
+func formatRiskParity(rp *strategy.RiskParityResult) string {
+	if rp == nil {
+		return ""
+	}
+
+	adviceEmoji := "⚖️"
+	switch rp.Recommendation {
+	case strategy.SizingScaleDown:
+		adviceEmoji = "🔻"
+	case strategy.SizingScaleUp:
+		adviceEmoji = "🔺"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("<b>⚖️ Risk Parity Sizing</b>\n\n"+
+		"%s Rekomendasi: <b>%s</b>\n"+
+		"Heat Total: <b>%.1f%%</b> / %.1f%% maks\n"+
+		"Kelly: %.1f%% (½K: %.1f%%)\n",
+		adviceEmoji, rp.Recommendation,
+		rp.TotalHeatPct, rp.MaxHeatPct,
+		rp.KellyFraction*100, rp.HalfKelly*100))
+
+	if len(rp.HeatBreakdown) > 0 {
+		sb.WriteString("\n<b>Heat per Posisi:</b>\n")
+		for _, h := range rp.HeatBreakdown {
+			bar := heatBar(h.RiskPct, rp.MaxHeatPct/float64(len(rp.HeatBreakdown)))
+			sb.WriteString(fmt.Sprintf("  %s: $%.0f (%.1f%%) %s\n", h.Symbol, h.RiskAmt, h.RiskPct, bar))
+		}
+	}
+
+	if len(rp.AdjustedPositions) > 0 {
+		sb.WriteString("\n<b>Sizing Adjustment:</b>\n")
+		for _, a := range rp.AdjustedPositions {
+			arrow := "→"
+			if a.ScaleFactor < 0.95 {
+				arrow = "↓"
+			} else if a.ScaleFactor > 1.05 {
+				arrow = "↑"
+			}
+			sb.WriteString(fmt.Sprintf("  %s: %.0f %s %.0f (×%.2f)\n",
+				a.Symbol, a.OriginalSize, arrow, a.RecommendedSize, a.ScaleFactor))
+		}
+	}
+
+	return sb.String()
+}
+
+// heatBar renders a small inline label for heat percentage relative to threshold.
+func heatBar(pct, thresholdPerPos float64) string {
+	if thresholdPerPos <= 0 {
+		return ""
+	}
+	ratio := pct / thresholdPerPos
+	switch {
+	case ratio >= 1.5:
+		return "🔴 High"
+	case ratio >= 1.0:
+		return "🟡 Elevated"
+	default:
+		return "🟢 Normal"
+	}
+}
+
 func formatRankX(result *factors.RankingResult) string {
 	if result == nil || len(result.Assets) == 0 {
 		return "⚠️ Tidak ada data ranking."
@@ -1015,8 +1080,19 @@ func formatCryptoAlpha(results map[string]*microstructure.Signal, symbols []stri
 		sb.WriteString(fmt.Sprintf("  OB Imbalance: %+.2f | Taker Buy: %.0f%%\n",
 			sig.BidAskImbalance, sig.TakerBuyRatio*100))
 		if sig.OIChange != 0 {
-			sb.WriteString(fmt.Sprintf("  OI Change: %+.1f%% | LS Ratio: %.2f\n",
-				sig.OIChange, sig.LongShortRatio))
+			divTag := ""
+			if sig.DeltaDivergence {
+				divTag = " ⚠️ DIVERGENCE"
+			}
+			sb.WriteString(fmt.Sprintf("  OI Change: %+.1f%%%s | LS Ratio: %.2f\n",
+				sig.OIChange, divTag, sig.LongShortRatio))
+		}
+		if sig.LargeTradePresence > 0 {
+			absTag := ""
+			if sig.AbsorptionScore > 0.4 {
+				absTag = fmt.Sprintf(" | Absorpsi: %.0f%%", sig.AbsorptionScore*100)
+			}
+			sb.WriteString(fmt.Sprintf("  Large Trade: %.1f%%%s\n", sig.LargeTradePresence, absTag))
 		}
 		if sig.FundingStats != nil {
 			fs := sig.FundingStats
@@ -1071,6 +1147,15 @@ func cryptoInterpretIndonesian(sig *microstructure.Signal) string {
 	if sig.ConfirmEntry {
 		parts = append(parts, "entry terkonfirmasi ✅")
 	}
+	if sig.LargeTradePresence > 30 {
+		parts = append(parts, fmt.Sprintf("volume institusional %.0f%%", sig.LargeTradePresence))
+	}
+	if sig.AbsorptionScore > 0.4 {
+		parts = append(parts, "absorpsi bid terdeteksi (waspada pembalikan)")
+	}
+	if sig.DeltaDivergence {
+		parts = append(parts, "⚠️ divergensi OI vs harga")
+	}
 	return strings.Join(parts, ", ")
 }
 
@@ -1083,13 +1168,13 @@ func alphaSignalEmoji(sig string) string {
 	case "STRONG_LONG":
 		return "🟢🟢"
 	case "LONG":
-		return "🟢"
+		return "🟢 Bullish"
 	case "STRONG_SHORT":
 		return "🔴🔴"
 	case "SHORT":
-		return "🔴"
+		return "🔴 Bearish"
 	default:
-		return "⚪"
+		return "⚪ Neutral"
 	}
 }
 
@@ -1137,22 +1222,22 @@ func alphaHeatEmoji(h strategy.HeatLevel) string {
 	case strategy.HeatHot:
 		return "🟠"
 	case strategy.HeatOverheat:
-		return "🔴"
+		return "🔴 Bearish"
 	default:
-		return "⚪"
+		return "⚪ Neutral"
 	}
 }
 
 func alphaMicroEmoji(b microstructure.Bias) string {
 	switch b {
 	case microstructure.BiasBullish:
-		return "🟢"
+		return "🟢 Bullish"
 	case microstructure.BiasBearish:
-		return "🔴"
+		return "🔴 Bearish"
 	case microstructure.BiasConflict:
 		return "🟡"
 	default:
-		return "⚪"
+		return "⚪ Neutral"
 	}
 }
 

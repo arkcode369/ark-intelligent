@@ -115,7 +115,7 @@ type Handler struct {
 
 	// regimeEngine computes the unified market regime overlay.
 	// May be nil — overlay headers silently omitted if not configured.
-	regimeEngine *regimesvc.Engine
+	regimeEngine *regimesvc.OverlayEngine
 
 	// vp holds optional Volume Profile engine services.
 	// May be nil — /vp command disabled if not configured.
@@ -154,6 +154,14 @@ type Handler struct {
 
 	// adminConfirm stores pending admin action confirmations with TTL.
 	adminConfirm *adminConfirmStore
+
+	// orderFlow holds optional price repos for the /orderflow command.
+	// May be nil — /orderflow command disabled if not configured.
+	orderFlow *OrderFlowServices
+
+	// regimeProvider exposes regime state data for the /regime command.
+	// May be nil — regime feature disabled if scheduler not wired.
+	regimeProvider RegimeAlertProvider
 }
 
 // NewHandler creates a handler and registers all commands on the bot.
@@ -214,27 +222,49 @@ func NewHandler(
 	bot.RegisterCommand("/rank", h.cmdRank)
 	bot.RegisterCommand("/macro", h.cmdMacro)
 	bot.RegisterCommand("/ecb", h.cmdECB)           // ECB monetary policy dashboard (SDW)
+	bot.RegisterCommand("/leading", h.cmdLeading)    // OECD Composite Leading Indicators
 	bot.RegisterCommand("/eurostat", h.cmdEurostat)  // EU economy dashboard (Eurostat)
 	bot.RegisterCommand("/eu", h.cmdEurostat)        // EU economy alias
 	bot.RegisterCommand("/snb", h.cmdSNB)           // SNB balance sheet / FX intervention proxy
+	bot.RegisterCommand("/swaps", h.cmdSwaps)        // DTCC FX swap institutional flows
+	bot.RegisterCommand("/tedge", h.cmdTEdge)        // TradingEconomics global macro dashboard
+	bot.RegisterCommand("/globalm", h.cmdTEdge)      // alias for /tedge
 	bot.RegisterCommand("/bias", h.cmdBias)
 	bot.RegisterCommand("/backtest", h.cmdBacktest)
 	bot.RegisterCommand("/accuracy", h.cmdAccuracy)
 	bot.RegisterCommand("/report", h.cmdReport)
 	bot.RegisterCommand("/impact", h.cmdImpact)
 	bot.RegisterCommand("/sentiment", h.cmdSentiment)
+	bot.RegisterCommand("/vix", h.cmdVix)                // CBOE volatility index dashboard (VIX + vol suite)
 	bot.RegisterCommand("/seasonal", h.cmdSeasonal)
 	bot.RegisterCommand("/price", h.cmdPrice)             // Daily price context
 	bot.RegisterCommand("/levels", h.cmdLevels)           // Support/resistance levels + position sizing
 	bot.RegisterCommand("/intermarket", h.cmdIntermarket) // Intermarket correlation signals
+	bot.RegisterCommand("/flows", h.cmdFlows)             // Cross-asset flow divergence detection
 	bot.RegisterCommand("/treasury", h.cmdTreasury)     // US Treasury auction results
+	bot.RegisterCommand("/13f", h.cmdSEC)             // SEC EDGAR 13F institutional holdings
+	bot.RegisterCommand("/signal", h.cmdSignal)         // Unified directional signal (COT+CTA+Quant+Sentiment+Seasonal)
+	bot.RegisterCommand("/setalert", h.cmdSetAlert)  // Per-pair COT alert management
 	bot.RegisterCommand("/onchain", h.cmdOnChain)    // On-chain exchange flow metrics (CoinMetrics)
+	bot.RegisterCommand("/defi", h.cmdDeFi)          // DeFi health dashboard (DefiLlama)
+	bot.RegisterCommand("/carry", h.cmdCarry)         // Carry trade monitor & unwind detector
+	bot.RegisterCommand("/bis", h.cmdBIS)            // BIS Statistics: CB policy rates + credit gaps + REER
+	bot.RegisterCommand("/cbrates", h.cmdBIS)        // Central bank policy rates (alias for /bis)
+	bot.RegisterCommand("/orderflow", h.cmdOrderFlow)   // Estimated delta & order flow analysis
+	bot.RegisterCommand("/market", h.cmdMarket)      // Cross-asset market overview (Finviz via Firecrawl)
+	bot.RegisterCommand("/session", h.cmdSession)       // Trading session behavior analysis (London/NY/Tokyo)
+	bot.RegisterCommand("/scenario", h.cmdScenario)    // Monte Carlo price scenario generator
 
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
 
 	// Chat history management
 	bot.RegisterCommand("/clear", h.cmdClearChat)
+
+	// Pinned commands (TASK-078)
+	bot.RegisterCommand("/pin", h.cmdPin)
+	bot.RegisterCommand("/unpin", h.cmdUnpin)
+	bot.RegisterCommand("/pins", h.cmdPins)
 
 	// Admin commands (access enforced inside handlers)
 	bot.RegisterCommand("/users", h.cmdUsers)
@@ -257,6 +287,10 @@ func NewHandler(
 	bot.RegisterCommand("/history", h.cmdHistory)
 	bot.RegisterCommand("/h", h.cmdHistory)
 
+	// Daily briefing command (TASK-029)
+	bot.RegisterCommand("/briefing", h.cmdBriefing)
+	bot.RegisterCommand("/br", h.cmdBriefing) // short alias
+
 	// Multi-word command+arg aliases for power users (TASK-203)
 	// These combine command + default argument for the most common workflows.
 	bot.RegisterCommand("/ce", h.cmdCOT)            // /ce EUR = /cot EUR
@@ -269,6 +303,7 @@ func NewHandler(
 	bot.RegisterCallback("cot:", h.cbCOTDetail)
 	bot.RegisterCallback("alert:", h.cbAlertToggle)
 	bot.RegisterCallback("set:", h.cbSettings)
+	bot.RegisterCallback("alertmgr:", h.cbAlertMgr)
 	bot.RegisterCallback("cal:filter:", h.cbNewsFilter)
 	bot.RegisterCallback("out:", h.cbOutlook)
 	bot.RegisterCallback("cal:nav:", h.cbNewsNav)
@@ -278,10 +313,15 @@ func NewHandler(
 	bot.RegisterCallback("imp:", h.cbImpact)
 	bot.RegisterCallback("nav:", h.cbNav)
 	bot.RegisterCallback("help:", h.cbHelp)
+	bot.RegisterCallback("setalert:", h.cbSetAlert) // Per-pair alert management keyboard
 	bot.RegisterCallback("share:", h.cbShare)
 	bot.RegisterCallback("adm_cf:", h.cbAdminConfirm)
+	bot.RegisterCallback("briefing:", h.cbBriefingRefresh)
 
-	log.Info().Int("commands", 48).Int("callbacks", 10).Msg("registered commands and callback prefixes")
+	// Onboarding completion tracking (TASK-204)
+	h.registerOnboardingProgress()
+
+	log.Info().Int("commands", 51).Int("callbacks", 11).Msg("registered commands and callback prefixes")
 	return h
 }
 // ---------------------------------------------------------------------------
@@ -421,7 +461,7 @@ func (h *Handler) cmdOutlookFRED(ctx context.Context, chatID string, userID int6
 
 // WithRegimeEngine injects the regime overlay engine into the handler.
 // If nil is passed, regime overlay headers are silently skipped.
-func (h *Handler) WithRegimeEngine(e *regimesvc.Engine) *Handler {
+func (h *Handler) WithRegimeEngine(e *regimesvc.OverlayEngine) *Handler {
 	h.regimeEngine = e
 	return h
 }

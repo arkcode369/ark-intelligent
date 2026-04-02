@@ -19,7 +19,6 @@ import (
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
-	regimesvc "github.com/arkcode369/ark-intelligent/internal/service/regime"
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
@@ -31,6 +30,12 @@ type QuantServices struct {
 	DailyPriceRepo pricesvc.DailyPriceStore
 	IntradayRepo   pricesvc.IntradayStore
 	PriceMapping   []domain.PriceSymbolMapping
+	RegimeEngine   RegimeOverlayEngine // optional — nil disables overlay header
+}
+
+// RegimeOverlayEngine is the minimal interface the quant handler needs from the regime package.
+type RegimeOverlayEngine interface {
+	ComputeOverlay(ctx context.Context, contractCode, symbol, timeframe string) (RegimeHeaderProvider, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -38,13 +43,15 @@ type QuantServices struct {
 // ---------------------------------------------------------------------------
 
 type quantState struct {
-	symbol    string
-	currency  string
-	timeframe string
-	bars      map[string][]ta.OHLCV // tf → bars
-	volCone   *pricesvc.VolCone     // cached vol cone result
-	createdAt time.Time
-	overlay   *regimesvc.RegimeOverlay // optional regime header
+	symbol         string
+	currency       string
+	timeframe      string
+	contractCode   string
+	bars           map[string][]ta.OHLCV  // tf → bars
+	volCone        *pricesvc.VolCone      // cached vol cone result
+	wyckoff        *pricesvc.WyckoffResult // cached Wyckoff phase analysis
+	regimeOverlay  RegimeHeaderProvider   // optional regime overlay header
+	createdAt      time.Time
 }
 
 var quantStateTTL = config.QuantStateTTL
@@ -223,23 +230,28 @@ func (h *Handler) computeQuantState(ctx context.Context, mapping *domain.PriceSy
 	// Compute volatility cone (cached in state, TTL via quantStateTTL)
 	volCone := pricesvc.ComputeVolCone(dailyRecords)
 
-	st := &quantState{
-		symbol:    mapping.Currency,
-		currency:  mapping.Currency,
-		timeframe: timeframe,
-		bars:      barsByTF,
-		volCone:   volCone,
-		createdAt: time.Now(),
+	// Wyckoff phase analysis (best-effort, non-blocking)
+	wyckoff := pricesvc.AnalyzeWyckoff(dailyRecords)
+
+	state := &quantState{
+		symbol:       mapping.Currency,
+		currency:     mapping.Currency,
+		timeframe:    timeframe,
+		contractCode: code,
+		bars:         barsByTF,
+		volCone:      volCone,
+		wyckoff:      wyckoff,
+		createdAt:    time.Now(),
 	}
 
-	// Compute regime overlay (best-effort, non-fatal).
-	if h.regimeEngine != nil {
-		if ov, ovErr := h.regimeEngine.ComputeOverlay(ctx, *mapping, timeframe); ovErr == nil {
-			st.overlay = ov
+	// Compute regime overlay if engine available (best-effort, non-blocking)
+	if h.quant.RegimeEngine != nil {
+		if overlay, rErr := h.quant.RegimeEngine.ComputeOverlay(ctx, code, mapping.Currency, timeframe); rErr == nil {
+			state.regimeOverlay = overlay
 		}
 	}
 
-	return st, nil
+	return state, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -251,14 +263,20 @@ func (h *Handler) formatQuantDashboard(state *quantState) string {
 	if state.volCone != nil {
 		volConeSection = "\n" + h.fmt.FormatVolCone(state.volCone)
 	}
-	overlayHeader := ""
-	if state.overlay != nil {
-		overlayHeader = html.EscapeString(state.overlay.Description) + "\n"
+
+	regimeHeader := ""
+	if state.regimeOverlay != nil {
+		regimeHeader = state.regimeOverlay.HeaderLine() + "\n"
 	}
 
-	return fmt.Sprintf(`📊 <b>QUANT DASHBOARD: %s</b>
+	wyckoffSection := ""
+	if state.wyckoff != nil {
+		wyckoffSection = "🌊 <b>Wyckoff:</b> " + html.EscapeString(state.wyckoff.Interpretation)
+	}
+
+	return fmt.Sprintf(`%s📊 <b>QUANT DASHBOARD: %s</b>
 📅 %s — %s
-%s%s
+%s
 Pilih model analisis di bawah.
 Setiap model akan menghasilkan chart + analisis detail.
 
@@ -271,12 +289,14 @@ Setiap model akan menghasilkan chart + analisis detail.
 <b>🎭 Advanced:</b>
   HMM Regime Detection
 
+%s
 Klik tombol untuk mulai analisis.`,
+		regimeHeader,
 		html.EscapeString(state.symbol),
 		time.Now().Format("02 Jan 2006"),
 		state.timeframe,
 		volConeSection,
-		overlayHeader,
+		wyckoffSection,
 	)
 }
 

@@ -1,49 +1,95 @@
 package regime
 
-// types.go — RegimeOverlay types for the Market Regime Overlay Engine
+import "time"
 
-// RegimeOverlay is the unified market regime assessment combining HMM, GARCH, ADX, and COT.
-// UnifiedScore ranges from -100 (extreme bearish/crisis) to +100 (extreme bullish/trending).
+// ---------------------------------------------------------------------------
+// Market Regime Overlay Types
+// ---------------------------------------------------------------------------
+//
+// RegimeOverlay is a unified market health score combining:
+//   HMM state (30%) + GARCH volatility regime (25%) + ADX trend (25%) + COT sentiment (20%)
+//
+// Score range: -100 (extreme bearish/risk-off) to +100 (extreme bullish/risk-on)
+
+// RegimeOverlay holds the unified market regime assessment.
 type RegimeOverlay struct {
-	// HMM sub-model
-	HMMState      string  `json:"hmm_state"`      // RISK_ON, RISK_OFF, CRISIS
-	HMMConfidence float64 `json:"hmm_confidence"` // 0..1, probability of current state
-	HMMScore      float64 `json:"hmm_score"`      // -100..+100 sub-score
-	HMMAvailable  bool    `json:"hmm_available"`
+	Symbol    string `json:"symbol"`
+	Timeframe string `json:"timeframe"`
 
-	// GARCH sub-model
-	GARCHVolRegime string  `json:"garch_vol_regime"` // EXPANDING, CONTRACTING, NORMAL
-	VolRatio       float64 `json:"vol_ratio"`        // CurrentVol / LongRunVol
-	GARCHScore     float64 `json:"garch_score"`      // -100..+100 sub-score
-	GARCHAvailable bool    `json:"garch_available"`
+	// Sub-model results
+	HMMState      string  `json:"hmm_state"`       // RISK_ON | RISK_OFF | CRISIS
+	HMMConfidence float64 `json:"hmm_confidence"`  // 0..1 — highest state probability
+	HMMScore      float64 `json:"hmm_score"`       // -100..+100 contribution
 
-	// ADX sub-model
-	ADXValue     float64 `json:"adx_value"`
-	ADXStrength  string  `json:"adx_strength"` // STRONG, MODERATE, WEAK
-	ADXScore     float64 `json:"adx_score"`    // -100..+100 sub-score
-	ADXAvailable bool    `json:"adx_available"`
+	GARCHVolRegime string  `json:"garch_vol_regime"` // EXPANDING | NORMAL | CONTRACTING
+	VolRatio       float64 `json:"vol_ratio"`        // current/long-run vol
+	GARCHScore     float64 `json:"garch_score"`      // -100..+100 contribution
 
-	// COT sub-model
-	COTSentiment float64 `json:"cot_sentiment"` // raw sentiment score from domain
-	COTScore     float64 `json:"cot_score"`     // -100..+100 sub-score
-	COTAvailable bool    `json:"cot_available"`
+	ADXStrength string  `json:"adx_strength"` // STRONG | MODERATE | WEAK
+	ADXValue    float64 `json:"adx_value"`
+	ADXScore    float64 `json:"adx_score"` // -100..+100 contribution
 
-	// Unified output
-	UnifiedScore float64 `json:"unified_score"` // -100..+100 (weighted composite)
-	OverlayColor string  `json:"overlay_color"` // 🟢 / 🟡 / 🔴
-	Label        string  `json:"label"`         // BULLISH, NEUTRAL, BEARISH, CRISIS
-	Description  string  `json:"description"`   // Full overlay header string
-	WeightsUsed  float64 `json:"weights_used"`  // sum of effective weights (0..1)
+	COTSentiment float64 `json:"cot_sentiment"` // raw COT score (can be outside -100..100)
+	COTBias      string  `json:"cot_bias"`      // BULLISH | BEARISH | NEUTRAL
+	COTScore     float64 `json:"cot_score"`     // -100..+100 clamped contribution
+
+	// Effective weights used (adjusted if sub-models unavailable)
+	WeightHMM   float64 `json:"weight_hmm"`
+	WeightGARCH float64 `json:"weight_garch"`
+	WeightADX   float64 `json:"weight_adx"`
+	WeightCOT   float64 `json:"weight_cot"`
+
+	// Composite output
+	UnifiedScore float64 `json:"unified_score"`  // -100..+100
+	OverlayColor string  `json:"overlay_color"`  // 🟢 | 🟡 | 🔴
+	Label        string  `json:"label"`          // BULLISH | NEUTRAL | BEARISH | RISK-OFF | CRISIS
+	Description  string  `json:"description"`    // one-line human summary
+
+	// Diagnostics
+	ModelsUsed []string  `json:"models_used"`  // which sub-models contributed
+	ComputedAt time.Time `json:"computed_at"`
 }
 
-// volRegimeLabel classifies VolRatio into a human-readable regime string.
-func volRegimeLabel(volRatio float64) string {
-	switch {
-	case volRatio > 1.25:
-		return "EXPANDING"
-	case volRatio < 0.80:
-		return "CONTRACTING"
-	default:
-		return "NORMAL"
+// HeaderLine returns a compact one-line header for embedding in Telegram messages.
+// Example: "📊 Regime: 🟢 BULLISH (+67) | Trending, Low Vol, COT Long"
+func (r *RegimeOverlay) HeaderLine() string {
+	return "📊 Regime: " + r.OverlayColor + " " + r.Label +
+		" (" + formatScore(r.UnifiedScore) + ") | " + r.Description
+}
+
+// formatScore formats a score as "+67" or "-34" or "0".
+func formatScore(s float64) string {
+	v := int(s + 0.5)
+	if s < 0 {
+		v = int(s - 0.5)
 	}
+	if v >= 0 {
+		return "+" + itoa(v)
+	}
+	return itoa(v)
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	neg := false
+	if i < 0 {
+		neg = true
+		i = -i
+	}
+	buf := [10]byte{}
+	pos := len(buf)
+	for i >= 10 {
+		pos--
+		buf[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	pos--
+	buf[pos] = byte('0' + i)
+	if neg {
+		pos--
+		buf[pos] = '-'
+	}
+	return string(buf[pos:])
 }

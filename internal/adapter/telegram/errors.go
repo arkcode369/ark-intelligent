@@ -127,12 +127,13 @@ func (h *Handler) sendUserError(ctx context.Context, chatID string, err error, c
 
 	friendly := userFriendlyError(err, command)
 
-	// Attach retry button for retriable errors with a known command.
+	// Attach retry + home buttons for retriable errors with a known command.
 	cbData := retryCallbackData(command)
 	if isRetriableError(err) && cbData != "" {
 		kb := ports.InlineKeyboard{
 			Rows: [][]ports.InlineButton{{
 				{Text: "🔄 Coba Lagi", CallbackData: cbData},
+				{Text: "🏠 Menu Utama", CallbackData: "nav:home"},
 			}},
 		}
 		if _, sendErr := h.bot.SendWithKeyboard(ctx, chatID, friendly, kb); sendErr != nil {
@@ -147,6 +148,7 @@ func (h *Handler) sendUserError(ctx context.Context, chatID string, err error, c
 }
 
 // editUserError logs the technical error and edits an existing message with a user-friendly error.
+// For retriable errors, a retry + home inline keyboard is attached.
 func (h *Handler) editUserError(ctx context.Context, chatID string, msgID int, err error, command string) {
 	log.Error().
 		Err(err).
@@ -155,6 +157,22 @@ func (h *Handler) editUserError(ctx context.Context, chatID string, msgID int, e
 		Msg("handler error")
 
 	friendly := userFriendlyError(err, command)
+
+	// Attach retry + home buttons for retriable errors.
+	cbData := retryCallbackData(command)
+	if isRetriableError(err) && cbData != "" {
+		kb := ports.InlineKeyboard{
+			Rows: [][]ports.InlineButton{{
+				{Text: "🔄 Coba Lagi", CallbackData: cbData},
+				{Text: "🏠 Menu Utama", CallbackData: "nav:home"},
+			}},
+		}
+		if editErr := h.bot.EditWithKeyboard(ctx, chatID, msgID, friendly, kb); editErr != nil {
+			log.Error().Err(editErr).Str("chat_id", chatID).Msg("failed to edit error message with retry")
+		}
+		return
+	}
+
 	if editErr := h.bot.EditMessage(ctx, chatID, msgID, friendly); editErr != nil {
 		log.Error().Err(editErr).Str("chat_id", chatID).Msg("failed to edit error message")
 	}
@@ -207,3 +225,27 @@ func sessionExpiredMessage(command string) string {
 	return "⏳ <b>Sesi berakhir</b>\n\nData sudah expired. Ketik <code>/" + command + "</code> untuk memulai ulang."
 }
 
+
+// ---------------------------------------------------------------------------
+// Callback Toast — success message without error logging
+// ---------------------------------------------------------------------------
+
+// callbackToastErr is a sentinel error type that signals a success toast to
+// the bot dispatcher. It is NOT logged as an error — the dispatcher shows the
+// toast text via AnswerCallbackQuery and returns without any error handling.
+type callbackToastErr struct{ msg string }
+
+func (e *callbackToastErr) Error() string { return e.msg }
+
+// callbackToast wraps msg as a success-toast sentinel so the callback
+// dispatcher shows it via AnswerCallbackQuery without treating it as an error.
+func callbackToast(msg string) error { return &callbackToastErr{msg: msg} }
+
+// isCallbackToast returns true if err is a callbackToastErr sentinel.
+func isCallbackToast(err error) (string, bool) {
+	var t *callbackToastErr
+	if errors.As(err, &t) {
+		return t.msg, true
+	}
+	return "", false
+}

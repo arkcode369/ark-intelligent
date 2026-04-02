@@ -15,6 +15,7 @@ const (
 	gvzEODURL   = "https://cdn.cboe.com/api/global/us_indices/daily_prices/GVZ_EOD.csv"
 	rvxEODURL   = "https://cdn.cboe.com/api/global/us_indices/daily_prices/RVX_EOD.csv"
 	vix9dEODURL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX9D_EOD.csv"
+	cor3mEODURL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/COR3M_EOD.csv"
 )
 
 // VolSuite holds cross-asset volatility index levels from CBOE.
@@ -25,6 +26,7 @@ type VolSuite struct {
 	GVZ   float64 // CBOE gold volatility
 	RVX   float64 // CBOE Russell 2000 volatility
 	VIX9D float64 // 9-day VIX (event-driven pricing)
+	COR3M float64 // CBOE 3-month implied correlation (dispersion signal; low = high dispersion)
 
 	// Ratios (computed from VIX spot)
 	SKEWVIXRatio float64 // SKEW/VIX — >8 historically dangerous
@@ -38,6 +40,9 @@ type VolSuite struct {
 	SKEWVIXPercentile float64 // Historical percentile of current SKEW/VIX ratio (0-100)
 	SKEWPercentile    float64 // Historical percentile of current SKEW level (0-100)
 	Divergences []string // detected vol divergences
+
+	// Cross-asset vol dashboard result (percentiles + regime)
+	CrossVol *CrossVolResult // nil if not computed
 
 	Available bool
 	FetchedAt time.Time
@@ -62,6 +67,7 @@ func FetchVolSuite(ctx context.Context, vixSpot float64) *VolSuite {
 		{gvzEODURL, &vs.GVZ, "GVZ"},
 		{rvxEODURL, &vs.RVX, "RVX"},
 		{vix9dEODURL, &vs.VIX9D, "VIX9D"},
+		{cor3mEODURL, &vs.COR3M, "COR3M"},
 	}
 
 	fetched := 0
@@ -114,6 +120,9 @@ func FetchVolSuite(ctx context.Context, vixSpot float64) *VolSuite {
 
 	// Historical percentile (uses fetched SKEW+VIX CSVs)
 	vs.computeHistoricalPercentile(ctx, client, vixSpot)
+
+	// Cross-asset vol dashboard: percentiles + regime classification
+	vs.CrossVol = vs.computeCrossVolPercentiles(ctx, client, vixSpot)
 
 	return vs
 }
@@ -174,5 +183,21 @@ func (vs *VolSuite) detectDivergences(vixSpot float64) {
 	if vs.OVX > 40 && vs.GVZ > 20 && vixSpot > 25 && vs.RVX > 30 {
 		vs.Divergences = append(vs.Divergences,
 			"All vol indices elevated — systemic stress pattern (2020/2022 pattern)")
+	}
+
+	// COR3M: low implied correlation = high dispersion (stock-picking environment)
+	// High COR3M + low VIX = macro-driven melt-up with hidden correlation risk
+	if vs.COR3M > 0 {
+		switch {
+		case vs.COR3M < 20:
+			vs.Divergences = append(vs.Divergences,
+				fmt.Sprintf("COR3M %.0f — high dispersion (low correlation; stock-picking environment)", vs.COR3M))
+		case vs.COR3M > 70 && vixSpot < 20:
+			vs.Divergences = append(vs.Divergences,
+				fmt.Sprintf("COR3M %.0f high + low VIX — macro correlation spike with low fear (watch for correlation unwind)", vs.COR3M))
+		case vs.COR3M > 60 && vixSpot > 25:
+			vs.Divergences = append(vs.Divergences,
+				fmt.Sprintf("COR3M %.0f + VIX elevated — broad correlation regime (stocks moving together in risk-off)", vs.COR3M))
+		}
 	}
 }

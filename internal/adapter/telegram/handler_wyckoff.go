@@ -99,8 +99,8 @@ var wyckoffSymbols = []string{"EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", 
 // cmdWyckoff handles /wyckoff [SYMBOL] [TIMEFRAME]
 func (h *Handler) cmdWyckoff(ctx context.Context, chatID string, userID int64, args string) error {
 	if h.wyckoff == nil {
-		_, err := h.bot.SendHTML(ctx, chatID, "⚠️ Wyckoff engine tidak tersedia.")
-		return err
+		h.sendUserError(ctx, chatID, fmt.Errorf("Wyckoff engine not available"), "wyckoff")
+		return nil
 	}
 
 	parts := strings.Fields(strings.TrimSpace(strings.ToUpper(args)))
@@ -138,13 +138,14 @@ Timeframe yang didukung: <code>daily</code>, <code>4h</code>, <code>1h</code>`)
 
 	bars, err := h.fetchWyckoffBars(ctx, mapping, timeframe)
 	if err != nil || len(bars) == 0 {
-		errMsg := fmt.Sprintf("❌ Gagal mengambil data harga untuk <b>%s</b>: %s",
-			html.EscapeString(mapping.Currency), html.EscapeString(fmt.Sprintf("%v", err)))
 		if msgID > 0 {
 			_ = h.bot.DeleteMessage(ctx, chatID, msgID)
 		}
-		_, sendErr := h.bot.SendHTML(ctx, chatID, errMsg)
-		return sendErr
+		if err == nil {
+			err = fmt.Errorf("no data for %s", mapping.Currency)
+		}
+		h.sendUserError(ctx, chatID, err, "wyckoff")
+		return nil
 	}
 
 	result := h.wyckoff.WyckoffEngine.Analyze(mapping.Currency, strings.ToUpper(timeframe), bars)
@@ -316,10 +317,10 @@ func (h *Handler) runWyckoffAnalysis(ctx context.Context, chatID string, msgID i
 
 	bars, err := h.fetchWyckoffBars(ctx, mapping, timeframe)
 	if err != nil || len(bars) == 0 {
-		errMsg := fmt.Sprintf("⚠️ Gagal mengambil data <b>%s</b>: %v",
-			html.EscapeString(mapping.Currency), err)
-		kb := wyckoffNavKeyboard(mapping.Currency, timeframe)
-		_ = h.bot.EditWithKeyboard(ctx, chatID, msgID, errMsg, kb)
+		if err == nil {
+			err = fmt.Errorf("no data for %s", mapping.Currency)
+		}
+		h.editUserError(ctx, chatID, msgID, err, "wyckoff")
 		return nil
 	}
 

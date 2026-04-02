@@ -77,6 +77,9 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
 	case "GLOBAL":
 		htmlMsg := h.fmt.FormatMacroGlobal(composites, data)
+		if teData, teErr := macro.GetTECachedOrFetch(ctx); teErr == nil {
+			htmlMsg += "\n" + macro.FormatTEGlobalMacro(teData)
+		}
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, placeholderID, htmlMsg, kb)
 	case "LABOR":
@@ -161,6 +164,9 @@ func (h *Handler) cbMacro(ctx context.Context, chatID string, msgID int, userID 
 
 	case "global":
 		htmlMsg := h.fmt.FormatMacroGlobal(composites, macroData)
+		if teData, teErr := macro.GetTECachedOrFetch(ctx); teErr == nil {
+			htmlMsg += "\n" + macro.FormatTEGlobalMacro(teData)
+		}
 		kb := h.kb.MacroDetailMenu()
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 
@@ -339,5 +345,45 @@ func (h *Handler) cmdSNB(ctx context.Context, chatID string, _ int64, _ string) 
 	}
 
 	htmlMsg := macro.FormatSNBData(data)
+	return h.bot.EditMessage(ctx, chatID, placeholderID, htmlMsg)
+}
+
+// ---------------------------------------------------------------------------
+// /leading — OECD Composite Leading Indicators Dashboard
+// ---------------------------------------------------------------------------
+
+// cmdLeading handles the /leading command — fetches and displays OECD CLI data
+// showing economic growth momentum across G7+ countries with FX divergence signals.
+func (h *Handler) cmdLeading(ctx context.Context, chatID string, _ int64, _ string) error {
+	placeholderID, _ := h.bot.SendLoading(ctx, chatID, "📊 Fetching OECD leading indicators... ⏳")
+
+	data, err := macro.GetOECDCLIData(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("OECD CLI data fetch failed")
+		return h.bot.EditMessage(ctx, chatID, placeholderID,
+			"❌ Gagal mengambil data OECD CLI. Silakan coba lagi nanti.")
+	}
+
+	htmlMsg := macro.FormatOECDCLIData(data)
+	return h.bot.EditMessage(ctx, chatID, placeholderID, htmlMsg)
+}
+
+// ---------------------------------------------------------------------------
+// /swaps — DTCC FX Swap Institutional Flows
+// ---------------------------------------------------------------------------
+
+// cmdSwaps handles the /swaps command — fetches and displays DTCC PPD FX swap
+// volume data showing institutional hedging flows and positioning per currency pair.
+func (h *Handler) cmdSwaps(ctx context.Context, chatID string, _ int64, _ string) error {
+	placeholderID, _ := h.bot.SendLoading(ctx, chatID, "🏛 Fetching DTCC FX swap institutional data... ⏳")
+
+	data, err := macro.GetDTCCData(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("DTCC FX swap data fetch failed")
+		return h.bot.EditMessage(ctx, chatID, placeholderID,
+			"❌ Gagal mengambil data DTCC FX swap. Silakan coba lagi nanti.")
+	}
+
+	htmlMsg := macro.FormatDTCCData(data)
 	return h.bot.EditMessage(ctx, chatID, placeholderID, htmlMsg)
 }
