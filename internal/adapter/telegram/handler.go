@@ -227,6 +227,7 @@ func NewHandler(
 	bot.RegisterCommand("/report", h.cmdReport)
 	bot.RegisterCommand("/impact", h.cmdImpact)
 	bot.RegisterCommand("/sentiment", h.cmdSentiment)
+	bot.RegisterCommand("/vix", h.cmdVix)                // CBOE volatility index dashboard (VIX + vol suite)
 	bot.RegisterCommand("/seasonal", h.cmdSeasonal)
 	bot.RegisterCommand("/price", h.cmdPrice)             // Daily price context
 	bot.RegisterCommand("/levels", h.cmdLevels)           // Support/resistance levels + position sizing
@@ -249,6 +250,11 @@ func NewHandler(
 
 	// Chat history management
 	bot.RegisterCommand("/clear", h.cmdClearChat)
+
+	// Pinned commands (TASK-078)
+	bot.RegisterCommand("/pin", h.cmdPin)
+	bot.RegisterCommand("/unpin", h.cmdUnpin)
+	bot.RegisterCommand("/pins", h.cmdPins)
 
 	// Admin commands (access enforced inside handlers)
 	bot.RegisterCommand("/users", h.cmdUsers)
