@@ -11,10 +11,10 @@ import (
 
 var log = logger.Component("vix-cache")
 
-const cacheTTL = 6 * time.Hour
+const cacheTTL = 12 * time.Hour
 
 // Cache provides a simple in-memory TTL cache for VIX term structure data.
-// CBOE updates end-of-day, so 6-hour TTL is appropriate.
+// CBOE updates end-of-day, so 12-hour TTL is appropriate.
 type Cache struct {
 	mu        sync.RWMutex
 	data      *VIXTermStructure

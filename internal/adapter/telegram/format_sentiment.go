@@ -436,6 +436,16 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 			}
 			b.WriteString(fmt.Sprintf("<code>VIX9D : %.2f%s</code>\n", data.VolVIX9D, v9dEmoji))
 		}
+		if data.VolCOR3M > 0 {
+			var cor3mEmoji string
+			switch {
+			case data.VolCOR3M < 20:
+				cor3mEmoji = " 📈" // high dispersion
+			case data.VolCOR3M > 70:
+				cor3mEmoji = " ⚠️" // high correlation = macro regime
+			}
+			b.WriteString(fmt.Sprintf("<code>COR3M : %.0f%s</code>\n", data.VolCOR3M, cor3mEmoji))
+		}
 		if data.SKEWVIXRatio > 0 {
 			var ratioEmoji string
 			if data.SKEWVIXRatio > 8.0 {

@@ -169,6 +169,7 @@ func (f *SentimentFetcher) Fetch(ctx context.Context) (*SentimentData, error) {
 			data.VolGVZ = ts.VolSuite.GVZ
 			data.VolRVX = ts.VolSuite.RVX
 			data.VolVIX9D = ts.VolSuite.VIX9D
+			data.VolCOR3M = ts.VolSuite.COR3M
 			data.SKEWVIXRatio = ts.VolSuite.SKEWVIXRatio
 			data.RVXVIXRatio = ts.VolSuite.RVXVIXRatio
 			data.VIX9D30Ratio = ts.VolSuite.VIX9D30Ratio
@@ -317,6 +318,7 @@ type SentimentData struct {
 	VolGVZ         float64  // Gold volatility
 	VolRVX         float64  // Russell 2000 volatility
 	VolVIX9D       float64  // 9-day VIX (event pricing)
+	VolCOR3M       float64  // CBOE 3-month implied correlation (dispersion signal)
 	SKEWVIXRatio   float64  // SKEW/VIX — >8 historically dangerous
 	RVXVIXRatio    float64  // RVX/VIX — >1.3 risk appetite declining
 	VIX9D30Ratio   float64  // VIX9D/VIX — >1 near-term event
