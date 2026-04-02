@@ -1080,8 +1080,19 @@ func formatCryptoAlpha(results map[string]*microstructure.Signal, symbols []stri
 		sb.WriteString(fmt.Sprintf("  OB Imbalance: %+.2f | Taker Buy: %.0f%%\n",
 			sig.BidAskImbalance, sig.TakerBuyRatio*100))
 		if sig.OIChange != 0 {
-			sb.WriteString(fmt.Sprintf("  OI Change: %+.1f%% | LS Ratio: %.2f\n",
-				sig.OIChange, sig.LongShortRatio))
+			divTag := ""
+			if sig.DeltaDivergence {
+				divTag = " ⚠️ DIVERGENCE"
+			}
+			sb.WriteString(fmt.Sprintf("  OI Change: %+.1f%%%s | LS Ratio: %.2f\n",
+				sig.OIChange, divTag, sig.LongShortRatio))
+		}
+		if sig.LargeTradePresence > 0 {
+			absTag := ""
+			if sig.AbsorptionScore > 0.4 {
+				absTag = fmt.Sprintf(" | Absorpsi: %.0f%%", sig.AbsorptionScore*100)
+			}
+			sb.WriteString(fmt.Sprintf("  Large Trade: %.1f%%%s\n", sig.LargeTradePresence, absTag))
 		}
 		if sig.FundingStats != nil {
 			fs := sig.FundingStats
@@ -1135,6 +1146,15 @@ func cryptoInterpretIndonesian(sig *microstructure.Signal) string {
 	}
 	if sig.ConfirmEntry {
 		parts = append(parts, "entry terkonfirmasi ✅")
+	}
+	if sig.LargeTradePresence > 30 {
+		parts = append(parts, fmt.Sprintf("volume institusional %.0f%%", sig.LargeTradePresence))
+	}
+	if sig.AbsorptionScore > 0.4 {
+		parts = append(parts, "absorpsi bid terdeteksi (waspada pembalikan)")
+	}
+	if sig.DeltaDivergence {
+		parts = append(parts, "⚠️ divergensi OI vs harga")
 	}
 	return strings.Join(parts, ", ")
 }
