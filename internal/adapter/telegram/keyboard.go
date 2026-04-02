@@ -1593,6 +1593,52 @@ func AppendFeedbackRow(kb ports.InlineKeyboard, kbb *KeyboardBuilder, callbackBa
 }
 
 // ---------------------------------------------------------------------------
+// Session Analysis Keyboards
+// ---------------------------------------------------------------------------
+
+// SessionMenu builds a currency selector keyboard for the /session command.
+func (kb *KeyboardBuilder) SessionMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "EUR", CallbackData: "cmd:session:EUR"},
+				{Text: "GBP", CallbackData: "cmd:session:GBP"},
+				{Text: "JPY", CallbackData: "cmd:session:JPY"},
+				{Text: "CHF", CallbackData: "cmd:session:CHF"},
+			},
+			{
+				{Text: "AUD", CallbackData: "cmd:session:AUD"},
+				{Text: "NZD", CallbackData: "cmd:session:NZD"},
+				{Text: "CAD", CallbackData: "cmd:session:CAD"},
+				{Text: "DXY", CallbackData: "cmd:session:USD"},
+			},
+			{
+				{Text: "🥇 Gold", CallbackData: "cmd:session:XAU"},
+				{Text: "₿ BTC", CallbackData: "cmd:session:BTC"},
+				{Text: "Ξ ETH", CallbackData: "cmd:session:ETH"},
+			},
+			{
+				{Text: btnHome, CallbackData: "nav:home"},
+			},
+		},
+	}
+}
+
+// SessionDetailMenu builds a navigation keyboard for a single-currency session view.
+func (kb *KeyboardBuilder) SessionDetailMenu(currency string) ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			{
+				{Text: "◀ Grid", CallbackData: "cmd:session"},
+				{Text: "💹 Price", CallbackData: fmt.Sprintf("cmd:price:%s", currency)},
+				{Text: "📈 Seasonal", CallbackData: fmt.Sprintf("cmd:seasonal:%s", currency)},
+				{Text: btnHome, CallbackData: "nav:home"},
+			},
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Error Retry Keyboard
 // ---------------------------------------------------------------------------
 

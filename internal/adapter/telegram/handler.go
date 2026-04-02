@@ -239,8 +239,8 @@ func NewHandler(
 	bot.RegisterCommand("/bis", h.cmdBIS)            // BIS Statistics: CB policy rates + credit gaps + REER
 	bot.RegisterCommand("/cbrates", h.cmdBIS)        // Central bank policy rates (alias for /bis)
 	bot.RegisterCommand("/orderflow", h.cmdOrderFlow)   // Estimated delta & order flow analysis
-	bot.RegisterCommand("/market", h.cmdMarket)     // Cross-asset dashboard (Finviz)
 	bot.RegisterCommand("/market", h.cmdMarket)      // Cross-asset market overview (Finviz via Firecrawl)
+	bot.RegisterCommand("/session", h.cmdSession)       // Trading session behavior analysis (London/NY/Tokyo)
 
 	// Membership & upgrade info
 	bot.RegisterCommand("/membership", h.cmdMembership)
