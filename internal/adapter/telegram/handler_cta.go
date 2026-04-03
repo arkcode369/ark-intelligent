@@ -180,7 +180,7 @@ Pilih aset:`, h.kb.CTASymbolMenu())
 	}
 
 	// Generate chart for daily timeframe
-	chartPNG, chartErr := h.generateCTAChart(state, "daily")
+	chartPNG, chartErr := h.generateCTAChart(ctx, state, "daily")
 	if chartErr != nil {
 		log.Error().Err(chartErr).Str("symbol", symbol).Str("timeframe", "daily").Msg("CTA chart generation failed, falling back to text")
 	}
@@ -330,7 +330,7 @@ func (h *Handler) handleCTACallback(ctx context.Context, chatID string, msgID in
 
 // ctaShowSummaryChart deletes old message and sends new photo (can't edit text→photo).
 func (h *Handler) ctaShowSummaryChart(ctx context.Context, chatID string, msgID int, state *ctaState, tf string) error {
-	chartPNG, chartErr := h.getCTAChart(state, tf)
+	chartPNG, chartErr := h.getCTAChart(ctx, state, tf)
 	if chartErr != nil || len(chartPNG) == 0 {
 		if chartErr != nil {
 			log.Error().Err(chartErr).Str("symbol", state.symbol).Str("timeframe", tf).Msg("CTA summary chart failed, falling back to text")
@@ -363,7 +363,7 @@ func (h *Handler) ctaShowTimeframe(ctx context.Context, chatID string, msgID int
 		return h.bot.EditMessage(ctx, chatID, msgID, fmt.Sprintf("⚠️ Data %s tidak tersedia.", tf))
 	}
 
-	chartPNG, chartErr := h.getCTAChart(state, tf)
+	chartPNG, chartErr := h.getCTAChart(ctx, state, tf)
 	if chartErr != nil {
 		log.Error().Err(chartErr).Str("symbol", state.symbol).Str("timeframe", tf).Msg("CTA timeframe chart failed, falling back to text")
 	}
@@ -515,11 +515,11 @@ func (h *Handler) getCTAResult(state *ctaState, tf string) *ta.FullResult {
 }
 
 // getCTAChart returns cached chart or generates it.
-func (h *Handler) getCTAChart(state *ctaState, tf string) ([]byte, error) {
+func (h *Handler) getCTAChart(ctx context.Context, state *ctaState, tf string) ([]byte, error) {
 	if data, ok := state.chartData[tf]; ok && len(data) > 0 {
 		return data, nil
 	}
-	data, err := h.generateCTAChart(state, tf)
+	data, err := h.generateCTAChart(ctx, state, tf)
 	if err != nil {
 		return nil, err
 	}
