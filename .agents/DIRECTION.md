@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-04-03 WIB  
 **Sprint:** UX Improvement Siklus 1 (Closing) → DI Refactoring Siklus 2  
-**Status:** QA Merge Phase + Parallel Development
+**Status:** QA Merge Phase + Parallel Development + Escalation Active
 
 ---
 
@@ -20,14 +20,24 @@ The 4 open PRs from UX Siklus 1 need QA review and merge:
 
 **Goal:** All 4 PRs merged by end of day.
 
-### 2. Active Development (Parallel while QA reviews)
-Dev agents assigned new work to maintain velocity:
-
+### 2. Active Development
 | Task | Assignee | Status | Est. |
 |------|----------|--------|------|
-| TASK-001-EXT | Dev-B | 🔄 In Progress | M (4-6h) |
-| TASK-307 | Dev-C | 🔄 In Progress | S (2-3h) |
-| TASK-094-D | Dev-A | 🔄 Prep/Design | S (1h) |
+| TASK-001-EXT | Dev-B | ✅ COMPLETE | M (4-6h) |
+| TASK-094-D | Dev-A | ✅ COMPLETE | S (1h) |
+| TASK-307 | Dev-C | ⚠️ NOT STARTED | S (2-3h) |
+
+---
+
+## ⚠️ Active Escalation
+
+**Dev-C Inactivity on TASK-307**
+- **Issue:** Task assigned in loop #28 (~4h ago), no progress
+- **Impact:** Sprint velocity, uneven workload
+- **Status:** Escalation filed, awaiting Dev-C response
+- **File:** `.agents/escalations/2026-04-03-DEV-C-inactivity-TASK-307.md`
+
+**Next Action:** Dev-C must acknowledge and begin task within 2 hours, or escalate to CTO.
 
 ---
 
@@ -63,12 +73,13 @@ Per ADR-012 (DI Framework Evaluation), finish the manual wiring restructure:
 | 2026-04-03 | No new DI framework dependencies | wire/fx overhead not justified |
 | 2026-04-03 | Prioritize PR merge over new work | Close UX Siklus 1 before starting Siklus 2 |
 | 2026-04-03 | Parallel development during QA bottleneck | Assigned TASK-001-EXT, TASK-307 to maintain velocity |
+| 2026-04-03 | Escalation: Dev-C inactivity on TASK-307 | Task not started after 4 hours, Dev-A and Dev-B completed their work |
 
 ---
 
 ## Blockers
 
-**None currently.** QA reviewing 4 PRs; dev agents have parallel assignments.
+**⚠️ Dev-C Inactivity:** TASK-307 not started after 4 hours of assignment. Escalation active.
 
 ---
 
