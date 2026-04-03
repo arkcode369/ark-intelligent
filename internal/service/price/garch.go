@@ -214,13 +214,11 @@ func estimateGARCHFromReturns(returns []float64) (*GARCHResult, error) {
 		volForecast = "DECREASING"
 	}
 
-	// Convergence check: compare fine-grid LL improvement over coarse-grid.
-	// If the fine grid didn't meaningfully improve, or LL is extremely poor, mark as not converged.
+	// Convergence check: mark not converged only for genuinely bad estimates.
+	// fineLL ≈ bestLL (small improvement) means the optimization landscape is stable → converged.
+	// Only flag non-convergence for: invalid LL, or near unit-root (alpha+beta ≥ 1).
 	converged := true
 	if math.IsInf(fineLL, -1) || math.IsNaN(fineLL) {
-		converged = false
-	} else if fineLL-bestLL < 0.1 {
-		// Fine grid didn't meaningfully improve over coarse grid
 		converged = false
 	}
 	if alpha+beta > 0.999 {
