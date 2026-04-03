@@ -374,7 +374,7 @@ func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID 
 	loadingID, _ := h.bot.SendHTML(ctx, chatID, fmt.Sprintf("⏳ Running %s for <b>%s</b> (%s)...", action, html.EscapeString(state.symbol), state.timeframe))
 
 	// Run quant engine
-	result, err := h.runQuantEngine(state, mode)
+	result, err := h.runQuantEngine(ctx, state, mode)
 	if loadingID > 0 {
 		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 	}
@@ -445,7 +445,7 @@ type quantAssetClose struct {
 // runQuantEngine — execute Python quant_engine.py
 // ---------------------------------------------------------------------------
 
-func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineResult, error) {
+func (h *Handler) runQuantEngine(ctx context.Context, state *quantState, mode string) (*quantEngineResult, error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error().
@@ -493,7 +493,7 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	// Multi-asset data for correlation/granger/cointegration/pca/var/full
 	needsMultiAsset := mode == "correlation" || mode == "granger" || mode == "cointegration" || mode == "pca" || mode == "var" || mode == "full"
 	if needsMultiAsset {
-		multiAsset, maErr := h.fetchMultiAssetCloses(state.symbol, tf)
+		multiAsset, maErr := h.fetchMultiAssetCloses(ctx, state.symbol, tf)
 		if maErr == nil && len(multiAsset) > 0 {
 			input.MultiAsset = multiAsset
 		}
@@ -567,8 +567,7 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 // fetchMultiAssetCloses — get daily closes for all tracked symbols
 // ---------------------------------------------------------------------------
 
-func (h *Handler) fetchMultiAssetCloses(excludeSymbol string, tf string) (map[string][]quantAssetClose, error) {
-	ctx := context.Background()
+func (h *Handler) fetchMultiAssetCloses(ctx context.Context, excludeSymbol string, tf string) (map[string][]quantAssetClose, error) {
 	result := make(map[string][]quantAssetClose)
 
 	// Use ALL tracked symbols from price mappings

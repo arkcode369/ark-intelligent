@@ -92,14 +92,13 @@ type chartPattern struct {
 	Direction string `json:"direction"`
 }
 
-func (h *Handler) generateCTAChart(state *ctaState, timeframe string) (pngData []byte, err error) {
+func (h *Handler) generateCTAChart(ctx context.Context, state *ctaState, timeframe string) (pngData []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic in generateCTAChart: %v", r)
 			log.Error().Interface("panic", r).Str("timeframe", timeframe).Msg("recovered panic in generateCTAChart")
 		}
 	}()
-	ctx := context.Background()
 	bars, ok := state.bars[timeframe]
 	if !ok || len(bars) == 0 {
 		return nil, fmt.Errorf("no bars for timeframe %s", timeframe)
