@@ -51,6 +51,13 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 		kb := h.kb.SettingsMenu(prefs)
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, html, kb)
 
+	case "reset_onboard":
+		// Clear experience level and re-run onboarding flow
+		prefs.ExperienceLevel = ""
+		_ = h.prefsRepo.Set(ctx, userID, prefs)
+		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
+		return h.cmdStart(ctx, chatID, userID, "")
+
 	case "alerts_toggle":
 		prefs.AlertsEnabled = !prefs.AlertsEnabled
 	case "cot_toggle":
