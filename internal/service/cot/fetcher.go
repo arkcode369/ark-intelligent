@@ -155,7 +155,11 @@ func (f *Fetcher) FetchHistory(ctx context.Context, contract domain.COTContract,
 
 	records := make([]domain.COTRecord, 0, len(raw))
 	for _, sr := range raw {
-		records = append(records, socrataToRecord(sr, contract))
+		rec := socrataToRecord(sr, contract)
+		if rec.ReportDate.IsZero() {
+			continue // socrataToRecord already logged the warning
+		}
+		records = append(records, rec)
 	}
 
 	return records, nil
@@ -258,8 +262,12 @@ func (f *Fetcher) fetchReport(ctx context.Context, url string, contracts []domai
 		if !ok || seen[sr.ContractCode] {
 			continue
 		}
+		rec := socrataToRecord(sr, contract)
+		if rec.ReportDate.IsZero() {
+			continue // socrataToRecord already logged the warning
+		}
 		seen[sr.ContractCode] = true
-		records = append(records, socrataToRecord(sr, contract))
+		records = append(records, rec)
 	}
 
 	if len(records) > 0 {
@@ -346,6 +354,14 @@ func socrataToRecord(sr domain.SocrataRecord, contract domain.COTContract) domai
 	reportDate, _ := time.Parse("2006-01-02T15:04:05.000", sr.ReportDate)
 	if reportDate.IsZero() && len(sr.ReportDate) >= 10 {
 		reportDate, _ = time.Parse("2006-01-02", sr.ReportDate[:10])
+	}
+	// Guard: unrecognized date format → skip record to prevent zero-date corruption
+	if reportDate.IsZero() {
+		fetchLog.Warn().
+			Str("contract", contract.Code).
+			Str("raw_date", sr.ReportDate).
+			Msg("cot/fetcher: socrataToRecord: unrecognized date format, skipping record")
+		return domain.COTRecord{}
 	}
 
 	rec := domain.COTRecord{
