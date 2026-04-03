@@ -792,6 +792,9 @@ func (kb *KeyboardBuilder) BacktestMenu() ports.InlineKeyboard {
 				{Text: "CHF", CallbackData: "cmd:backtest:CHF"},
 				{Text: "GOLD", CallbackData: "cmd:backtest:XAU"},
 			},
+			{
+				{Text: btnHome, CallbackData: "nav:home"},
+			},
 		},
 	}
 }
@@ -853,6 +856,9 @@ func (kb *KeyboardBuilder) SeasonalMenu() ports.InlineKeyboard {
 				{Text: "XAU/GBP", CallbackData: "cmd:seasonal:XAUGBP"},
 				{Text: "XAG/EUR", CallbackData: "cmd:seasonal:XAGEUR"},
 				{Text: "XAG/GBP", CallbackData: "cmd:seasonal:XAGGBP"},
+			},
+			{
+				{Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
@@ -1164,6 +1170,9 @@ func (kb *KeyboardBuilder) PriceMenu() ports.InlineKeyboard {
 				{Text: "XAU/GBP", CallbackData: "cmd:price:XAUGBP"},
 				{Text: "XAG/EUR", CallbackData: "cmd:price:XAGEUR"},
 				{Text: "XAG/GBP", CallbackData: "cmd:price:XAGGBP"},
+			},
+			{
+				{Text: btnHome, CallbackData: "nav:home"},
 			},
 		},
 	}
