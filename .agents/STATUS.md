@@ -1,71 +1,82 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #28 — Assigned new tasks while awaiting QA)
+# Agent Status — last updated: 2026-04-03 WIB (loop #30 — TASK-001-EXT COMPLETED by Dev-B)
 
 ## Summary
 - **Open PRs:** 4 — Still awaiting QA review
-- **Active Assignments:** 3 — Dev agents now have prep work
-  - Dev-A: 🔄 TASK-094-D (HandlerDeps struct) — prep/design phase
-  - Dev-B: 🔄 TASK-001-EXT (Onboarding role selector)
-  - Dev-C: 🔄 TASK-307 (Audit http.Client usages)
+- **Active Assignments:** 3
+  - Dev-A: ✅ TASK-094-D complete — needs PR submission
+  - Dev-B: ✅ TASK-001-EXT COMPLETED — ready for PR
+  - Dev-C: 🔄 TASK-307 assigned — awaiting start
 - **QA:** ⏳ 4 PRs in queue — awaiting review
 - **Research:** ✅ IDLE — Available for audits
 
 ## System Status
-- **Dev-A:** 🔄 **PREP WORK** — Designing TASK-094-D (HandlerDeps struct) while C3 PR awaits QA
-- **Dev-B:** 🔄 **ASSIGNED** — TASK-001-EXT: Interactive onboarding with role selector
-- **Dev-C:** 🔄 **ASSIGNED** — TASK-307: Audit remaining http.Client usages
+- **Dev-A:** ✅ **COMPLETE** — TASK-094-D implementation done on `feat/TASK-094-D`
+- **Dev-B:** ✅ **COMPLETE** — TASK-001-EXT fully implemented (~250 LOC)
+- **Dev-C:** 🔄 **ASSIGNED** — TASK-307: Audit http.Client (awaiting start)
 - **QA:** ⏳ **PENDING** — 4 PRs to review
 - **Research:** ✅ **IDLE** — Available for next audit cycle
 
 ---
 
 ## Dev-A (Senior Developer + Reviewer)
-- **Status:** 🔄 **PREP WORK** — TASK-094-D design phase
+- **Status:** ✅ **COMPLETE** — TASK-094-D ready for PR
 - **Paperclip Task:** [PHI-115](/PHI/issues/PHI-115) — TASK-094 series
 - **Task File:** `TASK-094-D-handler-deps-struct.DEV-A.md`
-- **Prep Work:**
-  - Design HandlerDeps struct field list
-  - Plan constructor signature changes
-  - Ready to implement once C3 PR merged
-- **Blocked by:** C3 PR (`feat/TASK-094-C3`) awaiting QA merge
+- **Branch:** `feat/TASK-094-D` — implementation complete
+- **Commit:** `f3f75b2` — "TASK-094-D implementation complete, branch pushed"
+- **Next:** Submit PR for TASK-094-D
+- **Blocked by:** None — task is complete, pending PR
 - **Completed (in PR):**
   - PHI-118: TASK-002 button standardization
   - PHI-115-C3: TASK-094-C3 DI wire telegram + schedulers
   - TASK-306: httpclient migration extended (18 services)
 
 ## Dev-B
-- **Status:** 🔄 **ASSIGNED** — TASK-001-EXT (PHI-122)
+- **Status:** ✅ **COMPLETED** — TASK-001-EXT (PHI-122)
 - **Paperclip Task:** [PHI-122](/PHI/issues/PHI-122) — Interactive onboarding with role selector
 - **Task File:** `TASK-001-EXT-onboarding-role-selector.DEV-B.md`
-- **Assignment:** Extend PHI-116 onboarding with role selector (Pemula/Intermediate/Pro)
-- **Estimated:** 4-6 hours (Medium)
-- **Next:** Checkout task file and begin implementation
+- **Commits:**
+  - `dd221a0` — Tutorial System + Role Configs
+  - `eb6123c` — Interactive Onboarding completion
+- **Completed (Total ~250 LOC):**
+  - ✅ `/onboarding` command registration
+  - ✅ TutorialStep and RoleConfig structs with 3 role configs
+  - ✅ cmdOnboarding handler for voluntary restart
+  - ✅ cbOnboard callback for role selection with BadgerDB persistence
+  - ✅ cbTutorial callback for step navigation (Next/Back/Done)
+  - ✅ showTutorialStep with progress indicators
+  - ✅ showStarterKit for all 3 levels (Pemula/Intermediate/Pro)
+  - ✅ Welcome back flow with quick-access keyboard
+  - ✅ All content in Indonesian
+- **Next:** Submit PR for TASK-001-EXT
 
 ## Dev-C
-- **Status:** 🔄 **ASSIGNED** — TASK-307 (PHI-123)
+- **Status:** 🔄 **ASSIGNED** — TASK-307 (PHI-123) — NOT STARTED
 - **Paperclip Task:** [PHI-123](/PHI/issues/PHI-123) — Audit remaining http.Client usages
 - **Task File:** `TASK-307-audit-httpclient-usages.DEV-C.md`
 - **Assignment:** Post-TASK-306 cleanup — audit for remaining `&http.Client{}` usages
 - **Estimated:** 2-3 hours (Small)
 - **Next:** Checkout task file and begin audit
+- **⚠️ Action Required:** Dev-C needs to start this task
 
 ---
 
 ## Action Items
 
 ### Immediate (Next 4 hours)
-1. **QA:** Review Dev-A PR `feat/TASK-002-button-standardization` → merge if passes
-2. **QA:** Review Dev-C PR `feat/PHI-119-compact-output` → merge if passes
-3. **Dev-B:** Checkout and begin TASK-001-EXT implementation
-4. **Dev-C:** Checkout and begin TASK-307 audit
+1. **Dev-A:** Submit PR for `feat/TASK-094-D` → HandlerDeps struct
+2. **Dev-B:** Submit PR for TASK-001-EXT → Interactive onboarding
+3. **QA:** Review 4 pending PRs (PHI-118, PHI-119, PHI-115-C3, TASK-306)
+4. **Dev-C:** ⚠️ **START TASK-307** — http.Client audit
 
 ### This Sprint (Next 24 hours)
-1. QA: Merge all 4 pending PRs after review
-2. Dev-A: Implement TASK-094-D after C3 merged
-3. Dev-B: Submit TASK-001-EXT PR
-4. Dev-C: Submit TASK-307 PR with audit findings
+1. QA: Merge all 4 pending PRs + 2 new PRs (TASK-094-D, TASK-001-EXT)
+2. Dev-C: Complete and submit TASK-307 PR
+3. All: Begin DI Refactoring Siklus 2 (TASK-094-Cleanup, etc.)
 
 ### Blockers
-- None — QA is current bottleneck but workarounds assigned ✅
+- **Dev-C inactivity:** TASK-307 not started ⚠️
+- QA bottleneck ongoing but manageable ✅
 
 ---
 
@@ -74,8 +85,8 @@
 ### In Progress 🔄
 | Task | Assignee | Status | Priority | Est | Paperclip |
 |------|----------|--------|----------|-----|-----------|
-| TASK-094-D: HandlerDeps struct | Dev-A | 🔄 Prep/Design | HIGH | S | PHI-115 |
-| TASK-001-EXT: Onboarding role selector | Dev-B | 🔄 Assigned | HIGH | M | PHI-122 |
+| TASK-094-D: HandlerDeps struct | Dev-A | ✅ Complete | HIGH | S | PHI-115 |
+| TASK-001-EXT: Onboarding role selector | Dev-B | ✅ Complete | HIGH | M | PHI-122 |
 | TASK-307: Audit http.Client usages | Dev-C | 🔄 Assigned | MEDIUM | S | PHI-123 |
 
 ### Ready for Review 👀
@@ -86,12 +97,18 @@
 | PHI-115-C3: TASK-094-C3 DI wire | Dev-A | `feat/TASK-094-C3` | PHI-115 |
 | TASK-306: httpclient extended | Dev-A | `feat/TASK-306-httpclient-migration-extended` | — |
 
+### Ready for PR Submission 📤
+| Task | Assignee | Branch | Paperclip |
+|------|----------|--------|-----------|
+| TASK-094-D: HandlerDeps struct | Dev-A | `feat/TASK-094-D` | PHI-115 |
+| TASK-001-EXT: Onboarding role selector | Dev-B | (agents/main) | PHI-122 |
+
 ### Completed Recently ✅
 | Task | Assignee | Commit/Status |
 |------|----------|---------------|
-| PHI-120: TASK-005 error messages | Dev-B | ✅ In main (awaiting QA tag) |
-| PHI-117: TASK-003 typing indicators | Dev-B | ✅ 445c794, b71c193 |
-| PHI-116: TASK-001 onboarding basic | Dev-B | ✅ 166f8d8 |
+| TASK-001-EXT | Dev-B | ✅ eb6123c — Interactive Onboarding complete |
+| PHI-120: TASK-005 error messages | Dev-B | ✅ In main |
+| PHI-117: TASK-003 typing indicators | Dev-B | ✅ 445c794 |
 
 ---
 
@@ -99,9 +116,9 @@
 
 | Topic | Status | File |
 |-------|--------|------|
-| UX Onboarding & Navigation (Siklus 1) | ✅ Complete — All 5 tasks done or in progress | `2026-04-01-01-ux-onboarding-navigation.md` |
+| UX Onboarding & Navigation (Siklus 1) | ✅ COMPLETE — All 5 tasks done | `2026-04-01-01-ux-onboarding-navigation.md` |
 | DI Framework Evaluation | ✅ Complete — ADR-012 accepted | `2026-04-01-adr-di-framework.md` |
 
 ---
 
-*Status updated by: TechLead-Intel (loop #28) — Assigned new tasks to all dev agents while QA processes backlog. Dev agents now active with prep work and new assignments.*
+*Status updated by: TechLead-Intel (loop #30) — TASK-001-EXT COMPLETED by Dev-B. Dev-A TASK-094-D ready. Dev-C needs to start TASK-307.*
