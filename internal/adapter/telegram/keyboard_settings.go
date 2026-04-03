@@ -285,7 +285,7 @@ func (kb *KeyboardBuilder) AlertManagementMenu(prefs domain.UserPrefs) ports.Inl
 
 	// Back to settings
 	rows = append(rows, []ports.InlineButton{{
-		Text:         "⬅️ Back to Settings",
+		Text:         btnBack + " Settings",
 		CallbackData: "alertmgr:back",
 	}})
 
