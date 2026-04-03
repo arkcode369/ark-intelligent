@@ -1,17 +1,43 @@
-# TASK-074: Fix TOCTOU Race di Sentiment Cache — DONE
+# TASK-074: Fix TOCTOU Race di Sentiment Cache dengan singleflight
 
-**Completed by:** Dev-B
-**Completed at:** 2026-04-01 15:55 WIB
-**Branch:** feat/TASK-074-sentiment-singleflight
+**Priority:** low
+**Type:** fix
+**Estimated:** S
+**Area:** internal/service/sentiment
+**Created by:** Research Agent
+**Created at:** 2026-04-01 03:00 WIB
+**Siklus:** BugHunt
 
-## Changes
-- internal/service/sentiment/cache.go: replaced Mutex unlock-before-fetch pattern
-  with golang.org/x/sync/singleflight to coalesce concurrent cache-miss fetches
-- Reverted to RWMutex for cache reads (better concurrency)
-- go.mod: promoted golang.org/x/sync to direct dependency
+## Deskripsi
+`GetCachedOrFetch()` di sentiment/cache.go memiliki TOCTOU (Time-of-Check-Time-of-Use) race antara `RUnlock()` dan `Lock()`. Beberapa goroutine concurrent bisa bersamaan mendeteksi cache expired dan memanggil `FetchSentiment()` N kali — membuang API calls dan berpotensi kena rate limit.
 
-## Verification
-- go build ./... ✅
-- go vet ./... ✅
-- go test ./... ✅ (all pass)
-- Concurrent cache-miss callers now coalesced: only 1 FetchSentiment() in-flight
+## Konteks
+Pattern saat ini (dengan race):
+```go
+cacheMu.RLock()
+if cachedSentiment != nil && time.Now().Before(cacheExpiry) {
+    data := cachedSentiment
+    cacheMu.RUnlock()
+    return data, nil
+}
+cacheMu.RUnlock()
+// <-- GAP: N goroutine bisa masuk sini!
+data, err := FetchSentiment(ctx) // dipanggil N kali
+```
+
+Solusi direkomendasikan: gunakan `golang.org/x/sync/singleflight` (sudah ada di go.sum atau bisa pakai implementasi manual). Package ini memastikan hanya 1 in-flight fetch per key, goroutine lain menunggu hasilnya.
+
+Alternatif lebih sederhana: ganti RLock check → full Lock check (turunkan performa sedikit tapi jauh lebih simpel).
+
+## Acceptance Criteria
+- [ ] `go build ./...` sukses
+- [ ] `go vet ./...` sukses
+- [ ] Concurrent calls ke `GetCachedOrFetch()` saat cache expired hanya menghasilkan 1 call ke `FetchSentiment()`
+- [ ] Tidak ada data race (bisa verifikasi dengan `-race` flag jika ada test)
+
+## File yang Kemungkinan Diubah
+- `internal/service/sentiment/cache.go`
+- `go.mod` (jika menambahkan singleflight dependency yang belum ada)
+
+## Referensi
+- `.agents/research/2026-04-01-03-bug-hunting-subprocess-tempfile-race.md` — Bug #5
