@@ -797,3 +797,46 @@ func volConeBar(current, lo, hi float64, width int) string {
 	bar[pos] = '^'
 	return string(bar)
 }
+
+// ---------------------------------------------------------------------------
+// GJR-GARCH(1,1) Asymmetric Volatility Formatter
+// ---------------------------------------------------------------------------
+
+// FormatGJRGARCH formats a GJR-GARCH(1,1) result for Telegram display.
+func (f *Formatter) FormatGJRGARCH(currency string, g *pricesvc.GJRGARCHResult) string {
+	var b strings.Builder
+
+	asymIcon := "⚪"
+	switch g.AsymmetryLabel {
+	case "HIGH":
+		asymIcon = "🔴"
+	case "MODERATE":
+		asymIcon = "🟡"
+	case "LOW":
+		asymIcon = "🟢"
+	}
+
+	b.WriteString(fmt.Sprintf("📊 <b>%s — GJR-GARCH(1,1) Asymmetric Vol</b> %s\n\n", currency, asymIcon))
+
+	if !g.Converged {
+		b.WriteString("<code>⚠ Model tidak konvergen — gunakan dengan hati-hati</code>\n\n")
+	}
+
+	b.WriteString("<b>📈 Volatilitas saat ini</b>\n")
+	b.WriteString(fmt.Sprintf("<code>Current Vol    : ±%.2f%%/hari</code>\n", g.CurrentVol*100))
+	b.WriteString(fmt.Sprintf("<code>Forecast 1-step: ±%.2f%%/hari</code>\n", g.ForecastVol1*100))
+
+	b.WriteString(fmt.Sprintf("\n<b>⚡ Leverage Effect: %s</b> %s\n", g.AsymmetryLabel, asymIcon))
+	b.WriteString(fmt.Sprintf("<code>Asym. Ratio    : %.0f%% shock dari downside</code>\n", g.AsymmetryRatio))
+
+	if g.LeverageEffect {
+		b.WriteString("<code>→ Downside risk elevated — pertimbangkan kurangi long size</code>\n")
+	} else {
+		b.WriteString("<code>→ Volatilitas relatif simetris</code>\n")
+	}
+
+	b.WriteString(fmt.Sprintf("\n<i>Model: α=%.3f γ=%.3f β=%.3f persist=%.3f | %d samples</i>",
+		g.Alpha, g.Gamma, g.Beta, g.Persistence, g.SampleSize))
+
+	return b.String()
+}

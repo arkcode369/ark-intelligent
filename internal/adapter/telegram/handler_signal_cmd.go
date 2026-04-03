@@ -128,6 +128,7 @@ func (h *Handler) computeUnifiedSignal(ctx context.Context, currency string) (*a
 	// --- HMM + GARCH (optional, requires DailyPrice → PriceRecord conversion) ---
 	var hmmResult *pricesvc.HMMResult
 	var garchResult *pricesvc.GARCHResult
+	var gjrResult *pricesvc.GJRGARCHResult
 	if h.quant != nil && h.quant.DailyPriceRepo != nil {
 		dailyPrices, pErr := h.quant.DailyPriceRepo.GetDailyHistory(ctx, contractCode, 500)
 		if pErr == nil && len(dailyPrices) >= 50 {
@@ -137,6 +138,9 @@ func (h *Handler) computeUnifiedSignal(ctx context.Context, currency string) (*a
 			}
 			if garch, gErr := pricesvc.EstimateGARCH(priceRecords); gErr == nil {
 				garchResult = garch
+			}
+			if gjr, gjrErr := pricesvc.EstimateGJRGARCH(priceRecords); gjrErr == nil {
+				gjrResult = gjr
 			}
 		}
 	}
@@ -159,7 +163,7 @@ func (h *Handler) computeUnifiedSignal(ctx context.Context, currency string) (*a
 
 	return analysis.ComputeUnifiedSignalForCurrency(
 		ctx, currency, cotAnalysis, regime, macroData,
-		surpriseSigma, ctaConfl, hmmResult, garchResult, riskCtx, seasonal,
+		surpriseSigma, ctaConfl, hmmResult, garchResult, gjrResult, riskCtx, seasonal,
 	), nil
 }
 
