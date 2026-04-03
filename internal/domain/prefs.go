@@ -143,6 +143,11 @@ type UserPrefs struct {
 
 	// MaxAlertsPerDay caps daily alert delivery. 0 = unlimited.
 	MaxAlertsPerDay int `json:"max_alerts_per_day,omitempty"`
+
+	// ShowTokenInfo appends token usage stats to each AI chat response.
+	// Format: "📊 Tokens: {input}+{output} | Cache: {cache}".
+	// Default false (off for casual users; power users can enable via /settings).
+	ShowTokenInfo bool `json:"show_token_info,omitempty"`
 }
 
 // DefaultPrefs returns the default user preferences.

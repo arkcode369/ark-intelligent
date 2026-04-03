@@ -66,18 +66,20 @@ func (h *Handler) HandleFreeText(ctx context.Context, chatID string, userID int6
 		}
 	}
 	var claudeModelOverride string
+	showTokenInfo := false
 	if prefs, err := h.prefsRepo.Get(ctx, userID); err == nil {
 		preferredModel = prefs.PreferredModel
 		// Pass specific Claude model variant if user selected one
 		if prefs.ClaudeModel != "" && domain.IsValidClaudeModel(prefs.ClaudeModel) {
 			claudeModelOverride = string(prefs.ClaudeModel)
 		}
+		showTokenInfo = prefs.ShowTokenInfo
 	}
 
 	// Call chat service. No blanket timeout — the Claude HTTP client already has
 	// a per-request timeout (default 120s) that handles hung requests.
 	// As long as Claude keeps responding (tool round-trips), let it work freely.
-	response, err := h.chatService.HandleMessage(ctx, userID, text, role, contentBlocks, onProgress, preferredModel, claudeModelOverride)
+	response, err := h.chatService.HandleMessage(ctx, userID, text, role, contentBlocks, onProgress, preferredModel, showTokenInfo, claudeModelOverride)
 
 	// Delete "thinking" indicator
 	if thinkMsgID > 0 {

@@ -64,6 +64,8 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, html, kb)
 	case "mobile_toggle":
 		prefs.MobileMode = !prefs.MobileMode
+	case "token_info_toggle":
+		prefs.ShowTokenInfo = !prefs.ShowTokenInfo
 	case "model_claude":
 		prefs.PreferredModel = "claude"
 	case "model_gemini":
