@@ -537,7 +537,8 @@ func (h *Handler) cmdXFactors(ctx context.Context, chatID string, _ int64, _ str
 	}
 
 	result := h.alpha.FactorEngine.Rank(profiles)
-	_, err = h.bot.SendHTML(ctx, chatID, formatFactorRanking(result))
+	kb := h.kb.AlphaDetailMenu()
+	_, err = h.bot.SendWithKeyboard(ctx, chatID, formatFactorRanking(result), kb)
 	return err
 }
 
@@ -571,7 +572,8 @@ func (h *Handler) cmdPlaybook(ctx context.Context, chatID string, _ int64, _ str
 		TransitionTo:   tTo,
 	}
 	result := h.alpha.StrategyEngine.Generate(in)
-	_, err = h.bot.SendHTML(ctx, chatID, formatPlaybook(result))
+	kb := h.kb.AlphaDetailMenu()
+	_, err = h.bot.SendWithKeyboard(ctx, chatID, formatPlaybook(result), kb)
 	return err
 }
 
@@ -602,7 +604,8 @@ func (h *Handler) cmdHeat(ctx context.Context, chatID string, _ int64, _ string)
 		TransitionFrom: tFrom,
 		TransitionTo:   tTo,
 	})
-	_, err = h.bot.SendHTML(ctx, chatID, formatHeat(result.Heat))
+	kb := h.kb.AlphaDetailMenu()
+	_, err = h.bot.SendWithKeyboard(ctx, chatID, formatHeat(result.Heat), kb)
 	return err
 }
 
@@ -622,7 +625,8 @@ func (h *Handler) cmdRankX(ctx context.Context, chatID string, _ int64, _ string
 		return nil
 	}
 	result := h.alpha.FactorEngine.Rank(profiles)
-	_, err = h.bot.SendHTML(ctx, chatID, formatRankX(result))
+	kb := h.kb.AlphaDetailMenu()
+	_, err = h.bot.SendWithKeyboard(ctx, chatID, formatRankX(result), kb)
 	return err
 }
 
@@ -654,7 +658,8 @@ func (h *Handler) cmdTransition(ctx context.Context, chatID string, _ int64, _ s
 				TransitionFrom: tFrom,
 				TransitionTo:   tTo,
 			})
-			_, _ = h.bot.SendHTML(ctx, chatID, formatTransition(result.Transition, macroRegime))
+			kb := h.kb.AlphaDetailMenu()
+			_, _ = h.bot.SendWithKeyboard(ctx, chatID, formatTransition(result.Transition, macroRegime), kb)
 			return nil
 		}
 	}
@@ -667,7 +672,8 @@ func (h *Handler) cmdTransition(ctx context.Context, chatID string, _ int64, _ s
 		Probability: tProb,
 		DetectedAt:  time.Now(),
 	}
-	_, err := h.bot.SendHTML(ctx, chatID, formatTransition(tw, macroRegime))
+	kb := h.kb.AlphaDetailMenu()
+	_, err := h.bot.SendWithKeyboard(ctx, chatID, formatTransition(tw, macroRegime), kb)
 	return err
 }
 
@@ -695,7 +701,8 @@ func (h *Handler) cmdCryptoAlpha(ctx context.Context, chatID string, _ int64, ar
 	exVol := cryptocompare.GetCachedOrFetch(ctx)
 	out := formatCryptoAlpha(results, symbols, tvl)
 	out += cryptocompare.FormatExchangeVolumeSection(exVol)
-	_, err := h.bot.SendHTML(ctx, chatID, out)
+	kb := h.kb.AlphaCryptoDetailMenu()
+	_, err := h.bot.SendWithKeyboard(ctx, chatID, out, kb)
 	return err
 }
 
