@@ -1,14 +1,10 @@
 # Agent Status — last updated: 2026-04-03 WIB (loop #9)
 
 ## Dev-A
-- **Last run:** 2026-04-03 WIB (loop #9)
-- **Current:** monitoring — PR #286 (TASK-182) pending owner review
-- **PRs merged this loop:**
-  - #314 (TASK-263 GEX context in /outlook) — rebased + merged ✅
-  - #317 (TASK-157 EIA natural gas orphan cleanup) — merged ✅
-  - #318 (6x orphan cleanup: TASK-129,132,134,136,164,207) — merged ✅
-  - #319 (TASK-136 pending duplicate removal) — merged ✅
-- **Pending queue:** Clean — template + TASK-016 (Dev-B) + TASK-182 (owner PR #286)
+- **Last run:** 2026-04-03 WIB (loop #10)
+- **Current:** idle — waiting for task assignment
+- **PRs merged this loop:** -
+- **Pending queue:** Clean — waiting for TechLead-Intel assignment
 
 ## Dev-B
 - **Last run:** 2026-04-03 WIB
