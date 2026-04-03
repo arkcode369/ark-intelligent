@@ -25,7 +25,7 @@ The 4 open PRs from UX Siklus 1 need QA review and merge:
 |------|----------|--------|------|
 | TASK-001-EXT | Dev-B | ✅ COMPLETE | M (4-6h) |
 | TASK-094-D | Dev-A | ✅ COMPLETE | S (1h) |
-| TASK-307 | Dev-C | ⚠️ NOT STARTED | S (2-3h) |
+| TASK-307 | Dev-B | 🔄 ASSIGNED | S (2-3h) |
 
 ---
 
@@ -84,7 +84,7 @@ Per ADR-012 (DI Framework Evaluation), finish the manual wiring restructure:
 
 ## Blockers
 
-**⚠️ Dev-C Inactivity:** TASK-307 not started after 4 hours of assignment. Escalation active.
+**None currently.** All agents active with clear assignments. QA processing 4 PRs.
 
 ---
 
