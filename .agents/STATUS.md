@@ -1,65 +1,59 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #14 — Dev-A recovered)
+# Agent Status — last updated: 2026-04-03 WIB (loop #17 — All PRs merged, team IDLE)
 
 ## Summary
-- **Open PRs:** 1 (TASK-306 httpclient migration — QA verified, ready for merge)
-- **Active Assignments:** 1 dev agent (Dev-A), 2 agents idle (Dev-B, Dev-C)
-- **Completed Today:** PHI-110 (TASK-016 handler split) ✅
-- **Critical Task:** PHI-109 — Suruh semua kerja (assigned by board)
+- **Open PRs:** 0 — All merged ✅
+- **Active Assignments:** 0 — All dev agents IDLE (Dev-A, Dev-B, Dev-C)
+- **Completed Today:** PHI-110 (TASK-016), PHI-111 (TASK-306), PHI-112 (TASK-094-C2) ✅
+- **Next Task:** TASK-306-httpclient-migration-extended — ready for assignment
 
 ## System Status
-- **Dev-A:** ⏳ **BRANCH READY** — TASK-094-C2 wire_services.go (PR creation needs auth)
-- **Dev-B:** ✅ **IDLE** — PHI-110 complete, awaiting new assignment
-- **Dev-C:** ✅ **IDLE** — PHI-111 QA verified, awaiting merge
-- **QA:** ✅ COMPLETE — TASK-306 verified (18 services pass)
-- **Research:** ✅ IDLE — Available for new audits
+- **Dev-A:** ✅ **IDLE** — TASK-094-C2 merged, awaiting next assignment
+- **Dev-B:** ✅ **IDLE** — PHI-110 verified complete, awaiting next assignment  
+- **Dev-C:** ✅ **IDLE** — PHI-111 merged, awaiting next assignment
+- **QA:** ✅ **IDLE** — All reviews complete
+- **Research:** ✅ **IDLE** — Available for new audits
 
 ---
 
 ## Dev-A (Senior Developer + Reviewer)
-- **Status:** ⏳ **AWAITING PR CREATION** — TASK-094-C2 implementation complete
-- **Branch:** `feat/TASK-094-C2` — pushed to origin, ready for PR
-- **Completed Today:** 
-  - PHI-105: TASK-094-D HandlerDeps struct ✅ (commit c2c0b47)
-  - PHI-108: TASK-094-C1 wire_storage.go ✅ (verified complete)
-  - PHI-112: TASK-094-C2 wire_services.go ✅ (branch ready, PR pending auth)
-- **Next:** Await TechLead-Intel to create PR or assign next task
+- **Status:** ✅ **IDLE** — All work merged to agents/main
+- **Completed:** 
+  - PHI-105: TASK-094-D HandlerDeps struct ✅
+  - PHI-108: TASK-094-C1 wire_storage.go ✅
+  - PHI-112: TASK-094-C2 wire_services.go ✅ (merged)
+- **Next:** Await TechLead-Intel assignment
 
 ## Dev-B
 - **Last run:** 2026-04-03 WIB
 - **Current:** **PHI-110** — TASK-016 Split handler.go per domain ✅ COMPLETE
 - **Paperclip Task:** [PHI-110](/PHI/issues/PHI-110)
-- **Status:** ✅ **COMPLETED** — All 50 handler files already extracted
-- **Verified:** handler_admin_*.go, handler_settings_*.go, and 48 other domain handlers exist
+- **Status:** ✅ **COMPLETED** — All 50 handler files verified, issue needs status update
 - **Next:** ⏳ **IDLE** — Awaiting new assignment from TechLead-Intel
 
 ## Dev-C
-- **Last run:** 2026-04-03 WIB (loop #13)
-- **Current:** **PHI-111** — TASK-306 httpclient migration ✅ QA PASS
+- **Last run:** 2026-04-03 WIB
+- **Current:** **PHI-111** — TASK-306 httpclient migration ✅ MERGED
 - **Paperclip Task:** [PHI-111](/PHI/issues/PHI-111)
-- **Status:** ✅ **QA VERIFIED** — `feat/TASK-306` → agents/main
-- **Branch:** `feat/TASK-306`
+- **Status:** ✅ **MERGED** — `feat/TASK-306` → agents/main
 - **Scope:** 18 services migrated to httpclient.New()
-  - sec/client.go, imf/weo.go, treasury/client.go, bis/reer.go
-  - cot/fetcher.go, vix/*.go, price/eia.go, news/fed_rss.go
-  - fed/fedwatch.go, marketdata/massive/client.go, macro/*_client.go
-- **Note:** QA verified all 18 services use httpclient.New() correctly. Ready for merge.
+- **Next:** ⏳ **IDLE** — Awaiting new assignment from TechLead-Intel
 
 ---
 
-## Action Items (PHI-109: Suruh semua kerja)
+## Action Items
 
 ### Immediate (Next 4 hours)
-1. **Dev-A:** Assign next task from TECH-012 roadmap (TASK-094-C3 or new priority)
-2. **Dev-B:** ⏳ IDLE — Awaiting new assignment from TechLead-Intel
-3. **Dev-C:** Monitor PHI-111 — Awaiting merge to agents/main
+1. **TechLead-Intel:** Assign TASK-306-httpclient-migration-extended to Dev-C (MEDIUM priority, 18 services)
+2. **TechLead-Intel:** Update PHI-110 status to done in Paperclip
+3. **Dev-A, Dev-B, Dev-C:** Await new assignments
 
 ### This Sprint (Next 24 hours)
-1. Dev-A: Complete TASK-094-C3 wire_telegram.go extraction (MEDIUM priority)
-2. Dev-B: Available for new assignment
-3. Dev-C: Available for new assignment after PHI-111 merge
+1. Dev-C: Complete TASK-306-httpclient-migration-extended (MEDIUM priority, ~18 services)
+2. Research: Audit for next batch of tasks
+3. QA: Monitor Dev-C PR when ready
 
 ### Blockers
-- None — Dev-A recovered ✅
+- None — All agents operational ✅
 
 ---
 
@@ -68,15 +62,20 @@
 ### In Progress 🔄
 | Task | Assignee | Priority | Est | Paperclip |
 |------|----------|----------|-----|-----------|
-| TASK-094-C2 wire_services.go | Dev-A | HIGH | M | (PR submitted) |
+| PHI-113: TASK-306-EXT httpclient migration | Dev-C | MEDIUM | M | [PHI-113](/PHI/issues/PHI-113) |
+
+### Ready to Assign 📋
+| Task | Priority | Est | Scope |
+|------|----------|-----|-------|
+| TASK-306-httpclient-migration-extended | MEDIUM | M | 18 services → httpclient.New() |
 
 ### Completed Today ✅
 | Task | Assignee | Commit/Status |
 |------|----------|---------------|
 | PHI-110: TASK-016 handler split | Dev-B | ✅ Verified complete (50 files exist) |
-| TASK-094-D HandlerDeps struct | Dev-A | c2c0b47 (agents/main) |
-| TASK-094-C1 wire_storage.go | Dev-A | Verified complete |
+| PHI-111: TASK-306 httpclient migration | Dev-C | ✅ Merged to agents/main |
+| PHI-112: TASK-094-C2 wire_services | Dev-A | ✅ Merged to agents/main |
 
 ---
 
-*Status updated by: Dev-A (loop #14) — Recovered and awaiting assignment*
+*Status updated by: TechLead-Intel (loop #17) — All work merged, team ready for next sprint*
