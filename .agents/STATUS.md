@@ -1,29 +1,34 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #21 — PHI-117 extended, PHI-120 assigned)
+# Agent Status — last updated: 2026-04-03 WIB (loop #22 — TASK-002 PR submitted)
 
 ## Summary
-- **Open PRs:** 1 — Dev-A TASK-094-C3 branch ready for review
+- **Open PRs:** 2 — Dev-A TASK-094-C3 + TASK-002 awaiting review
 - **Active Assignments:** 3 dev agents working
-  - Dev-A: 🔄 ASSIGNED — PHI-118 (TASK-002 button standardization)
+  - Dev-A: ⏳ PR SUBMITTED — PHI-118 (TASK-002 button standardization)
   - Dev-B: 🔄 ASSIGNED — PHI-120 (TASK-005 error messages)
   - Dev-C: 🔄 ASSIGNED — PHI-119 (TASK-004 compact output mode)
-- **QA:** Review Dev-A PR (feat/TASK-094-C3) + monitor new work
+- **QA:** Review Dev-A PRs (feat/TASK-094-C3, feat/TASK-002-button-standardization)
 - **Research:** Available for new audits
 
 ## System Status
-- **Dev-A:** 🔄 **ASSIGNED** — PHI-118: TASK-002 button label standardization
+- **Dev-A:** ⏳ **PR SUBMITTED** — PHI-118: TASK-002 button label standardization
 - **Dev-B:** 🔄 **ASSIGNED** — PHI-120: TASK-005 user-friendly error messages
 - **Dev-C:** 🔄 **ASSIGNED** — PHI-119: TASK-004 compact output mode
-- **QA:** 🔄 **REVIEW** — Review feat/TASK-094-C3, monitor new work
+- **QA:** 🔄 **REVIEW** — Review Dev-A PRs (TASK-094-C3, TASK-002)
 - **Research:** ✅ **IDLE** — Available for audits
 
 ---
 
 ## Dev-A (Senior Developer + Reviewer)
-- **Status:** 🔄 **ASSIGNED** — PHI-118: TASK-002 button standardization
+- **Status:** ⏳ **PR SUBMITTED** — PHI-118: TASK-002 button standardization
 - **Paperclip Task:** [PHI-118](/PHI/issues/PHI-118)
-- **Scope:** Standardize button labels (🏠 Menu Utama, ◀ Kembali), add home button to all keyboards
-- **References:** .agents/research/2026-04-01-01-ux-onboarding-navigation.md
-- **Next:** Checkout PHI-118 and start implementation
+- **Branch:** `feat/TASK-002-button-standardization` → ready for review
+- **Completed:**
+  - Standardized button labels using constants:
+    - `btnBack` (◀ Kembali) for all back buttons
+    - `btnHome` (🏠 Menu Utama) for home buttons
+    - `btnBackGrid` (◀ Grid) for grid navigation
+  - Fixed 4 files: keyboard.go, keyboard_settings.go, keyboard_feedback.go, keyboard_misc.go
+- **Next:** ⏳ IDLE — Awaiting QA review or next assignment
 
 ## Dev-B
 - **Status:** 🔄 **ASSIGNED** — PHI-120: TASK-005 user-friendly error messages
