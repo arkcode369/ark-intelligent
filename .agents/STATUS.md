@@ -2,13 +2,14 @@
 
 ## Summary
 - **Open PRs:** 1 (TASK-306 httpclient migration — QA verified, ready for merge)
-- **Active Assignments:** 2 dev agents (Dev-B, Dev-C), 1 agent recovered (Dev-A)
+- **Active Assignments:** 1 dev agent (Dev-A), 2 agents idle (Dev-B, Dev-C)
+- **Completed Today:** PHI-110 (TASK-016 handler split) ✅
 - **Critical Task:** PHI-109 — Suruh semua kerja (assigned by board)
 
 ## System Status
-- **Dev-A:** ✅ **RECOVERED** — Operational, awaiting assignment from TechLead-Intel
-- **Dev-B:** ✅ RUNNING — PHI-110 assigned
-- **Dev-C:** ✅ IDLE — PHI-111 assigned
+- **Dev-A:** ⏳ **PR SUBMITTED** — TASK-094-C2 wire_services.go
+- **Dev-B:** ✅ **IDLE** — PHI-110 complete, awaiting new assignment
+- **Dev-C:** ✅ **IDLE** — PHI-111 QA verified, awaiting merge
 - **QA:** ✅ COMPLETE — TASK-306 verified (18 services pass)
 - **Research:** ✅ IDLE — Available for new audits
 
@@ -24,10 +25,11 @@
 
 ## Dev-B
 - **Last run:** 2026-04-03 WIB
-- **Current:** **PHI-110** — TASK-016 Split handler.go per domain (HIGH priority)
+- **Current:** **PHI-110** — TASK-016 Split handler.go per domain ✅ COMPLETE
 - **Paperclip Task:** [PHI-110](/PHI/issues/PHI-110)
-- **Status:** 🆕 Assigned — Start immediately
-- **Branch:** `refactor/split-handler` (create when starting)
+- **Status:** ✅ **COMPLETED** — All 50 handler files already extracted
+- **Verified:** handler_admin_*.go, handler_settings_*.go, and 48 other domain handlers exist
+- **Next:** ⏳ **IDLE** — Awaiting new assignment from TechLead-Intel
 
 ## Dev-C
 - **Last run:** 2026-04-03 WIB (loop #13)
@@ -46,13 +48,13 @@
 ## Action Items (PHI-109: Suruh semua kerja)
 
 ### Immediate (Next 4 hours)
-1. **Dev-A:** Assign next task from TECH-012 roadmap (TASK-094-C2 or new priority)
-2. **Dev-B:** Continue PHI-110 — Complete handler/ directory, extract admin.go
+1. **Dev-A:** Assign next task from TECH-012 roadmap (TASK-094-C3 or new priority)
+2. **Dev-B:** ⏳ IDLE — Awaiting new assignment from TechLead-Intel
 3. **Dev-C:** Monitor PHI-111 — Awaiting merge to agents/main
 
 ### This Sprint (Next 24 hours)
-1. Dev-A: Complete TASK-094-C2 wire_services.go extraction (HIGH priority)
-2. Dev-B: Complete at least 3 domain handlers (admin.go, settings.go, core.go)
+1. Dev-A: Complete TASK-094-C3 wire_telegram.go extraction (MEDIUM priority)
+2. Dev-B: Available for new assignment
 3. Dev-C: Available for new assignment after PHI-111 merge
 
 ### Blockers
@@ -65,22 +67,12 @@
 ### In Progress 🔄
 | Task | Assignee | Priority | Est | Paperclip |
 |------|----------|----------|-----|-----------|
-| PHI-110 handler split | Dev-B | HIGH | L (2-3h) | [PHI-110](/PHI/issues/PHI-110) |
-
-### Awaiting Assignment ⏳
-| Task | Candidate | Priority | Est | Notes |
-|------|-----------|----------|-----|-------|
-| TASK-094-C2 wire_services.go | Dev-A | HIGH | M | Next in TECH-012 roadmap |
-| TASK-094-C3 wire_telegram.go | Dev-A | MEDIUM | M | After C2 complete |
-
-### QA Verified ✅ (Ready for Merge)
-| Task | PR | Assignee |
-|------|-----|----------|
-| TASK-306 httpclient migration | `feat/TASK-306` | Dev-C |
+| TASK-094-C2 wire_services.go | Dev-A | HIGH | M | (PR submitted) |
 
 ### Completed Today ✅
 | Task | Assignee | Commit/Status |
 |------|----------|---------------|
+| PHI-110: TASK-016 handler split | Dev-B | ✅ Verified complete (50 files exist) |
 | TASK-094-D HandlerDeps struct | Dev-A | c2c0b47 (agents/main) |
 | TASK-094-C1 wire_storage.go | Dev-A | Verified complete |
 
