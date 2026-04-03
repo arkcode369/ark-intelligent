@@ -30,6 +30,9 @@ import (
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdOutlook(ctx context.Context, chatID string, userID int64, args string) error {
+	// Send typing indicator immediately for long-running AI command
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+
 	if h.aiAnalyzer == nil || !h.aiAnalyzer.IsAvailable() {
 		_, err := h.bot.SendHTML(ctx, chatID, "AI outlook is unavailable. Gemini API key not configured.")
 		return err
@@ -84,6 +87,9 @@ func (h *Handler) cbOutlook(ctx context.Context, chatID string, msgID int, userI
 }
 
 func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int64, editMsgID int) error {
+	// Send typing indicator for multi-step data collection process
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+
 	prefs, err := h.prefsRepo.Get(ctx, userID)
 	if err != nil {
 		prefs = domain.DefaultPrefs()
@@ -91,10 +97,10 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 
 	placeholderID := 0
 	if editMsgID > 0 {
-		_ = h.bot.EditMessage(ctx, chatID, editMsgID, "Generating unified intelligence report... ⏳\n(collecting all data sources + web search)")
+		_ = h.bot.EditMessage(ctx, chatID, editMsgID, "⏳ Menganalisis... (1/3) Fetching market data...")
 		placeholderID = editMsgID
 	} else {
-		placeholderID, _ = h.bot.SendLoading(ctx, chatID, "Generating unified intelligence report... ⏳\n(collecting all data sources + web search)")
+		placeholderID, _ = h.bot.SendHTML(ctx, chatID, "⏳ Menganalisis... (1/3) Fetching market data...")
 	}
 
 	now := timeutil.NowWIB()
@@ -111,6 +117,12 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 	var weekEvts []domain.NewsEvent
 	if h.newsRepo != nil {
 		weekEvts, _ = h.newsRepo.GetByWeek(ctx, now.Format("20060102"))
+	}
+
+	// Update progress: step 2
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+	if placeholderID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, placeholderID, "⏳ Menganalisis... (2/3) Processing macro data & AI analysis...")
 	}
 
 	// FRED Macro
@@ -318,6 +330,12 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		MicrostructureData: microSignals,
 		EIAData:            eiaData,
 		Language:           prefs.Language,
+	}
+
+	// Update progress: step 3
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+	if placeholderID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, placeholderID, "⏳ Menganalisis... (3/3) Formatting response...")
 	}
 
 	// ---------- Route based on user's PreferredModel setting ----------
