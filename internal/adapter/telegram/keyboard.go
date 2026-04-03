@@ -494,7 +494,17 @@ func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyb
 		CallbackData: "set:mobile_toggle",
 	}})
 
-	// Row 13: Alert Management sub-menu (TASK-202)
+	// Row 13: Token info toggle (show token usage stats in AI chat responses)
+	tokenInfoLabel := "📊 Token Info: OFF → Turn ON"
+	if prefs.ShowTokenInfo {
+		tokenInfoLabel = "📊 Token Info: ON → Turn OFF"
+	}
+	rows = append(rows, []ports.InlineButton{{
+		Text:         tokenInfoLabel,
+		CallbackData: "set:token_info_toggle",
+	}})
+
+	// Row 14: Alert Management sub-menu (TASK-202)
 	rows = append(rows, []ports.InlineButton{{
 		Text:         "🔔 Manage Alert Types & Quiet Hours",
 		CallbackData: "set:alert_mgr",
