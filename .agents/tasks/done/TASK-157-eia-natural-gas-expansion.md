@@ -4,6 +4,9 @@
 **Type:** data
 **Estimated:** S
 **Area:** internal/service/price/
+**Status:** done
+**Completed by:** Dev-A (loop #9) — orphan cleanup, already implemented in codebase
+**Verified:** NaturalGasData struct, ComputeNaturalGasData(), NATGAS mapping in domain, format_price.go NG formatter — all present on agents/main
 
 ## Deskripsi
 
