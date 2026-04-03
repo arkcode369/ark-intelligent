@@ -445,7 +445,7 @@ type quantAssetClose struct {
 // runQuantEngine — execute Python quant_engine.py
 // ---------------------------------------------------------------------------
 
-func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineResult, error) {
+func (h *Handler) runQuantEngine(state *quantState, mode string) (result *quantEngineResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error().
@@ -511,10 +511,17 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 	outputPath := filepath.Join(tmpDir, fmt.Sprintf("quant_output_%d.json", ts))
 	chartPath := filepath.Join(tmpDir, fmt.Sprintf("quant_chart_%d.png", ts))
 
+	defer os.Remove(inputPath)
+	defer os.Remove(outputPath)
+	defer func() {
+		if err != nil {
+			os.Remove(chartPath)
+		}
+	}()
+
 	if err := os.WriteFile(inputPath, jsonData, 0644); err != nil {
 		return nil, fmt.Errorf("write quant input: %w", err)
 	}
-	defer os.Remove(inputPath)
 
 	scriptPath := findQuantScript()
 
@@ -531,36 +538,31 @@ func (h *Handler) runQuantEngine(state *quantState, mode string) (*quantEngineRe
 			Str("symbol", state.symbol).
 			Str("mode", mode).
 			Msg("quant engine subprocess failed")
-		os.Remove(chartPath) // cleanup chart on failure
-		os.Remove(outputPath)
 		return nil, fmt.Errorf("quant engine failed: %w", err)
 	}
 
 	// Read output
 	outData, err := os.ReadFile(outputPath)
-	os.Remove(outputPath)
 	if err != nil {
-		os.Remove(chartPath) // cleanup chart if output unreadable
 		return nil, fmt.Errorf("read quant output: %w", err)
 	}
 
-	var result quantEngineResult
-	if err := json.Unmarshal(outData, &result); err != nil {
-		os.Remove(chartPath) // cleanup chart if output unparseable
+	var res quantEngineResult
+	if err := json.Unmarshal(outData, &res); err != nil {
 		return nil, fmt.Errorf("parse quant output: %w", err)
 	}
 
 	// Check if chart was actually generated; caller owns cleanup when ChartPath is set.
-	if fi, err := os.Stat(chartPath); err == nil {
+	if fi, statErr := os.Stat(chartPath); statErr == nil {
 		if fi.Size() > 0 {
-			result.ChartPath = chartPath
+			res.ChartPath = chartPath
 		} else {
 			log.Warn().Str("chart_path", chartPath).Msg("chart renderer produced 0-byte file, skipping")
 			os.Remove(chartPath)
 		}
 	}
 
-	return &result, nil
+	return &res, nil
 }
 
 // ---------------------------------------------------------------------------
