@@ -41,11 +41,13 @@ No universal "home" button exists. Users in deep drill-down must `/start` again.
 
 ## Acceptance Criteria
 
-- [ ] go build ./... sukses
-- [ ] go vet ./... sukses
-- [ ] All back buttons use `◀ Kembali`
-- [ ] All keyboards have `🏠 Menu Utama` home button
-- [ ] Button labels defined as constants (not hardcoded strings)
+- [x] All back buttons use `◀ Kembali` constant (btnBack)
+- [x] All keyboards have `🏠 Menu Utama` home button (btnHome)
+- [x] Button labels defined as constants (btnBack, btnHome, btnBackGrid)
+- [x] Non-standard labels fixed:
+  - "⬅️ Back to Settings" → btnBack + " Settings"
+  - "🏠 Home" → btnHome
+  - "◀ Grid" → btnBackGrid
 
 ## Referensi
 
