@@ -416,8 +416,12 @@ func (h *Handler) backtestDedup(ctx context.Context, chatID string) error {
 
 // backtestTiming shows per-signal-type timing analysis with optimal horizons.
 func (h *Handler) backtestTiming(ctx context.Context, chatID string) error {
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "⏱ Menganalisis Signal Timing... ⏳")
 	analyzer := backtestsvc.NewTimingAnalyzer(h.signalRepo)
 	analyses, err := analyzer.Analyze(ctx)
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	if err != nil {
 		h.sendUserError(ctx, chatID, err, "backtest")
 		return nil
@@ -435,8 +439,12 @@ func (h *Handler) backtestTiming(ctx context.Context, chatID string) error {
 
 // backtestWalkForward shows walk-forward overfit analysis.
 func (h *Handler) backtestWalkForward(ctx context.Context, chatID string) error {
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "🔄 Menjalankan Walk-Forward Analysis... ⏳")
 	analyzer := backtestsvc.NewWalkForwardAnalyzer(h.signalRepo)
 	result, err := analyzer.Analyze(ctx)
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	if err != nil {
 		h.sendUserError(ctx, chatID, err, "backtest")
 		return nil
@@ -543,8 +551,12 @@ func (h *Handler) backtestTrendFilter(ctx context.Context, chatID string) error 
 		return err
 	}
 
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📈 Menghitung Trend Filter Analysis... ⏳")
 	analyzer := backtestsvc.NewTrendFilterAnalyzer(h.signalRepo)
 	stats, err := analyzer.Analyze(ctx)
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	if err != nil {
 		h.sendUserError(ctx, chatID, err, "backtest")
 		return nil
@@ -660,8 +672,12 @@ func (h *Handler) backtestMonteCarlo(ctx context.Context, chatID string) error {
 
 // backtestPortfolio shows portfolio-level performance (equal-weight weekly).
 func (h *Handler) backtestPortfolio(ctx context.Context, chatID string) error {
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📈 Menghitung Portfolio-level Stats... ⏳")
 	analyzer := backtestsvc.NewPortfolioAnalyzer(h.signalRepo)
 	result, err := analyzer.Analyze(ctx)
+	if loadingID > 0 {
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+	}
 	if err != nil {
 		h.sendUserError(ctx, chatID, err, "backtest")
 		return nil
