@@ -109,6 +109,9 @@ func (h *Handler) registerCTACommands() {
 // /cta — Main CTA Command
 
 func (h *Handler) cmdCTA(ctx context.Context, chatID string, userID int64, args string) error {
+	// Send typing indicator immediately for long-running chart generation
+	_ = h.bot.SendChatAction(ctx, chatID, "upload_photo")
+
 	if h.cta == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "⚙️ CTA Engine not configured.")
 		return err

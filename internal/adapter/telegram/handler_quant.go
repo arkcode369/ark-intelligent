@@ -116,6 +116,9 @@ func (h *Handler) registerQuantCommands() {
 // ---------------------------------------------------------------------------
 
 func (h *Handler) cmdQuant(ctx context.Context, chatID string, userID int64, args string) error {
+	// Send typing indicator immediately for long-running quant analysis
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+
 	if h.quant == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "⚙️ Quant Engine not configured.")
 		return err
