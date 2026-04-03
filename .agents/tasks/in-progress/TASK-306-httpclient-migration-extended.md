@@ -1,6 +1,9 @@
 # TASK-306: Extended httpclient.New() Migration — Remaining Bare http.Client{} Usages
 
-**Priority:** medium
+**Status:** ✅ COMPLETED — Ready for PR  
+**Assigned:** Dev-A  
+**Branch:** `feat/TASK-306-httpclient-migration-extended`  
+**Completed at:** 2026-04-03 WIB
 **Type:** refactor
 **Estimated:** M
 **Area:** internal/service/*
@@ -41,11 +44,12 @@ across requests to the same host. This is the resource exhaustion risk identifie
 
 ## Acceptance Criteria
 
-- [ ] go build ./... sukses
-- [ ] go vet ./... sukses
-- [ ] Semua service di atas menggunakan `httpclient.New(httpclient.WithTimeout(d))` atau `httpclient.NewClient(d)`
-- [ ] Tidak ada behavior change — semua requests tetap identik
-- [ ] `net/http` import dihapus dari file yang tidak lagi menggunakannya langsung
+- [x] go build ./... sukses
+- [x] go vet ./... sukses
+- [x] Semua 18 service di atas menggunakan `httpclient.New()` factory
+- [x] Tidak ada behavior change — semua requests tetap identik
+- [x] Shared transport dengan connection pooling (MaxIdleConns=100)
+- [x] Also fixes compile errors from TASK-254 (formatter.go, handler_settings_cmd.go)
 
 ## Referensi
 
