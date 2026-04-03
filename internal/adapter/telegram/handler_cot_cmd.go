@@ -91,10 +91,8 @@ func (h *Handler) cmdCOT(ctx context.Context, chatID string, userID int64, args 
 		}
 	}
 
-	html := h.fmt.FormatCOTOverview(analyses, overviewConvictions)
-	kb := h.kb.COTCurrencySelector(analyses)
-	_, err = h.bot.SendWithKeyboard(ctx, chatID, html, kb)
-	return err
+	// Use renderCOTOverview to respect user OutputMode preference (compact by default)
+	return h.renderCOTOverview(ctx, chatID, userID, 0)
 }
 
 func (h *Handler) sendCOTDetail(ctx context.Context, chatID string, contractCode, displayCode string, isRaw bool, editMsgID int) error {

@@ -73,6 +73,8 @@ func (h *Handler) cbSettings(ctx context.Context, chatID string, msgID int, user
 		prefs.MobileMode = !prefs.MobileMode
 	case "token_info_toggle":
 		prefs.ShowTokenInfo = !prefs.ShowTokenInfo
+	case "output_mode_toggle":
+		prefs.OutputMode = domain.NextOutputMode(prefs.OutputMode)
 	case "model_claude":
 		prefs.PreferredModel = "claude"
 	case "model_gemini":
@@ -194,6 +196,8 @@ func settingsActionToast(action string, prefs domain.UserPrefs) string {
 		return "✅ Notif: 5/1 menit sebelum"
 	case "cur_reset":
 		return "✅ Filter mata uang direset"
+	case "output_mode_toggle":
+		return fmt.Sprintf("✅ Output Mode: %s", domain.OutputModeLabel(prefs.OutputMode))
 	}
 	if strings.HasPrefix(action, "claude_model:") {
 		modelID := strings.TrimPrefix(action, "claude_model:")

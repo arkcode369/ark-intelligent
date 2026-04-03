@@ -101,9 +101,21 @@ func (h *Handler) cmdMacro(ctx context.Context, chatID string, userID int64, arg
 }
 
 // macroSendSummary sends the plain-language macro summary with inline navigation buttons.
+// Respects user OutputMode preference (compact by default).
 func (h *Handler) macroSendSummary(ctx context.Context, chatID string, msgID int, userID int64, regime fred.MacroRegime, data *fred.MacroData) error {
-	implications := fred.DeriveTradingImplications(regime, data)
-	htmlMsg := h.fmt.FormatMacroSummary(regime, data, implications)
+	prefs, _ := h.prefsRepo.Get(ctx, userID)
+
+	var htmlMsg string
+	var toggleBtn ports.InlineButton
+
+	if prefs.OutputMode == domain.OutputFull {
+		implications := fred.DeriveTradingImplications(regime, data)
+		htmlMsg = h.fmt.FormatMacroSummary(regime, data, implications)
+		toggleBtn = ports.InlineButton{Text: btnCompact, CallbackData: "view:compact:macro"}
+	} else {
+		htmlMsg = h.fmt.FormatMacroSummaryCompact(regime, data)
+		toggleBtn = ports.InlineButton{Text: btnExpand, CallbackData: "view:full:macro"}
+	}
 
 	isAdmin := false
 	if h.middleware != nil {
@@ -114,6 +126,9 @@ func (h *Handler) macroSendSummary(ctx context.Context, chatID string, msgID int
 	}
 
 	kb := h.kb.MacroMenu(isAdmin)
+	toggleRow := []ports.InlineButton{toggleBtn}
+	kb.Rows = append([][]ports.InlineButton{toggleRow}, kb.Rows...)
+
 	return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 }
 
