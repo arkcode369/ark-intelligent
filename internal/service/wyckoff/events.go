@@ -59,10 +59,10 @@ func detectSC(bars []ta.OHLCV, avgVol float64) *WyckoffEvent {
 
 	best := -1
 	bestVol := 0.0
+	avgRange := avgBarRange(bars, 14)
 	for i := 0; i < half; i++ {
 		b := bars[i]
 		rangeSize := b.High - b.Low
-		avgRange := avgBarRange(bars, 14)
 		if b.Volume > avgVol*1.5 && rangeSize > avgRange*1.2 && b.Close < b.Open {
 			if b.Volume > bestVol {
 				bestVol = b.Volume
@@ -271,10 +271,10 @@ func detectBC(bars []ta.OHLCV, avgVol float64) *WyckoffEvent {
 	}
 	best := -1
 	bestVol := 0.0
+	avgRange := avgBarRange(bars, 14)
 	for i := 0; i < half; i++ {
 		b := bars[i]
 		rangeSize := b.High - b.Low
-		avgRange := avgBarRange(bars, 14)
 		if b.Volume > avgVol*1.5 && rangeSize > avgRange*1.1 && b.Close > b.Open {
 			if b.Volume > bestVol {
 				bestVol = b.Volume

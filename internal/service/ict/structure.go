@@ -116,8 +116,8 @@ func lastEventIs(events []StructureEvent, typ, direction string) bool {
 
 // currentBias derives the structural bias from the last CHoCH or BOS event.
 func currentBias(events []StructureEvent) string {
-	for i := len(events) - 1; i >= 0; i-- {
-		return events[i].Direction
+	if len(events) == 0 {
+		return "NEUTRAL"
 	}
-	return "NEUTRAL"
+	return events[len(events)-1].Direction
 }
