@@ -185,29 +185,74 @@ func NewHandler(
 	dailyPriceRepo pricesvc.DailyPriceStore,
 	intradayRepo pricesvc.IntradayStore,
 ) *Handler {
+	return newHandlerFromDeps(HandlerDeps{
+		Bot:            bot,
+		EventRepo:      eventRepo,
+		COTRepo:        cotRepo,
+		PrefsRepo:      prefsRepo,
+		NewsRepo:       newsRepo,
+		NewsFetcher:    newsFetcher,
+		AIAnalyzer:     aiAnalyzer,
+		Changelog:      changelog,
+		NewsScheduler:  newsScheduler,
+		Middleware:     middleware,
+		PriceRepo:      priceRepo,
+		SignalRepo:     signalRepo,
+		ChatService:    chatService,
+		ClaudeAnalyzer: claudeAnalyzer,
+		ImpactProvider: impactProvider,
+		DailyPriceRepo: dailyPriceRepo,
+		IntradayRepo:   intradayRepo,
+	})
+}
+
+// HandlerDeps holds all dependencies for creating a Handler.
+// Using a struct makes the constructor self-documenting and avoids 17 positional params.
+type HandlerDeps struct {
+	Bot            *Bot
+	EventRepo      ports.EventRepository
+	COTRepo        ports.COTRepository
+	PrefsRepo      ports.PrefsRepository
+	NewsRepo       ports.NewsRepository
+	NewsFetcher    ports.NewsFetcher
+	AIAnalyzer     ports.AIAnalyzer
+	Changelog      string
+	NewsScheduler  SurpriseProvider
+	Middleware     *Middleware
+	PriceRepo      ports.PriceRepository
+	SignalRepo     ports.SignalRepository
+	ChatService    *aisvc.ChatService
+	ClaudeAnalyzer *aisvc.ClaudeAnalyzer
+	ImpactProvider ImpactProvider
+	DailyPriceRepo pricesvc.DailyPriceStore
+	IntradayRepo   pricesvc.IntradayStore
+}
+
+// newHandlerFromDeps creates a handler from HandlerDeps struct.
+func newHandlerFromDeps(deps HandlerDeps) *Handler {
 	h := &Handler{
-		bot:            bot,
+		bot:            deps.Bot,
 		fmt:            NewFormatter(),
 		kb:             NewKeyboardBuilder(),
-		eventRepo:      eventRepo,
-		cotRepo:        cotRepo,
-		prefsRepo:      prefsRepo,
-		newsRepo:       newsRepo,
-		newsFetcher:    newsFetcher,
-		aiAnalyzer:     aiAnalyzer,
-		changelog:      changelog,
-		newsScheduler:  newsScheduler,
+		eventRepo:      deps.EventRepo,
+		cotRepo:        deps.COTRepo,
+		prefsRepo:      deps.PrefsRepo,
+		newsRepo:       deps.NewsRepo,
+		newsFetcher:    deps.NewsFetcher,
+		aiAnalyzer:     deps.AIAnalyzer,
+		changelog:      deps.Changelog,
+		newsScheduler:  deps.NewsScheduler,
 		aiCooldown:     make(map[int64]time.Time),
 		chatCooldown:   make(map[int64]time.Time),
 		deepLinks:      newDeepLinkCache(),
-		middleware:     middleware,
-		priceRepo:      priceRepo,
-		signalRepo:     signalRepo,
-		chatService:    chatService,
-		claudeAnalyzer: claudeAnalyzer,
-		impactProvider: impactProvider,
-		dailyPriceRepo: dailyPriceRepo,
-		intradayRepo:   intradayRepo,
+		middleware:     deps.Middleware,
+		priceRepo:      deps.PriceRepo,
+		signalRepo:     deps.SignalRepo,
+		chatService:    deps.ChatService,
+		claudeAnalyzer: deps.ClaudeAnalyzer,
+		impactProvider: deps.ImpactProvider,
+		dailyPriceRepo: deps.DailyPriceRepo,
+		intradayRepo:   deps.IntradayRepo,
 		adminConfirm:   newAdminConfirmStore(),
 	}
 
