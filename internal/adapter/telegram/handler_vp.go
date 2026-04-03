@@ -362,7 +362,7 @@ func (h *Handler) vpRunMode(ctx context.Context, chatID string, msgID int, state
 		input["all_tf_bars"] = allTF
 	}
 
-	result, err := h.runVPEngine(input)
+	result, err := h.runVPEngine(ctx, input)
 	if err != nil {
 		errMsg := userFriendlyError(err, "vp")
 		if msgID > 0 {
@@ -422,7 +422,7 @@ type vpEngineResult struct {
 	ChartPath  string          `json:"chart_path"`
 }
 
-func (h *Handler) runVPEngine(input map[string]any) (result *vpEngineResult, err error) {
+func (h *Handler) runVPEngine(ctx context.Context, input map[string]any) (result *vpEngineResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// This panic is caught by handleUpdate's outer recovery too,
@@ -454,7 +454,7 @@ func (h *Handler) runVPEngine(input map[string]any) (result *vpEngineResult, err
 	}
 
 	scriptPath := findVPScript()
-	cmdCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath, chartPath)
