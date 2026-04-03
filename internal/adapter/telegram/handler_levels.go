@@ -32,7 +32,7 @@ func (h *Handler) cmdLevels(ctx context.Context, chatID string, userID int64, ar
 		return err
 	}
 
-	return h.levelsDetail(ctx, chatID, mapping)
+	return h.levelsDetail(ctx, chatID, userID, mapping)
 }
 
 // levelsOverview shows key support/resistance summary for major instruments.
@@ -83,7 +83,7 @@ func (h *Handler) levelsOverview(ctx context.Context, chatID string) error {
 }
 
 // levelsDetail shows detailed S/R levels, pivots, and position sizing for one instrument.
-func (h *Handler) levelsDetail(ctx context.Context, chatID string, mapping *domain.PriceSymbolMapping) error {
+func (h *Handler) levelsDetail(ctx context.Context, chatID string, userID int64, mapping *domain.PriceSymbolMapping) error {
 	builder := pricesvc.NewLevelsBuilder(h.dailyPriceRepo)
 	lc, err := builder.Build(ctx, mapping.ContractCode, mapping.Currency)
 	if err != nil {
@@ -94,6 +94,7 @@ func (h *Handler) levelsDetail(ctx context.Context, chatID string, mapping *doma
 		return sendErr
 	}
 
+	h.saveLastCurrency(ctx, userID, mapping.Currency)
 	htmlOut := h.fmt.FormatLevels(lc, mapping.Currency)
 	_, err = h.bot.SendHTML(ctx, chatID, htmlOut)
 	return err
