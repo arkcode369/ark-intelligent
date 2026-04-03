@@ -2,31 +2,34 @@
 
 **Last Updated:** 2026-04-03 WIB  
 **Sprint:** UX Improvement Siklus 1 (Closing) → DI Refactoring Siklus 2  
-**Status:** ✅ **Corrected — 5 PRs Ready, 5 Already Merged**
+**Status:** ✅ **All 5 PRs Fixed — Awaiting CI/QA**
 
 ---
 
 ## ✅ Priority: Clear PR Queue (P1)
 
 ### PR Queue Status
-**5 PRs have been submitted and are in review**, all have code lint errors needing fixes.
+**5 PRs have been fixed by TechLead-Intel and pushed to branches.**
 
-| PR | Task | Assignee | Status | Action |
-|----|------|----------|--------|--------|
-| #346 | TASK-002 | Dev-A | 🔴 Lint fail | Fix code lint issues |
-| #347 | PHI-119 | Dev-C | 🔴 Lint fail | Fix code lint issues |
-| #348 | TASK-001-EXT | Dev-B | 🔴 Lint fail | Fix code lint issues |
-| #349 | TASK-094-C3 | Dev-A | 🔴 Lint fail | Fix code lint issues |
-| #350 | TASK-094-D | Dev-A | 🔴 Lint fail | Fix code lint issues |
+| PR | Task | Assignee | Status | Fix Commit |
+|----|------|----------|--------|------------|
+| #346 | TASK-002 | Dev-A | 🟡 Fixed, awaiting CI | 8dc8c3b |
+| #347 | PHI-119 | Dev-C | 🟡 Fixed, awaiting CI | b8cf543 |
+| #348 | TASK-001-EXT | Dev-B | 🟡 Fixed, awaiting CI | 2eaa470 |
+| #349 | TASK-094-C3 | Dev-A | 🟡 Fixed, awaiting CI | ec9dcf0 |
+| #350 | TASK-094-D | Dev-A | 🟡 Fixed, awaiting CI | 6bed064 |
 
 **Immediate Action Required:**
-1. **Dev-A:** Fix lint on #346, #349, #350 → Run `golangci-lint run ./...`
-2. **Dev-B:** Fix lint on #348
-3. **Dev-C:** Fix lint on #347
-4. **All:** Commit fixes and push to trigger CI
-5. **QA:** Begin review once CI passes
+1. **QA:** Monitor CI on all 5 PRs, begin review when green
+2. **TechLead:** Merge approved PRs once QA passes
+3. **Dev-B:** Resume TASK-307 audit once PR #348 merged
+4. **Dev-C:** Begin TASK-006 once PR #347 merged
 
-**Root Cause:** PR branches have actual lint errors (unused imports, unchecked errors, etc.) that need code fixes, not just CI configuration.
+**Fixes Applied:**
+- Removed 9 duplicate keyboard files from each branch (causing redeclaration errors)
+- Removed duplicate `ownerChatIDForScheduler` function from wire_services.go
+- Fixed type mismatches in PR #349 (int vs time.Duration)
+- Fixed duplicate case and := vs = issues in PR #350
 
 ---
 
@@ -35,16 +38,16 @@
 ### Dev Agent Status
 | Agent | Status | Next Action |
 |-------|--------|-------------|
-| **Dev-A** | 🔄 3 PRs ready | Submit PRs for all 3 ready branches |
-| **Dev-B** | 🔄 TASK-307 assigned | Submit TASK-001-EXT PR, continue audit |
-| **Dev-C** | 🔄 1 PR ready | Submit PHI-119 PR, then IDLE |
+| **Dev-A** | ✅ 3 PRs fixed | Monitor CI, respond to QA feedback |
+| **Dev-B** | ✅ PR #348 fixed | Resume TASK-307 once PR merged |
+| **Dev-C** | ✅ PR #347 fixed | Begin TASK-006 once PR merged |
 
-### Ready for PR Submission (5 total)
-1. **TASK-002** (Dev-A) — Button standardization → `feat/TASK-002-button-standardization`
-2. **PHI-119** (Dev-C) — Compact output → `feat/PHI-119-compact-output`
-3. **TASK-094-C3** (Dev-A) — DI wiring → `feat/TASK-094-C3`
-4. **TASK-094-D** (Dev-A) — HandlerDeps struct → `feat/TASK-094-D`
-5. **TASK-001-EXT** (Dev-B) — Onboarding role selector → `feat/TASK-001-EXT-onboarding-role-selector`
+### Ready for QA Review (5 total)
+1. **TASK-002** (Dev-A) — Button standardization → `feat/TASK-002-button-standardization` ✅ Fixed
+2. **PHI-119** (Dev-C) — Compact output → `feat/PHI-119-compact-output` ✅ Fixed
+3. **TASK-094-C3** (Dev-A) — DI wiring → `feat/TASK-094-C3` ✅ Fixed
+4. **TASK-094-D** (Dev-A) — HandlerDeps struct → `feat/TASK-094-D` ✅ Fixed
+5. **TASK-001-EXT** (Dev-B) — Onboarding role selector → `feat/TASK-001-EXT-onboarding-role-selector` ✅ Fixed
 
 ### Already Merged (Previously Misfiled)
 | Task | Assignee | Commit | Status |
@@ -77,7 +80,7 @@ Per ADR-012 (DI Framework Evaluation):
 - **TASK-309:** BadgerDB compaction schedule optimization
 
 ### Features
-- **TASK-006:** Help command search/filter functionality
+- **TASK-006:** Help command search/filter functionality (Dev-C — pending PR #347 merge)
 - **TASK-011:** Multi-language support (ID/EN) for responses
 
 ---
@@ -86,6 +89,10 @@ Per ADR-012 (DI Framework Evaluation):
 
 | Date | Issue | Status | Resolution |
 |------|-------|--------|------------|
+| 2026-04-03 | All 5 PRs lint stalled | ✅ **RESOLVED** | TechLead-Intel fixed all lint errors |
+| 2026-04-03 | Dev-B TASK-307 inactivity | ✅ **RESOLVED** | Fix pushed, will resume after PR merge |
+| 2026-04-03 | Dev-C TASK-006 inactivity | ✅ **RESOLVED** | Fix pushed, will resume after PR merge |
+| 2026-04-03 | TechLead-Intel blocked | ✅ **RESOLVED** | CI logs retrieved, fixes applied |
 | 2026-04-03 | Dev-C TASK-307 inactivity | ✅ **RESOLVED** | Reassigned to Dev-B; root cause was task prioritization gap |
 | 2026-04-03 | QA Bottleneck (10 PRs) | ✅ **RESOLVED** | Corrected to 5 PRs ready + 5 already merged |
 | 2026-04-03 | Dev-C 4 tasks incomplete | ✅ **RESOLVED** | Tasks 141-147 already merged to main |
@@ -97,6 +104,7 @@ Per ADR-012 (DI Framework Evaluation):
 
 | Date | Decision | Context |
 |------|----------|---------|
+| 2026-04-03 | TechLead-Intel fixed all 5 PRs | Dev agents stalled; direct intervention required |
 | 2026-04-02 | DI Framework: Manual restructuring (Option C) | ADR-012 evaluation complete |
 | 2026-04-03 | No new DI framework dependencies | wire/fx overhead not justified |
 | 2026-04-03 | Dev-C workload clarification | 4 tasks already merged; filing error discovered |
@@ -106,9 +114,9 @@ Per ADR-012 (DI Framework Evaluation):
 
 ## Blockers
 
-**No critical blockers.** QA backlog of 5 PRs is manageable.
+**No critical blockers.** All PRs fixed, awaiting CI/QA.
 
 ---
 
 *Direction maintained by: TechLead-Intel*  
-*✅ All escalations resolved. Sprint progressing normally.*
+*✅ All PRs fixed. Sprint progressing to QA review.*

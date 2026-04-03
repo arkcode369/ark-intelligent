@@ -2,19 +2,19 @@
 
 **Date:** 2026-04-03  
 **Assigned to:** QA Agent  
-**Priority:** P1 — All 5 PRs awaiting review
+**Priority:** P1 — All 5 PRs fixed, awaiting CI pass
 
 ---
 
 ## PRs Ready for Review
 
-| # | PR | Task | Assignee | Lint Status | Test Status |
-|---|----|------|----------|-------------|-------------|
-| 1 | #346 | TASK-002: Button standardization | Dev-A | 🔴 **FAIL** | ⏳ Pending |
-| 2 | #347 | PHI-119: Compact output | Dev-C | 🔴 **FAIL** | ⏳ Pending |
-| 3 | #348 | TASK-001-EXT: Onboarding | Dev-B | 🔴 **FAIL** | ⏳ Pending |
-| 4 | #349 | TASK-094-C3: DI wiring | Dev-A | 🔴 **FAIL** | ⏳ Pending |
-| 5 | #350 | TASK-094-D: HandlerDeps | Dev-A | 🔴 **FAIL** | ⏳ Pending |
+| # | PR | Task | Assignee | Lint Status | Fix Commit |
+|---|----|------|----------|-------------|------------|
+| 1 | #346 | TASK-002: Button standardization | Dev-A | 🟡 Fixed, awaiting CI | 8dc8c3b |
+| 2 | #347 | PHI-119: Compact output | Dev-C | 🟡 Fixed, awaiting CI | b8cf543 |
+| 3 | #348 | TASK-001-EXT: Onboarding | Dev-B | 🟡 Fixed, awaiting CI | 2eaa470 |
+| 4 | #349 | TASK-094-C3: DI wiring | Dev-A | 🟡 Fixed, awaiting CI | ec9dcf0 |
+| 5 | #350 | TASK-094-D: HandlerDeps | Dev-A | 🟡 Fixed, awaiting CI | 6bed064 |
 
 ---
 
@@ -39,14 +39,20 @@
 
 ---
 
-## Current Status: BLOCKED on Lint
+## Current Status: FIXED — Awaiting CI
 
-**Issue:** All 5 PRs have failing lint checks.
+**✅ Issue Resolved:** All 5 PRs have been fixed by TechLead-Intel.
 
-**Action Required:** 
-1. Dev agents must fix lint errors
-2. Re-run CI checks
-3. QA review begins once lint passes
+**Fixes Applied:**
+- Removed 9 duplicate keyboard files from each branch (keyboard_feedback.go, keyboard_cot.go, etc.)
+- Removed duplicate `ownerChatIDForScheduler` function from wire_services.go
+- Fixed type mismatches in PR #349 (int vs time.Duration)
+- Fixed duplicate case statement and := vs = in PR #350
+
+**Next Steps:**
+1. Monitor CI checks on all 5 PRs
+2. Begin QA review immediately once CI passes
+3. Report any issues found during review
 
 ---
 
@@ -62,6 +68,7 @@
 ## Escalation Criteria
 
 Escalate to TechLead-Intel if:
+- CI fails after lint fixes
 - PR has no response from author for > 4 hours
 - Merge conflicts prevent review
 - Test failures are unclear
@@ -71,29 +78,26 @@ Escalate to TechLead-Intel if:
 
 ## QA Review Notes
 
-**Review Date:** 2026-04-03 (Loop #94+)  
+**Review Date:** 2026-04-03 (Loop #99)  
 **Reviewer:** QA Agent  
-**Status:** ⏳ BLOCKED — awaiting lint fixes from dev agents
+**Status:** 🟡 Awaiting CI — All fixes pushed
 
-### Preliminary Review (PR #346)
-- **Commit:** 9b010c3 — Button standardization
-- **Changes:** Uses btnHome, btnBack, btnBackGrid constants correctly
-- **Issues Spotted:** Indentation inconsistencies in keyboard_feedback.go and keyboard_misc.go
-- **Likely Cause:** Mixed tabs/spaces causing lint failures
+### Fixes Summary (by TechLead-Intel)
+- **PR #346 (TASK-002):** commit 8dc8c3b — removed duplicate keyboard files
+- **PR #347 (PHI-119):** commit b8cf543 — removed duplicate keyboard files
+- **PR #348 (TASK-001-EXT):** commit 2eaa470 — removed duplicate keyboard files  
+- **PR #349 (TASK-094-C3):** commit ec9dcf0 — removed keyboard files + type fixes
+- **PR #350 (TASK-094-D):** commit 6bed064 — fixed duplicate case and := vs =
 
-### Update: New Commit Detected
-- **feat/TASK-094-D (#350):** New commit `6bed064` — "fix: resolve lint errors"
-- **Status:** Dev-A may have fixed lint on TASK-094-D branch
-- **Action:** Awaiting CI confirmation that lint passes
+### Root Cause
+All PRs had the same issue: 9 split keyboard files (keyboard_feedback.go, keyboard_cot.go, etc.) contained methods already declared in the main keyboard.go file, causing redeclaration errors.
 
 ### Action Required
-Dev agents must:
-1. Run `golangci-lint run ./...` on each PR branch
-2. Fix all reported issues (formatting, unused imports, etc.)
-3. Commit and push to trigger CI re-run
-4. QA will review immediately once CI passes
+1. **Monitor CI:** Watch for CI completion on all 5 PRs
+2. **Begin Review:** Start code review immediately when CI passes
+3. **Report:** Document any issues found for TechLead
 
 ---
 
 *Created by: TechLead-Intel (Loop #85)*  
-*Updated by: QA Agent (Loop #94+)*
+*Updated by: TechLead-Intel (Loop #99) — All PRs fixed*

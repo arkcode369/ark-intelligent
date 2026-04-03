@@ -1,28 +1,29 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #99 — ALL 5 PRs FIXED, awaiting CI)
+# Agent Status — last updated: 2026-04-03 WIB (loop #100 — QA assignments updated, monitoring CI)
 
 ## Summary
-- **Open PRs:** 5 — ✅ **ALL FIXED — Lint fixes pushed to all branches**
-  - #346 TASK-002 (Dev-A) — ✅ Fixed: removed duplicate keyboard files
-  - #347 PHI-119 (Dev-C) — ✅ Fixed: removed duplicate keyboard files  
-  - #348 TASK-001-EXT (Dev-B) — ✅ Fixed: removed duplicate keyboard files
-  - #349 TASK-094-C3 (Dev-A) — ✅ Fixed: removed duplicate keyboard files + type errors
-  - #350 TASK-094-D (Dev-A) — ✅ Fixed: duplicate case removed, := changed to =
-- **Active Assignments:** 2 — 🟡 **Awaiting QA**
-  - Dev-B: TASK-307 — Fix pushed, monitoring CI
-  - Dev-C: TASK-006 — Fix pushed, monitoring CI
-- **QA:** 🟡 **STANDBY** — All 5 PRs lint-fixed, ready for review once CI passes
+- **Open PRs:** 5 — 🟡 **ALL FIXED — Awaiting CI/QA review**
+  - #346 TASK-002 (Dev-A) — 🟡 Fixed: 8dc8c3b
+  - #347 PHI-119 (Dev-C) — 🟡 Fixed: b8cf543  
+  - #348 TASK-001-EXT (Dev-B) — 🟡 Fixed: 2eaa470
+  - #349 TASK-094-C3 (Dev-A) — 🟡 Fixed: ec9dcf0
+  - #350 TASK-094-D (Dev-A) — 🟡 Fixed: 6bed064
+- **Active Assignments:** 3 — 🟡 **Ready for QA**
+  - Dev-A: Monitoring 3 PRs, awaiting QA feedback
+  - Dev-B: PR #348 fixed, TASK-307 resumes after merge
+  - Dev-C: PR #347 fixed, TASK-006 starts after merge
+- **QA:** 🟡 **ASSIGNED** — Review sprint #84 updated, monitoring CI
 - **Research:** ✅ IDLE — Available
-- **Escalations:** ✅ **ALL RESOLVED** — Sprint unblocked
+- **Escalations:** ✅ **NONE** — All resolved
 
-**Sprint Status:** 🟢 **UNBLOCKED** — All lint fixes pushed, CI running
+**Sprint Status:** 🟢 **QA PHASE** — All PRs fixed, awaiting CI pass for review
 
 ## System Status
 | Agent | Status | Active Task | PRs |
 |-------|--------|-------------|-----|
-| **Dev-A** | ✅ **FIXES PUSHED** | Fixed lint on 3 PRs | #346, #349, #350 |
-| **Dev-B** | ✅ **FIXES PUSHED** | TASK-307 + #348 fix | #348 |
-| **Dev-C** | ✅ **FIXES PUSHED** | TASK-006 + #347 fix | #347 |
-| **QA** | 🟡 **READY** — Awaiting CI pass | Will review all 5 PRs | — |
+| **Dev-A** | 🟡 **MONITORING** | Awaiting QA review | #346, #349, #350 |
+| **Dev-B** | 🟡 **MONITORING** | PR #348 + TASK-307 | #348 |
+| **Dev-C** | 🟡 **MONITORING** | PR #347 + TASK-006 | #347 |
+| **QA** | 🟡 **ASSIGNED** — Review sprint #84 | Will review all 5 PRs | — |
 | **Research** | ✅ IDLE | Available | — |
 
 ---
@@ -219,8 +220,17 @@ git add . && git commit -m "fix: resolve lint errors" && git push
 
 ---
 
-*Status updated by: TechLead-Intel (loop #99)*
-*✅ ALL 5 PRs FIXED — Sprint unblocked*
+*Status updated by: TechLead-Intel (loop #100)*
+*🟡 QA phase — All PRs fixed, awaiting CI/QA review*
+
+### Loop #100 Findings — QA PHASE 🟡
+- ✅ **All 5 PRs remain fixed on remote branches**
+  - Verified all fix commits (8dc8c3b, b8cf543, 2eaa470, ec9dcf0, 6bed064) present on origin
+- ✅ **QA assignments updated** — `.agents/qa/review-sprint-84.md` updated with fix details
+- ✅ **DIRECTION.md updated** — Reflects current QA phase status
+- 🟡 **Awaiting CI completion** — Cannot verify CI status (GitHub CLI auth)
+- 🟡 **QA ready to review** — Assignment documented, awaiting CI green light
+- 🟢 **No blockers** — Sprint progressing to QA review phase
 
 ### Loop #99 Findings — SPRINT UNBLOCKED 🎉
 - ✅ **All 5 PR lint fixes pushed successfully**
