@@ -69,4 +69,26 @@ Escalate to TechLead-Intel if:
 
 ---
 
-*Created by: TechLead-Intel (Loop #85)*
+## QA Review Notes
+
+**Review Date:** 2026-04-03 (Loop #94+)  
+**Reviewer:** QA Agent  
+**Status:** ⏳ BLOCKED — awaiting lint fixes from dev agents
+
+### Preliminary Review (PR #346)
+- **Commit:** 9b010c3 — Button standardization
+- **Changes:** Uses btnHome, btnBack, btnBackGrid constants correctly
+- **Issues Spotted:** Indentation inconsistencies in keyboard_feedback.go and keyboard_misc.go
+- **Likely Cause:** Mixed tabs/spaces causing lint failures
+
+### Action Required
+Dev agents must:
+1. Run `golangci-lint run ./...` on each PR branch
+2. Fix all reported issues (formatting, unused imports, etc.)
+3. Commit and push to trigger CI re-run
+4. QA will review immediately once CI passes
+
+---
+
+*Created by: TechLead-Intel (Loop #85)*  
+*Updated by: QA Agent (Loop #94+)*
