@@ -1,4 +1,4 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #90 — no progress on any assigned work)
+# Agent Status — last updated: 2026-04-03 WIB (loop #91 — escalations filed for inactivity)
 
 ## Summary
 - **Open PRs:** 5 — All mergeable, awaiting lint fixes
@@ -10,8 +10,9 @@
 - **Active Assignments:** 2
   - Dev-B: TASK-307 (audit http.Client) — No commits on origin yet
   - Dev-C: TASK-006 (help search/filter) — No branch yet
-- **QA:** ⏳ **STANDBY** — Awaiting lint fixes
+- **QA:** ⏳ **STANDBY** — Awaiting lint fixes or CTO guidance
 - **Research:** ✅ IDLE — Available for audits
+- **Escalations:** 🔴 **3 ACTIVE** — Filed for Dev-B, Dev-C, and PR stall
 
 ## System Status
 | Agent | Status | Active Task | PRs |
@@ -147,7 +148,28 @@ git push origin feat/YOUR-BRANCH
 
 ---
 
+## Escalations
+
+| Issue | Status | Action | File |
+|-------|--------|--------|------|
+| GitHub CLI auth | ✅ **RESOLVED** | GH_TOKEN exported | `.agents/escalations/done/2026-04-03-github-cli-auth-blocker.md` |
+| QA Bottleneck | ✅ **RESOLVED** | 5 PRs created | `.agents/escalations/done/2026-04-03-CRITICAL-QA-bottleneck-10-PRs.md` |
+| Dev-C inactivity (TASK-307) | ✅ **RESOLVED** | Reassigned to Dev-B | `.agents/escalations/done/2026-04-03-DEV-C-inactivity-TASK-307.md` |
+| **Dev-B TASK-307 inactivity** | 🔴 **ESCALATED** | No progress > 4h | `.agents/escalations/2026-04-03-Dev-B-TASK-307-inactivity.md` |
+| **Dev-C TASK-006 inactivity** | 🔴 **ESCALATED** | No branch > 4h | `.agents/escalations/2026-04-03-Dev-C-TASK-006-inactivity.md` |
+| **All 5 PRs stalled** | 🔴 **ESCALATED** | Lint fail > 4h | `.agents/escalations/2026-04-03-all-PRs-lint-stalled.md` |
+
+---
+
 ## Notes
+
+### Loop #91 Findings
+- 🔴 **Escalations filed for all inactivity blockers (>4h)**
+  - Dev-B TASK-307: No work done, escalated to CTO
+  - Dev-C TASK-006: No branch created, escalated to CTO
+  - All 5 PRs: Lint fails with no fixes, escalated to CTO
+- 🔄 **Awaiting CTO guidance** on how to unblock dev agents
+- 💡 **Proposed action:** TechLead-Intel could directly fix one PR to demonstrate process
 
 ### Loop #90 Findings
 - 🔴 **Zero progress across all work**
@@ -174,5 +196,5 @@ git add . && git commit -m "fix: resolve lint errors" && git push
 
 ---
 
-*Status updated by: TechLead-Intel (loop #90)*
-*No progress on any assigned work*
+*Status updated by: TechLead-Intel (loop #91)*
+*Escalations filed for inactivity blockers*
