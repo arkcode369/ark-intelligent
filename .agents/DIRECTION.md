@@ -9,19 +9,21 @@
 ## ✅ Priority: Clear PR Queue (P1)
 
 ### PR Queue Status
-**5 PRs with commits are ready for submission**, all awaiting QA review.
+**5 PRs have been submitted and are in review**, all awaiting QA approval.
 
-| PR Count | Status | Age |
-|----------|--------|-----|
-| 3 | Dev-A DI/TASK-094 series | Current |
-| 1 | Dev-B TASK-001-EXT | Current |
-| 1 | Dev-C PHI-119 | Current |
+| PR | Task | Assignee | Status | CI |
+|----|------|----------|--------|-----|
+| #346 | TASK-002 | Dev-A | 🔄 In Review | 🔴 Lint fail |
+| #347 | PHI-119 | Dev-C | 🔄 In Review | 🔴 Lint fail |
+| #348 | TASK-001-EXT | Dev-B | 🔄 In Review | 🔴 Lint fail |
+| #349 | TASK-094-C3 | Dev-A | 🔄 In Review | 🔴 Lint fail |
+| #350 | TASK-094-D | Dev-A | 🔄 In Review | 🔴 Lint fail |
 
 **Immediate Action Required:**
-1. **Dev-A:** Submit 3 PRs (TASK-002, TASK-094-C3, TASK-094-D)
-2. **Dev-B:** Submit PR for TASK-001-EXT
-3. **Dev-C:** Submit PR for PHI-119
-4. **QA:** Begin review of all 5 PRs
+1. **Dev-A:** Fix lint on #346, #349, #350
+2. **Dev-B:** Fix lint on #348
+3. **Dev-C:** Fix lint on #347
+4. **QA:** Begin review once CI passes
 
 ---
 

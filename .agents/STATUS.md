@@ -1,4 +1,4 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #84 — 5 PRs created, gh auth RESOLVED ✅)
+# Agent Status — last updated: 2026-04-03 WIB (loop #85 — 5 PRs under review, lint fixes required)
 
 ## Summary
 - **Open PRs:** 5 — ✅ CREATED and awaiting QA review
@@ -66,15 +66,15 @@
 
 ---
 
-## PR Queue: 5 PRs Created ✅
+## PR Queue: 5 PRs Under Review 🔄
 
-| # | PR | Task | Assignee | Branch | Status |
-|---|----|------|----------|--------|--------|
-| 1 | #346 | TASK-002: Button standardization | Dev-A | `feat/TASK-002-button-standardization` | 🔄 In Review |
-| 2 | #347 | PHI-119: Compact output | Dev-C | `feat/PHI-119-compact-output` | 🔄 In Review |
-| 3 | #348 | TASK-001-EXT: Onboarding | Dev-B | `feat/TASK-001-EXT-onboarding-role-selector` | 🔄 In Review |
-| 4 | #349 | TASK-094-C3: DI wiring | Dev-A | `feat/TASK-094-C3` | 🔄 In Review |
-| 5 | #350 | TASK-094-D: HandlerDeps | Dev-A | `feat/TASK-094-D` | 🔄 In Review |
+| # | PR | Task | Assignee | Status | CI Status |
+|---|----|------|----------|--------|-----------|
+| 1 | #346 | TASK-002: Button standardization | Dev-A | 🔄 Changes Requested | 🔴 Lint fail |
+| 2 | #347 | PHI-119: Compact output | Dev-C | 🔄 Changes Requested | 🔴 Lint fail |
+| 3 | #348 | TASK-001-EXT: Onboarding | Dev-B | 🔄 Changes Requested | 🔴 Lint fail |
+| 4 | #349 | TASK-094-C3: DI wiring | Dev-A | 🔄 Changes Requested | 🔴 Lint fail |
+| 5 | #350 | TASK-094-D: HandlerDeps | Dev-A | 🔄 Changes Requested | 🔴 Lint fail |
 
 ---
 
@@ -100,9 +100,11 @@
 6. [x] ~~**Dev-C:** Create PR for `feat/PHI-119-compact-output`~~ → #347
 
 ### Active Work
-1. [ ] **QA:** Review 5 PRs (#346-350)
-2. [ ] **Dev-B:** Continue TASK-307 audit
-3. [ ] **Dev-C:** Progress on TASK-006 implementation
+1. [ ] **Dev-A:** Fix lint on PR #346, #349, #350
+2. [ ] **Dev-B:** Fix lint on PR #348
+3. [ ] **Dev-C:** Fix lint on PR #347, progress on TASK-006
+4. [ ] **Dev-B:** Continue TASK-307 audit
+5. [ ] **QA:** Review PRs once CI passes
 
 ### This Sprint (Next 24 hours)
 1. QA: Review and approve 5 PRs
@@ -152,6 +154,13 @@
 
 ## Notes
 
+### Loop #85 Findings
+- 🔴 **All 5 PRs have lint failures** — Changes requested
+- ✅ QA assignments created: `.agents/qa/review-sprint-84.md`
+- ✅ Review comments posted on all 5 PRs with fix instructions
+- 🔄 Dev agents need to fix lint before QA can proceed
+- ✅ DIRECTION.md updated to reflect PRs are submitted
+
 ### Loop #84 Achievements
 - ✅ Resolved GitHub CLI auth blocker (extracted token from git remote URL)
 - ✅ Created 5 PRs: #346, #347, #348, #349, #350
@@ -166,5 +175,5 @@
 
 ---
 
-*Status updated by: TechLead-Intel (loop #84)*
-*GitHub auth resolved, 5 PRs created*
+*Status updated by: TechLead-Intel (loop #85)*
+*5 PRs under review, lint fixes required*
