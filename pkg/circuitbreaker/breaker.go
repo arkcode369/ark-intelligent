@@ -56,6 +56,7 @@ type Breaker struct {
 	failures    int
 	lastFailure time.Time
 	lastSuccess time.Time
+	probing     bool // true when a probe is in-flight (HalfOpen only)
 
 	// Optional callback when state changes
 	OnStateChange func(name string, from, to State)
@@ -138,7 +139,15 @@ func (b *Breaker) checkRequest() (allowed bool, failures int, retryAfter time.Du
 	case Closed:
 		return true, b.failures, 0
 	case HalfOpen:
-		return true, b.failures, 0 // allow one probe
+		if b.probing {
+			remaining := b.resetTimeout - time.Since(b.lastFailure)
+			if remaining < 0 {
+				remaining = 0
+			}
+			return false, b.failures, remaining // another probe is already in-flight
+		}
+		b.probing = true // claim the single probe slot
+		return true, b.failures, 0
 	case Open:
 		remaining := b.resetTimeout - time.Since(b.lastFailure)
 		if remaining < 0 {
@@ -163,6 +172,7 @@ func (b *Breaker) recordSuccess() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.failures = 0
+	b.probing = false
 	b.lastSuccess = time.Now()
 	if b.state != Closed {
 		b.setState(Closed)
@@ -174,6 +184,7 @@ func (b *Breaker) recordFailure() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.failures++
+	b.probing = false
 	b.lastFailure = time.Now()
 
 	if b.state == HalfOpen {
