@@ -41,15 +41,89 @@ func (f *Formatter) FormatMacroSummary(regime fred.MacroRegime, data *fred.Macro
 		}
 	}
 
+	// --- Section 4: EU Economy (compact) ---
+	if euSection := macroEUSectionCompact(data); euSection != "" {
+		b.WriteString("\n" + euSection)
+	}
+
 	// Cache note
 	age := fred.CacheAge()
 	cacheNote := "live"
 	if age >= 0 {
 		cacheNote = fmt.Sprintf("cache %dm", int(age.Minutes()))
 	}
-	b.WriteString(fmt.Sprintf("\n<i>FRED %s</i>", cacheNote))
+	b.WriteString(fmt.Sprintf("\n<i>FRED %s | /eurostat untuk detail EU</i>", cacheNote))
 
 	return b.String()
+}
+
+// macroEUSectionCompact returns a compact EU Economy block for the /macro summary.
+// Uses EZ_ fields from FRED (already fetched, no extra latency).
+// Returns empty string if no EU data is available.
+func macroEUSectionCompact(data *fred.MacroData) string {
+	if data.EZ_CPI == 0 && data.EZ_GDP == 0 && data.EZ_Unemployment == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("🇪🇺 <b>EU Economy</b>\n")
+
+	if data.EZ_CPI != 0 {
+		cpiIcon := "🟡"
+		if data.EZ_CPI > 2.5 {
+			cpiIcon = "🔴"
+		} else if data.EZ_CPI <= 2.3 {
+			cpiIcon = "🟢"
+		}
+		b.WriteString(macroStatusLine("HICP", fmt.Sprintf("%.1f%% %s", data.EZ_CPI, cpiIcon)))
+	}
+	if data.EZ_Unemployment != 0 {
+		b.WriteString(macroStatusLine("Unemployment", fmt.Sprintf("%.1f%%", data.EZ_Unemployment)))
+	}
+	if data.EZ_GDP != 0 {
+		gdpIcon := "📈"
+		if data.EZ_GDP < 0 {
+			gdpIcon = "📉"
+		}
+		b.WriteString(macroStatusLine("GDP QoQ", fmt.Sprintf("%+.1f%% %s", data.EZ_GDP, gdpIcon)))
+	}
+
+	// EUR bias from EZ data
+	b.WriteString(macroStatusLine("EUR Bias", macroEURBiasLabel(data)))
+
+	return b.String()
+}
+
+// macroEURBiasLabel returns a one-line EUR directional bias based on EZ macro data.
+func macroEURBiasLabel(data *fred.MacroData) string {
+	hawkish, dovish := 0, 0
+	if data.EZ_CPI > 2.3 {
+		hawkish++
+	} else if data.EZ_CPI > 0 && data.EZ_CPI < 1.8 {
+		dovish++
+	}
+	if data.EZ_Unemployment > 0 && data.EZ_Unemployment < 6.5 {
+		hawkish++
+	} else if data.EZ_Unemployment > 7.5 {
+		dovish++
+	}
+	if data.EZ_GDP > 0.3 {
+		hawkish++
+	} else if data.EZ_GDP < 0 {
+		dovish++
+	}
+	switch {
+	case hawkish >= 2 && dovish == 0:
+		return "Hawkish → EUR bullish 🦅"
+	case dovish >= 2 && hawkish == 0:
+		return "Dovish → EUR bearish 🕊️"
+	case hawkish > dovish:
+		return "Mild hawkish ↗"
+	case dovish > hawkish:
+		return "Mild dovish ↘"
+	default:
+		return "Mixed signals →"
+	}
 }
 
 // macroStatusLine formats a single status row: "Label : status_text"
