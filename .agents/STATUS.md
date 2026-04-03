@@ -1,16 +1,16 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #86 — CI fixed on main, PRs need rebase)
+# Agent Status — last updated: 2026-04-03 WIB (loop #87 — PRs need lint fixes)
 
 ## Summary
-- **Open PRs:** 5 — 🔄 Awaiting rebase on main for new CI
+- **Open PRs:** 5 — 🔴 **Lint failures need code fixes**
   - #346 TASK-002 (Dev-A) — Button standardization
   - #347 PHI-119 (Dev-C) — Compact output
   - #348 TASK-001-EXT (Dev-B) — Onboarding role selector
   - #349 TASK-094-C3 (Dev-A) — DI wiring
   - #350 TASK-094-D (Dev-A) — HandlerDeps struct
 - **Active Assignments:** 2
-  - Dev-B: TASK-307 (audit http.Client)
-  - Dev-C: TASK-006 (help search/filter)
-- **QA:** ⏳ **STANDBY** — Awaiting PRs to pass CI after rebase
+  - Dev-B: TASK-307 (audit http.Client) — 🔄 No progress yet
+  - Dev-C: TASK-006 (help search/filter) — 🔄 No branch yet
+- **QA:** ⏳ **STANDBY** — Awaiting PRs to pass CI
 - **Research:** ✅ IDLE — Available for audits
 - **Blocker:** ✅ **RESOLVED** — GitHub CLI auth fixed with GH_TOKEN
 
@@ -66,17 +66,17 @@
 
 ---
 
-## PR Queue: 5 PRs Need Rebase 🔄
+## PR Queue: 5 PRs Need Lint Fixes 🔴
 
 | # | PR | Task | Assignee | Status | Action Needed |
 |---|----|------|----------|--------|---------------|
-| 1 | #346 | TASK-002: Button standardization | Dev-A | 🔄 Awaiting rebase | Rebase on main for new CI |
-| 2 | #347 | PHI-119: Compact output | Dev-C | 🔄 Awaiting rebase | Rebase on main for new CI |
-| 3 | #348 | TASK-001-EXT: Onboarding | Dev-B | 🔄 Awaiting rebase | Rebase on main for new CI |
-| 4 | #349 | TASK-094-C3: DI wiring | Dev-A | 🔄 Awaiting rebase | Rebase on main for new CI |
-| 5 | #350 | TASK-094-D: HandlerDeps | Dev-A | 🔄 Awaiting rebase | Rebase on main for new CI |
+| 1 | #346 | TASK-002: Button standardization | Dev-A | 🔴 Lint fail | Fix code lint issues |
+| 2 | #347 | PHI-119: Compact output | Dev-C | 🔴 Lint fail | Fix code lint issues |
+| 3 | #348 | TASK-001-EXT: Onboarding | Dev-B | 🔴 Lint fail | Fix code lint issues |
+| 4 | #349 | TASK-094-C3: DI wiring | Dev-A | 🔴 Lint fail | Fix code lint issues |
+| 5 | #350 | TASK-094-D: HandlerDeps | Dev-A | 🔴 Lint fail | Fix code lint issues |
 
-**Note:** Main branch now has proper CI with linting (commit 008a86b). All PRs need to rebase to pick up the new workflow. Rebase instructions posted on all PRs.
+**Note:** All 5 PRs are based on main with new CI (commit 008a86b), but have actual lint errors in their code that need fixing. CI fix PRs #351 and #352 closed as unnecessary.
 
 ---
 
@@ -102,11 +102,13 @@
 6. [x] ~~**Dev-C:** Create PR for `feat/PHI-119-compact-output`~~ → #347
 
 ### Active Work
-1. [ ] **Dev-A:** Rebase PR #346, #349, #350 on main (instructions posted)
-2. [ ] **Dev-B:** Rebase PR #348 on main (instructions posted)
-3. [ ] **Dev-C:** Rebase PR #347 on main, progress on TASK-006
-4. [ ] **Dev-B:** Continue TASK-307 audit
-5. [ ] **QA:** Review PRs once CI passes after rebase
+1. [ ] **Dev-A:** Fix lint errors on PR #346, #349, #350
+   - Run: `golangci-lint run ./...`  
+   - Fix all reported issues and push
+2. [ ] **Dev-B:** Fix lint errors on PR #348
+3. [ ] **Dev-C:** Fix lint errors on PR #347, create branch for TASK-006
+4. [ ] **Dev-B:** Start TASK-307 audit (no progress yet)
+5. [ ] **QA:** Review PRs once CI passes
 
 ### This Sprint (Next 24 hours)
 1. QA: Review and approve 5 PRs
@@ -156,6 +158,14 @@
 
 ## Notes
 
+### Loop #87 Findings
+- 🔴 **Root cause identified:** PRs have actual lint errors in code, not just CI config issues
+- ✅ **Closed unnecessary PRs:** #351, #352 (CI fix attempts) — main already has proper CI
+- 🔴 **Dev-B TASK-307:** No progress yet — only status commits, no audit work
+- 🔴 **Dev-C TASK-006:** No branch created yet
+- 🔄 All 5 PRs based on correct main (commit 008a86b) with new CI
+- 🔄 Dev agents need to fix actual lint errors in their code
+
 ### Loop #86 Findings
 - ✅ **CI fixed on main** — CTO added comprehensive CI/CD with linting (commit 008a86b)
 - 🔄 **All 5 PRs need rebase** — Instructed dev agents to rebase on main
@@ -184,5 +194,5 @@
 
 ---
 
-*Status updated by: TechLead-Intel (loop #86)*
-*CI fixed on main, PRs need rebase*
+*Status updated by: TechLead-Intel (loop #87)*
+*PRs need actual lint fixes in code*
