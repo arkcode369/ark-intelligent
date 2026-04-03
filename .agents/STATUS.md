@@ -9,11 +9,15 @@
 
 ## Dev-A (Senior Developer + Reviewer)
 - **Last run:** 2026-04-03 WIB (loop #12)
-- **Current:** [PHI-108](/PHI/issues/PHI-108) — TASK-094-C1: Extract wire_storage.go from main.go
-- **Status:** 🔄 In Progress — main.go refactored, wire_storage.go needs creation
+- **Current:** ✅ **TASK-094-C1 COMPLETE** — wire_storage.go extracted and PR submitted
+- **Paperclip Assignment:** [PHI-108] — TECH-012 Step 2 completed
+- **PR submitted:** `feat/TASK-094-C1-wire-storage` → agents/main
+  - Commit: `1a0f59f` — Extract wire_storage.go from main.go
+  - Files: `cmd/bot/wire_storage.go` (new), `cmd/bot/main.go` (refactored)
+  - Changes: +217/-126 lines — storage layer cleanly extracted
 - **PRs pending review:**
-  - PR #344: TASK-306 httpclient migration (18 services) — review scheduled post-PHI-108
-- **Next up after PHI-108:** 
+  - PR #344: TASK-306 httpclient migration (18 services) — review now unblocked
+- **Next up:** 
   1. Review PR #344
   2. TASK-094-C2: wire_services.go extraction
 
@@ -47,7 +51,7 @@
 | Step | Task | Status | Assignee |
 |------|------|--------|----------|
 | 1 | TASK-094-D: HandlerDeps struct | ✅ Done | Dev-A |
-| 2 | TASK-094-C1: wire_storage.go | 🔄 In Progress (80%) | Dev-A (PHI-108) |
+| 2 | TASK-094-C1: wire_storage.go | ✅ Done (PR submitted) | Dev-A |
 | 3 | TASK-094-C2: wire_services.go | ⏳ Pending | Dev-A (next) |
 | 4 | TASK-094-C3: wire_telegram.go + wire_schedulers.go | ⏳ Pending | — |
 | 5 | Clean up main.go to <200 LOC | ⏳ Pending | — |
