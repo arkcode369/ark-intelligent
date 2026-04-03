@@ -150,6 +150,7 @@ func TestComputeUnifiedSignalForCurrency_NilSafe(t *testing.T) {
 		nil, // no CTA
 		nil, // no HMM
 		nil, // no GARCH
+		nil, // no GJR-GARCH
 		nil, // no risk
 		nil, // no seasonal
 	)

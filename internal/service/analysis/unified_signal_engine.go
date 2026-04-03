@@ -42,8 +42,9 @@ type UnifiedSignalInput struct {
 	CTAConfluence *ta.ConfluenceResult
 
 	// Quant sub-system: HMM regime + GARCH vol context
-	HMM   *price.HMMResult
-	GARCH *price.GARCHResult
+	HMM      *price.HMMResult
+	GARCH    *price.GARCHResult
+	GJRGARCH *price.GJRGARCHResult
 
 	// Sentiment sub-system: VIX / risk context
 	Risk *domain.RiskContext
@@ -126,6 +127,7 @@ func ComputeUnifiedSignalForCurrency(
 	ctaConfl *ta.ConfluenceResult,
 	hmm *price.HMMResult,
 	garch *price.GARCHResult,
+	gjrGarch *price.GJRGARCHResult,
 	risk *domain.RiskContext,
 	seasonal *price.SeasonalPattern,
 ) *UnifiedSignalV2 {
@@ -137,6 +139,7 @@ func ComputeUnifiedSignalForCurrency(
 		CTAConfluence: ctaConfl,
 		HMM:           hmm,
 		GARCH:         garch,
+		GJRGARCH:      gjrGarch,
 		Risk:          risk,
 		Seasonal:      seasonal,
 	}
@@ -240,6 +243,16 @@ func buildQuantComponent(in UnifiedSignalInput) ComponentScore {
 	// GARCH vol ratio adjustment: high vol → reduce magnitude
 	if in.GARCH != nil && in.GARCH.VolRatio > 1.5 {
 		rawScore *= 0.75
+	}
+
+	// GJR-GARCH leverage effect: high asymmetry → dampen long conviction
+	// Downside vol elevated → reduce bullish bias
+	if in.GJRGARCH != nil && in.GJRGARCH.LeverageEffect && rawScore > 0 {
+		if in.GJRGARCH.AsymmetryLabel == "HIGH" {
+			rawScore *= 0.80 // HIGH asymmetry → 20% bullish dampening
+		} else {
+			rawScore *= 0.90 // MODERATE asymmetry → 10% bullish dampening
+		}
 	}
 
 	rawScore = mathutil.Clamp(rawScore, -100, 100)
