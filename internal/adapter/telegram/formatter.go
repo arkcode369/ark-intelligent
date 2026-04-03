@@ -134,6 +134,18 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 		b.WriteString("<code>Alert Currencies   : All Currencies</code>\n")
 	}
 
+	// Experience level display (TASK-254)
+	levelDisplay := "Belum diset"
+	switch prefs.ExperienceLevel {
+	case "beginner":
+		levelDisplay = "🌱 Pemula"
+	case "intermediate":
+		levelDisplay = "📈 Intermediate"
+	case "pro":
+		levelDisplay = "🏛 Pro / Institutional"
+	}
+	b.WriteString(fmt.Sprintf("<code>Experience Level   : %s</code>\n", levelDisplay))
+
 	// Quiet hours status (TASK-202)
 	if prefs.QuietHoursEnabled {
 		b.WriteString(fmt.Sprintf("<code>🌙 Quiet Hours  : %02d:00–%02d:00 WIB</code>\n", prefs.QuietHoursStart, prefs.QuietHoursEnd))

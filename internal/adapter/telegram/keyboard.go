@@ -510,7 +510,13 @@ func (kb *KeyboardBuilder) SettingsMenu(prefs domain.UserPrefs) ports.InlineKeyb
 		CallbackData: "set:alert_mgr",
 	}})
 
-	// Row 14: View Changelog
+	// Row 15: Reset / Change experience level (TASK-254)
+	rows = append(rows, []ports.InlineButton{{
+		Text:         "🔄 Ubah Level Pengalaman",
+		CallbackData: "set:reset_onboard",
+	}})
+
+	// Row 16: View Changelog
 	rows = append(rows, []ports.InlineButton{{
 		Text:         "📜 View Changelog",
 		CallbackData: "set:changelog_view",
