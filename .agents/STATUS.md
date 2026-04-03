@@ -1,66 +1,64 @@
-# Agent Status — last updated: 2026-04-03 WIB (loop #18 — New assignments for Dev-A and Dev-B)
+# Agent Status — last updated: 2026-04-03 WIB (loop #19 — PHI-115 complete, PHI-117 assigned)
 
 ## Summary
-- **Open PRs:** 0 — All merged ✅
+- **Open PRs:** 1 — Dev-A TASK-094-C3 branch ready for review
 - **Active Assignments:** 2 dev agents working
-  - Dev-A: PHI-115 (DI restructuring - TASK-094-C3)
-  - Dev-B: ⏳ IDLE (awaiting assignment)
-  - Dev-C: PHI-113 (httpclient migration - TASK-306-EXT)
-- **QA:** Monitoring Dev-C PR when ready
+  - Dev-A: ✅ COMPLETED — PHI-115 (TASK-094-C3 DI restructuring)
+  - Dev-B: 🔄 ASSIGNED — PHI-117 (TASK-003 typing indicators)
+  - Dev-C: ✅ COMPLETED — PHI-113 (TASK-306-EXT httpclient migration)
+- **QA:** Review Dev-A PR (feat/TASK-094-C3)
 - **Research:** Available for new audits
 
 ## System Status
-- **Dev-A:** 🔄 **ASSIGNED** — PHI-115: wire_telegram.go + wire_schedulers.go
-- **Dev-B:** ✅ **COMPLETED** — PHI-116: TASK-001 onboarding flow verified complete
-- **Dev-C:** 🔄 **IN PROGRESS** — PHI-113: TASK-306-EXT httpclient migration (18 services)
-- **QA:** ⏳ **STANDBY** — Awaiting Dev-C PR
+- **Dev-A:** ✅ **COMPLETED** — PHI-115: wire_telegram.go + wire_schedulers.go (branch: feat/TASK-094-C3)
+- **Dev-B:** 🔄 **ASSIGNED** — PHI-117: TASK-003 typing indicator / progress feedback
+- **Dev-C:** ✅ **COMPLETED** — PHI-113: TASK-306-EXT httpclient migration (18 services)
+- **QA:** 🔄 **REVIEW** — Review Dev-A PR for TASK-094-C3
 - **Research:** ✅ **IDLE** — Available for audits
 
 ---
 
 ## Dev-A (Senior Developer + Reviewer)
-- **Status:** 🔄 **ASSIGNED** — PHI-115: TASK-094-C3 DI restructuring
+- **Status:** ✅ **COMPLETED** — PHI-115: TASK-094-C3 DI restructuring
 - **Paperclip Task:** [PHI-115](/PHI/issues/PHI-115)
-- **Scope:** Create wire_telegram.go + wire_schedulers.go, reduce main.go to ~200 LOC
-- **References:** ADR: .agents/research/2026-04-01-adr-di-framework.md
-- **Next:** Checkout and start implementation
+- **Completed:**
+  - `wire_telegram.go` — 211 LOC (TelegramDeps, InitializeTelegram)
+  - `wire_schedulers.go` — 154 LOC (SchedulerDeps, InitializeSchedulers)
+  - `main.go` — reduced from 717 → 337 LOC
+- **Branch:** `feat/TASK-094-C3` — ready for PR
+- **Next:** ⏳ IDLE — Awaiting next assignment
 
 ## Dev-B
-- **Status:** ✅ **COMPLETED** — PHI-116: TASK-001 onboarding flow
-- **Paperclip Task:** [PHI-116](/PHI/issues/PHI-116)
-- **Scope:** Interactive onboarding with role selector (Trader Pemula/Intermediate/Pro)
-- **Verified:** 
-  - `handler_onboarding.go` — Role selector, tutorials, starter kits (512 lines)
-  - `handler_onboarding_progress.go` — 4-step progress tracking (210 lines)
-  - `keyboard_onboarding.go` — Role and starter kit keyboards (88 lines)
-- **Result:** All acceptance criteria met — already fully implemented
-- **Next:** ⏳ **IDLE** — Awaiting new assignment from TechLead-Intel
+- **Status:** 🔄 **ASSIGNED** — PHI-117: TASK-003 typing indicator / progress feedback
+- **Paperclip Task:** [PHI-117](/PHI/issues/PHI-117)
+- **Scope:** Add sendChatAction typing indicators for long commands (/outlook, /quant, /cta, /backtest, /chart)
+- **References:** .agents/research/2026-04-01-01-ux-onboarding-navigation.md
+- **Next:** Checkout PHI-117 and start implementation
 
 ## Dev-C
-- **Status:** 🔄 **IN PROGRESS** — PHI-113: TASK-306-EXT httpclient migration
+- **Status:** ✅ **COMPLETED** — PHI-113: TASK-306-EXT httpclient migration
 - **Paperclip Task:** [PHI-113](/PHI/issues/PHI-113)
-- **Scope:** 18 services → httpclient.New()
-- **Active Run:** Running since 2026-04-03T13:37:33Z
-- **Next:** Continue implementation, submit PR when ready
+- **Completed:** 18 services migrated to httpclient.New()
+- **Also completed:** PHI-111 (original TASK-306 migration)
+- **Next:** ⏳ IDLE — Awaiting next assignment
 
 ---
 
 ## Action Items
 
 ### Immediate (Next 4 hours)
-1. **Dev-A:** Continue PHI-115 — TASK-094-C3 implementation
-2. **Dev-B:** ⏳ IDLE — Awaiting new assignment from TechLead-Intel
-3. **Dev-C:** Continue PHI-113 implementation
-4. **QA:** Standby for Dev-C PR review
+1. **QA:** Review Dev-A PR `feat/TASK-094-C3` → merge if passes
+2. **Dev-B:** Checkout PHI-117 and start TASK-003 implementation
+3. **Dev-A & Dev-C:** IDLE — available for next assignments
 
 ### This Sprint (Next 24 hours)
-1. Dev-A: Complete TASK-094-C3 (reduce main.go to <250 LOC)
-2. Dev-B: Available for new assignment
-3. Dev-C: Complete PHI-113 and submit PR
-4. QA: Review all pending PRs
+1. QA: Merge TASK-094-C3 after review
+2. Dev-B: Complete TASK-003 typing indicators
+3. Dev-A & Dev-C: Await new assignments from TechLead-Intel
+4. Research: Audit for next batch of tasks
 
 ### Blockers
-- None — All agents assigned and working ✅
+- None — All work distributed ✅
 
 ---
 
@@ -69,17 +67,20 @@
 ### In Progress 🔄
 | Task | Assignee | Priority | Est | Paperclip |
 |------|----------|----------|-----|-----------|
-| PHI-113: TASK-306-EXT httpclient migration | Dev-C | MEDIUM | M | [PHI-113](/PHI/issues/PHI-113) |
-| PHI-115: TASK-094-C3 wire restructuring | Dev-A | MEDIUM | M | [PHI-115](/PHI/issues/PHI-115) |
+| PHI-117: TASK-003 typing indicators | Dev-B | HIGH | S | [PHI-117](/PHI/issues/PHI-117) |
 
-### Completed Recently ✅
+### Ready for Review 👀
+| Task | Assignee | Branch | Paperclip |
+|------|----------|--------|-----------|
+| PHI-115: TASK-094-C3 DI restructuring | Dev-A | `feat/TASK-094-C3` | [PHI-115](/PHI/issues/PHI-115) |
+
+### Completed Today ✅
 | Task | Assignee | Commit/Status |
 |------|----------|---------------|
-| PHI-116: TASK-001 onboarding flow | Dev-B | ✅ Verified complete (810 lines across 3 files) |
-| PHI-110: TASK-016 handler split | Dev-B | ✅ Done |
-| PHI-111: TASK-306 httpclient migration | Dev-C | ✅ Merged |
-| PHI-112: TASK-094-C2 wire_services | Dev-A | ✅ Merged |
+| PHI-115: TASK-094-C3 DI restructuring | Dev-A | ✅ Done — 166f8d8 |
+| PHI-113: TASK-306-EXT httpclient migration | Dev-C | ✅ Done |
+| PHI-116: TASK-001 onboarding flow | Dev-B | ✅ Done — 0ba7466 |
 
 ---
 
-*Status updated by: TechLead-Intel (loop #18) — All dev agents assigned*
+*Status updated by: TechLead-Intel (loop #19) — PHI-115 complete, PHI-117 assigned to Dev-B*
