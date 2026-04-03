@@ -19,6 +19,8 @@ import (
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
 	"github.com/arkcode369/ark-intelligent/internal/service/worldbank"
+	wyckoffsvc "github.com/arkcode369/ark-intelligent/internal/service/wyckoff"
+	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 	"github.com/arkcode369/ark-intelligent/pkg/timeutil"
 )
 
@@ -223,6 +225,36 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		}
 	}
 
+	// Wyckoff structure analysis for major symbols (Daily, graceful degradation)
+	var wyckoffContexts map[string]*wyckoffsvc.WyckoffResult
+	if h.dailyPriceRepo != nil {
+		var wyckoffEngine *wyckoffsvc.Engine
+		if h.wyckoff != nil {
+			wyckoffEngine = h.wyckoff.WyckoffEngine
+		} else {
+			wyckoffEngine = wyckoffsvc.NewEngine()
+		}
+		wyckoffContexts = make(map[string]*wyckoffsvc.WyckoffResult, 3)
+		for _, sym := range []string{"EURUSD", "XAUUSD", "BTCUSD"} {
+			mapping := domain.FindPriceMappingByCurrency(sym)
+			if mapping == nil {
+				continue
+			}
+			records, wErr := h.dailyPriceRepo.GetDailyHistory(ctx, mapping.ContractCode, 200)
+			if wErr != nil || len(records) < 50 {
+				continue
+			}
+			bars := ta.DailyPricesToOHLCV(records)
+			r := wyckoffEngine.Analyze(sym, "daily", bars)
+			if r != nil && r.Confidence != "LOW" {
+				wyckoffContexts[sym] = r
+			}
+		}
+		if len(wyckoffContexts) == 0 {
+			wyckoffContexts = nil
+		}
+	}
+
 	// ---------- Build unified data ----------
 	var macroComposites *domain.MacroComposites
 	if macroData != nil {
@@ -260,6 +292,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		FedSpeeches:        fedSpeeches,
 		ICTContexts:        ictContexts,
 		GEXResults:         gexResults,
+		WyckoffContexts:    wyckoffContexts,
 		Language:           prefs.Language,
 	}
 
