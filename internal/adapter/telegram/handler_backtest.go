@@ -11,6 +11,9 @@ import (
 
 // cmdReport handles /report — weekly signal performance summary.
 func (h *Handler) cmdReport(ctx context.Context, chatID string, userID int64, args string) error {
+	// Send typing indicator immediately for long-running report
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+
 	if h.signalRepo == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "Report data not available yet. Signal tracking is being initialized.")
 		return err
@@ -50,6 +53,9 @@ var knownSignalTypes = map[string]bool{
 
 // cmdBacktest handles /backtest [contract|all|signals|SIGNAL_TYPE]
 func (h *Handler) cmdBacktest(ctx context.Context, chatID string, userID int64, args string) error {
+	// Send typing indicator immediately for long-running backtest
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+
 	if h.signalRepo == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "Backtest data not available yet. Signal tracking is being initialized.")
 		return err
@@ -282,6 +288,9 @@ func (h *Handler) backtestByContract(ctx context.Context, chatID string, calc *b
 
 // cmdAccuracy handles /accuracy — quick one-line accuracy summary
 func (h *Handler) cmdAccuracy(ctx context.Context, chatID string, userID int64, args string) error {
+	// Send typing indicator immediately
+	_ = h.bot.SendChatAction(ctx, chatID, "typing")
+
 	if h.signalRepo == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, "Backtest data not available yet.")
 		return err
