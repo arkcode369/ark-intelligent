@@ -14,6 +14,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/service/fed"
 	ictsvc "github.com/arkcode369/ark-intelligent/internal/service/ict"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
+	wyckoffsvc "github.com/arkcode369/ark-intelligent/internal/service/wyckoff"
 	"github.com/arkcode369/ark-intelligent/internal/service/sentiment"
 	"github.com/arkcode369/ark-intelligent/internal/service/macro"
 	"github.com/arkcode369/ark-intelligent/internal/service/worldbank"
@@ -49,6 +50,10 @@ type UnifiedOutlookData struct {
 	// GEXResults holds Gamma Exposure analysis for crypto assets (Deribit options data).
 	// Key = symbol (e.g. "BTC", "ETH"), Value = GEXResult. May be nil if GEX not configured.
 	GEXResults         map[string]*gexsvc.GEXResult
+	// WyckoffContexts holds Wyckoff structure analysis for major symbols (Daily timeframe).
+	// Only includes results with Confidence != "LOW".
+	// Key = symbol (e.g. "EURUSD"), Value = WyckoffResult.
+	WyckoffContexts    map[string]*wyckoffsvc.WyckoffResult
 	Language           string
 }
 
@@ -703,6 +708,23 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 		b.WriteString("NOTE: POSITIVE_GEX = dealer hedging dampens moves (mean-reversion). " +
 			"NEGATIVE_GEX = dealer hedging amplifies moves (trending). " +
 			"GEX Flip Level = key price where regime switches.\n\n")
+	}
+
+	// -----------------------------------------------------------------------
+	// Section: Wyckoff Structure Analysis (Daily timeframe)
+	// -----------------------------------------------------------------------
+	if len(data.WyckoffContexts) > 0 {
+		b.WriteString(fmt.Sprintf("=== %d. WYCKOFF STRUCTURE ANALYSIS (Daily) ===\n", section))
+		section++ //nolint:ineffassign // section may be used in future extensions
+		for sym, r := range data.WyckoffContexts {
+			b.WriteString(fmt.Sprintf("%s: %s Phase=%s Confidence=%s\n",
+				sym, r.Schematic, r.CurrentPhase, r.Confidence))
+			if r.Summary != "" {
+				b.WriteString(fmt.Sprintf("  %s\n", r.Summary))
+			}
+		}
+		b.WriteString("NOTE: Wyckoff Accumulation Phase C/D (Spring/SOS) → bullish structural setup. " +
+			"Distribution Phase C/D (UTAD/SOW) → bearish structural setup.\n\n")
 	}
 
 	// -----------------------------------------------------------------------
