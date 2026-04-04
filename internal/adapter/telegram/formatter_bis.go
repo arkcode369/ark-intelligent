@@ -116,7 +116,7 @@ func formatBISDashboard(
 
 	sb.WriteString("📊 <i>Data: BIS Statistics API (free, no key required)\nCache: 24h • Update frequency: monthly/quarterly</i>")
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 // cbFlagEmoji returns a flag emoji for the currency's central bank.

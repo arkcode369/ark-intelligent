@@ -72,7 +72,7 @@ func FormatGEXResult(r *gexsvc.GEXResult) string {
 	sb.WriteString("💡 <b>IMPLIKASI:</b>\n")
 	sb.WriteString(gexWrapText(r.Implication, 300))
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 // gexFormatPrice formats a price for the GEX display.
@@ -240,7 +240,7 @@ func FormatIVSurface(r *gexsvc.IVSurfaceResult) string {
 	// Smile legend
 	sb.WriteString("<i>📖 Skew = Put wing IV − Call wing IV. Positive = bearish fear (put demand). Negative = call demand / bullish.</i>\n")
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 // ivSignalEmoji returns an emoji + label for the IV market signal.
@@ -382,7 +382,7 @@ func FormatSkewResult(r *gexsvc.SkewResult) string {
 
 	sb.WriteString("<i>📖 Smile menunjukkan IV di berbagai moneyness. Skew slope negatif = normal (put protection); positif = inverse (call demand).</i>\n")
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 // skewSmileRow formats a single expiry's smile as a table row.

@@ -60,7 +60,7 @@ func (f *Formatter) FormatCarryMonitor(r *domain.CarryMonitorResult) string {
 	b.WriteString("\n<i>Spread = annualized rate differential in basis points</i>\n")
 	b.WriteString("<i>Unwind risk: range compression signals carry trade reversal</i>")
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // spreadBar creates a visual bar for carry spread (in bps, roughly -500 to +500).

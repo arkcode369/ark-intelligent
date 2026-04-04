@@ -4,6 +4,7 @@ package telegram
 //   /ctabt [SYMBOL] [TIMEFRAME] [GRADE]  — run CTA backtest with chart + inline keyboard
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -163,6 +164,11 @@ func (h *Handler) runCTABacktest(ctx context.Context, chatID string, symbol, tim
 		return err
 	}
 
+	if h.ctabt.DailyPriceRepo == nil {
+		h.sendUserError(ctx, chatID, fmt.Errorf("daily price data not configured"), "ctabt")
+		return nil
+	}
+
 	// Send loading
 	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf(
 		"⏳ Menjalankan backtest <b>%s</b> (%s, Grade ≥ %s)...\n<i>Ini bisa memakan waktu 10-30 detik.</i>",
@@ -298,6 +304,10 @@ func (h *Handler) showCTABTTrades(ctx context.Context, chatID string, msgID int,
 	mapping := h.resolveCTAMapping(symbol)
 	if mapping == nil {
 		return h.bot.EditMessage(ctx, chatID, msgID, "❌ Symbol not found.")
+	}
+
+	if h.ctabt.DailyPriceRepo == nil {
+		return h.bot.EditMessage(ctx, chatID, msgID, "❌ Daily price data not configured.")
 	}
 
 	code := mapping.ContractCode
@@ -476,14 +486,19 @@ func (h *Handler) generateBacktestChart(ctx context.Context, result *ta.Backtest
 	defer os.Remove(inputPath)
 	defer os.Remove(outputPath) // ensure PNG is cleaned up on all return paths
 
-	scriptPath := findBacktestScript()
+	scriptPath, findErr := findBacktestScript()
+	if findErr != nil {
+		return nil, findErr
+	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
-	cmd.Stderr = os.Stderr
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("backtest chart renderer failed (timeout 90s): %w", err)
+		log.Error().Err(err).Str("stderr", stderr.String()).Msg("backtest chart renderer failed")
+		return nil, fmt.Errorf("backtest chart renderer failed: %w", err)
 	}
 
 	pngData, readErr := os.ReadFile(outputPath)
@@ -495,7 +510,7 @@ func (h *Handler) generateBacktestChart(ctx context.Context, result *ta.Backtest
 }
 
 // findBacktestScript locates the backtest_chart.py script.
-func findBacktestScript() string {
+func findBacktestScript() (string, error) {
 	candidates := []string{
 		"scripts/backtest_chart.py",
 		"../scripts/backtest_chart.py",
@@ -506,22 +521,22 @@ func findBacktestScript() string {
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			abs, _ := filepath.Abs(c)
-			return abs
+			return abs, nil
 		}
 	}
 	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
 		rel := filepath.Join(execDir, "scripts", "backtest_chart.py")
 		if _, err := os.Stat(rel); err == nil {
-			return rel
+			return rel, nil
 		}
 		rel = filepath.Join(execDir, "..", "scripts", "backtest_chart.py")
 		if _, err := os.Stat(rel); err == nil {
 			abs, _ := filepath.Abs(rel)
-			return abs
+			return abs, nil
 		}
 	}
-	return "scripts/backtest_chart.py"
+	return "", fmt.Errorf("backtest_chart.py not found (searched: %v)", candidates)
 }
 
 // ---------------------------------------------------------------------------

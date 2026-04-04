@@ -271,6 +271,9 @@ func (h *Handler) computeVPState(ctx context.Context, mapping *domain.PriceSymbo
 	barsByTF := make(map[string][]ta.OHLCV)
 
 	// Daily bars always fetched
+	if h.vp.DailyPriceRepo == nil {
+		return nil, fmt.Errorf("daily price data not configured")
+	}
 	dailyRecords, err := h.vp.DailyPriceRepo.GetDailyHistory(ctx, code, 500)
 	if err != nil || len(dailyRecords) < 20 {
 		return nil, fmt.Errorf("insufficient daily data for %s (%d bars)", mapping.Currency, len(dailyRecords))
@@ -453,7 +456,11 @@ func (h *Handler) runVPEngine(ctx context.Context, input map[string]any) (result
 		return nil, fmt.Errorf("write input: %w", err)
 	}
 
-	scriptPath := findVPScript()
+	scriptPath, findErr := findVPScript()
+	if findErr != nil {
+		err = findErr
+		return
+	}
 	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
@@ -502,7 +509,7 @@ func (h *Handler) runVPEngine(ctx context.Context, input map[string]any) (result
 }
 
 // findVPScript locates the vp_engine.py script.
-func findVPScript() string {
+func findVPScript() (string, error) {
 	candidates := []string{
 		"scripts/vp_engine.py",
 		"../scripts/vp_engine.py",
@@ -512,8 +519,8 @@ func findVPScript() string {
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
-			return c
+			return c, nil
 		}
 	}
-	return "scripts/vp_engine.py"
+	return "", fmt.Errorf("vp_engine.py not found (searched: %v)", candidates)
 }

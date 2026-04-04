@@ -156,7 +156,7 @@ func (f *Formatter) FormatSettings(prefs domain.UserPrefs) string {
 
 	b.WriteString("\n<i>Use the buttons below to adjust preferences</i>")
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 
@@ -194,7 +194,7 @@ func (f *Formatter) FormatAlertManagement(prefs domain.UserPrefs) string {
 
 	b.WriteString("\n<i>Use the buttons below to adjust alert preferences</i>")
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // formatProgressBar creates a text-based progress bar for COT Index.
@@ -325,6 +325,16 @@ func truncateStr(s string, maxLen int) string {
 	return s[:maxLen-2] + ".."
 }
 
+// truncateMsg ensures a Telegram message does not exceed the 4096-character limit.
+// If truncated, appends a notice so the user knows the output was clipped.
+func truncateMsg(s string) string {
+	const limit = 4000 // leave some margin below Telegram's 4096
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "\n\n<i>… (output truncated)</i>"
+}
+
 // FormatTrackedEvents formats a list of tracked event names for the /impact help message.
 func (f *Formatter) FormatTrackedEvents(events []string) string {
 	var b strings.Builder
@@ -336,7 +346,7 @@ func (f *Formatter) FormatTrackedEvents(events []string) string {
 		b.WriteString("No events tracked yet. Impact data builds automatically\n")
 		b.WriteString("after each economic release with price data available.\n\n")
 		b.WriteString("Usage: <code>/impact NFP</code> or <code>/impact CPI</code>")
-		return b.String()
+		return truncateMsg(b.String())
 	}
 
 	b.WriteString("<b>Tracked Events:</b>\n")
@@ -350,7 +360,7 @@ func (f *Formatter) FormatTrackedEvents(events []string) string {
 
 	b.WriteString("\nUsage: <code>/impact Event Name</code>\n")
 	b.WriteString("Example: <code>/impact Non-Farm Employment Change</code>")
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // FormatRegimeOverlayHeader formats a one-line regime overlay header for embedding
@@ -360,5 +370,5 @@ func (f *Formatter) FormatRegimeOverlayHeader(overlay interface{ HeaderLine() st
 	if overlay == nil {
 		return ""
 	}
-	return overlay.HeaderLine() + "\n"
+	return truncateMsg(overlay.HeaderLine() + "\n")
 }

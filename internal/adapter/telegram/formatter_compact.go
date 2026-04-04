@@ -47,7 +47,7 @@ func (f *Formatter) FormatCOTOverviewCompact(analyses []domain.COTAnalysis, conv
 	}
 
 	b.WriteString("\n💡 <i>Tekan 📖 Detail Lengkap untuk analisis penuh.</i>")
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // FormatMacroSummaryCompact returns a compact macro dashboard.
@@ -85,7 +85,7 @@ func (f *Formatter) FormatMacroSummaryCompact(regime fred.MacroRegime, data *fre
 	}
 
 	b.WriteString("\n💡 <i>Tekan 📖 Detail Lengkap untuk breakdown lengkap.</i>")
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // strengthDot returns colored dots based on conviction score.
@@ -96,41 +96,6 @@ func strengthDot(score float64) string {
 		return "●●○"
 	}
 	return "●○○"
-}
-
-// FormatCOTOverviewMinimal returns a one-line-per-currency ultra-minimal COT view.
-// Designed for traders who only need signal direction at a glance.
-func (f *Formatter) FormatCOTOverviewMinimal(analyses []domain.COTAnalysis, convictions []cot.ConvictionScore) string {
-	var b strings.Builder
-	b.WriteString("\u26a1 <b>COT Signal</b>\n")
-
-	convMap := make(map[string]cot.ConvictionScore, len(convictions))
-	for _, c := range convictions {
-		convMap[c.Currency] = c
-	}
-
-	for _, a := range analyses {
-		code := a.Contract.Currency
-		if code == "" {
-			code = contractCodeToFriendly(a.Contract.Code)
-		}
-
-		dir := "\u2194\ufe0f"
-		if conv, ok := convMap[code]; ok {
-			switch {
-			case conv.Score >= 0.4:
-				dir = "\U0001f7e2 LONG"
-			case conv.Score <= -0.4:
-				dir = "\U0001f534 SHORT"
-			default:
-				dir = "\u2b1c NEUTRAL"
-			}
-		}
-
-		b.WriteString(fmt.Sprintf("<b>%s</b>: %s\n", code, dir))
-	}
-
-	return b.String()
 }
 
 // FormatCOTOverviewSparkline renders one compact line per currency in mobile-friendly format.
@@ -177,7 +142,7 @@ func (f *Formatter) FormatCOTOverviewSparkline(analyses []domain.COTAnalysis, co
 	}
 
 	b.WriteString("\n💡 <i>Tekan 📖 Detail untuk analisis penuh.</i>")
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // cotIndexBar converts a COTIndex (0-100) into a 5-block progress bar using Unicode block chars.
@@ -200,29 +165,4 @@ func cotIndexBar(index float64) string {
 		}
 	}
 	return string(bar)
-}
-
-// FormatMacroSummaryMinimal returns a 2-3 line macro regime summary.
-func (f *Formatter) FormatMacroSummaryMinimal(regime fred.MacroRegime, data *fred.MacroData) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("\u26a1 <b>Macro</b>: %s", regime.Name))
-	if regime.MonPolicy != "" {
-		b.WriteString(fmt.Sprintf(" | %s", regime.MonPolicy))
-	}
-	b.WriteString("\n")
-
-	if data != nil {
-		if v := data.Yield10Y; v != 0 {
-			b.WriteString(fmt.Sprintf("10Y %.2f%%", v))
-		}
-		if v := data.CPI; v != 0 {
-			b.WriteString(fmt.Sprintf(" | CPI %.1f%%", v))
-		}
-		if v := data.UnemployRate; v != 0 {
-			b.WriteString(fmt.Sprintf(" | UE %.1f%%", v))
-		}
-		b.WriteString("\n")
-	}
-
-	return b.String()
 }

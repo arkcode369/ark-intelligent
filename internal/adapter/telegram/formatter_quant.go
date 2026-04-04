@@ -97,7 +97,7 @@ func (f *Formatter) FormatIntradayContext(ic *domain.IntradayContext) string {
 	}
 	b.WriteString(fmt.Sprintf("\n<code>4H Trend: %s</code> %s\n", ic.IntradayTrend, trendIcon))
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ func (f *Formatter) FormatCorrelationMatrix(m *domain.CorrelationMatrix) string 
 		}
 	}
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // filterPresent returns the subset of candidates that exist in available.
@@ -266,7 +266,7 @@ func (f *Formatter) FormatCorrelationClusters(clusters []domain.CorrelationClust
 	}
 	b.WriteString("\n<i>Avoid simultaneous exposure in same cluster</i>")
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 func corrIcon(r float64) string {
@@ -325,7 +325,7 @@ func (f *Formatter) FormatCarryRanking(r *domain.CarryRanking) string {
 	b.WriteString("\n<i>Positive diff = earn carry going long XXX/USD</i>\n")
 	b.WriteString("<i>Negative diff = pay carry going long XXX/USD</i>")
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // carryBar creates a visual bar for carry score (-100 to +100).
@@ -407,7 +407,7 @@ func (f *Formatter) FormatGARCH(currency string, g *pricesvc.GARCHResult) string
 	b.WriteString(fmt.Sprintf("\n<i>Model: α=%.3f β=%.3f persistence=%.3f | %d samples</i>",
 		g.Alpha, g.Beta, g.Persistence, g.SampleSize))
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // ---------------------------------------------------------------------------
@@ -469,7 +469,7 @@ func (f *Formatter) FormatHurst(currency string, h *pricesvc.HurstResult, regime
 
 	b.WriteString(fmt.Sprintf("\n<i>Based on %d daily samples</i>", h.SampleSize))
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // ---------------------------------------------------------------------------
@@ -483,7 +483,7 @@ func (f *Formatter) FormatHMMRegime(currency string, h *pricesvc.HMMResult) stri
 	if h == nil {
 		b.WriteString(fmt.Sprintf("🔀 <b>%s — Market Regime</b>\n\n", currency))
 		b.WriteString("<code>Not enough data to detect regime</code>\n")
-		return b.String()
+		return truncateMsg(b.String())
 	}
 
 	icon := "⚪ Unknown"
@@ -569,7 +569,7 @@ func (f *Formatter) FormatHMMRegime(currency string, h *pricesvc.HMMResult) stri
 	}
 	b.WriteString(fmt.Sprintf("\n<i>%d samples, %d iterations</i>", h.SampleSize, h.Iterations))
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // ---------------------------------------------------------------------------
@@ -627,7 +627,7 @@ func (f *Formatter) FormatFactorDecomposition(r *backtestsvc.DecompositionResult
 		}
 	}
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // factorBar creates a visual bar for factor contribution.
@@ -706,7 +706,7 @@ func (f *Formatter) FormatWFOptimization(r *backtestsvc.WFOResult) string {
 	// Recommendation
 	b.WriteString(fmt.Sprintf("\n<b>💡 Recommendation:</b>\n<code>%s</code>\n", r.Recommendation))
 
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // weightBar creates a visual bar for weight percentage.
@@ -756,7 +756,7 @@ func (f *Formatter) FormatVolCone(cone *pricesvc.VolCone) string {
 	}
 
 	b.WriteString(fmt.Sprintf("<b>💡 %s</b>\n", cone.Summary))
-	return b.String()
+	return truncateMsg(b.String())
 }
 
 // volConeWindowBlock renders a single window as an ASCII band visualization.
@@ -843,5 +843,5 @@ func (f *Formatter) FormatGJRGARCH(currency string, g *pricesvc.GJRGARCHResult) 
 	b.WriteString(fmt.Sprintf("\n<i>Model: α=%.3f γ=%.3f β=%.3f persist=%.3f | %d samples</i>",
 		g.Alpha, g.Gamma, g.Beta, g.Persistence, g.SampleSize))
 
-	return b.String()
+	return truncateMsg(b.String())
 }

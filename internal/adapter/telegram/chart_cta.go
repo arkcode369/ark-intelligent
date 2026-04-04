@@ -228,7 +228,11 @@ func (h *Handler) generateCTAChart(ctx context.Context, state *ctaState, timefra
 	defer os.Remove(outputPath) // ensure PNG is cleaned up on all return paths
 
 	// Find the script path relative to the binary
-	scriptPath := findCTAScript()
+	scriptPath, findErr := findCTAScript()
+	if findErr != nil {
+		err = findErr
+		return
+	}
 
 	// Execute Python script with 90s timeout to prevent goroutine leaks if Python hangs.
 	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
@@ -278,7 +282,11 @@ func runChartScript(ctx context.Context, input any) (pngData []byte, err error) 
 	defer os.Remove(inputPath)
 	defer os.Remove(outputPath) // ensure PNG is cleaned up on all return paths
 
-	scriptPath := findCTAScript()
+	scriptPath, findErr := findCTAScript()
+	if findErr != nil {
+		err = findErr
+		return
+	}
 	cmdCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
@@ -395,7 +403,7 @@ func (h *Handler) generateCTADetailChart(ctx context.Context, state *ctaState, t
 }
 
 // findCTAScript locates the cta_chart.py script.
-func findCTAScript() string {
+func findCTAScript() (string, error) {
 	candidates := []string{
 		"scripts/cta_chart.py",
 		"../scripts/cta_chart.py",
@@ -408,7 +416,7 @@ func findCTAScript() string {
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			abs, _ := filepath.Abs(c)
-			return abs
+			return abs, nil
 		}
 	}
 
@@ -417,17 +425,16 @@ func findCTAScript() string {
 		execDir := filepath.Dir(execPath)
 		rel := filepath.Join(execDir, "scripts", "cta_chart.py")
 		if _, err := os.Stat(rel); err == nil {
-			return rel
+			return rel, nil
 		}
 		rel = filepath.Join(execDir, "..", "scripts", "cta_chart.py")
 		if _, err := os.Stat(rel); err == nil {
 			abs, _ := filepath.Abs(rel)
-			return abs
+			return abs, nil
 		}
 	}
 
-	// Fallback
-	return "scripts/cta_chart.py"
+	return "", fmt.Errorf("cta_chart.py not found (searched: %v)", candidates)
 }
 
 // sanitizeFloats replaces NaN and Inf with 0 so JSON marshaling works.

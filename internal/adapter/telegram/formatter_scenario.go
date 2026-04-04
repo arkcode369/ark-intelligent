@@ -48,7 +48,7 @@ func formatScenarioResult(r *pricesvc.ScenarioResult, currency string) string {
 	sb.WriteString("💡 <b>Interpretation</b>\n")
 	sb.WriteString(scenarioInterpretation(r))
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 // formatScenarioPrice formats a price based on currency conventions.

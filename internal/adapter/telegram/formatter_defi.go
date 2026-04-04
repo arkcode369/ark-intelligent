@@ -115,5 +115,5 @@ func formatDeFiReport(report *defi.DeFiReport) string {
 		b.WriteString("\n")
 	}
 
-	return b.String()
+	return truncateMsg(b.String())
 }

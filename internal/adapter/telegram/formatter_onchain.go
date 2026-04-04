@@ -41,7 +41,7 @@ func formatOnChainReport(report *onchain.OnChainReport, btcHealth *onchain.BTCNe
 	sb.WriteString("💡 <i>Negative net flow = coins leaving exchanges (accumulation)\nPositive net flow = coins entering exchanges (sell pressure)</i>\n")
 	sb.WriteString("📊 Data: Blockchain.com + CoinMetrics Community API")
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 // formatBTCNetworkHealth formats the BTC network health section.

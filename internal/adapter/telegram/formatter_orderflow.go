@@ -99,7 +99,7 @@ func formatOrderFlowResult(r *orderflow.OrderFlowResult) string {
 	// Summary
 	sb.WriteString(fmt.Sprintf("💡 <i>%s</i>", r.Summary))
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 func deltaTrendEmoji(trend string) string {

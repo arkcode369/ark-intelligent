@@ -101,7 +101,7 @@ func FormatICTResult(r *ictsvc.ICTResult) string {
 	// Summary
 	sb.WriteString(fmt.Sprintf("🎯 <b>SUMMARY:</b> %s\n", r.Summary))
 
-	return sb.String()
+	return truncateMsg(sb.String())
 }
 
 // structureIcon returns a status icon for a structure event.

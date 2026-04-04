@@ -212,6 +212,9 @@ func (h *Handler) computeQuantState(ctx context.Context, mapping *domain.PriceSy
 	barsByTF := make(map[string][]ta.OHLCV)
 
 	// Fetch daily bars (always needed for most models)
+	if h.quant.DailyPriceRepo == nil {
+		return nil, fmt.Errorf("daily price data not configured")
+	}
 	dailyRecords, err := h.quant.DailyPriceRepo.GetDailyHistory(ctx, code, 500)
 	if err != nil || len(dailyRecords) < 30 {
 		return nil, fmt.Errorf("insufficient daily data for %s (%d bars)", mapping.Currency, len(dailyRecords))
@@ -526,7 +529,11 @@ func (h *Handler) runQuantEngine(ctx context.Context, state *quantState, mode st
 		}
 	}()
 
-	scriptPath := findQuantScript()
+	scriptPath, findErr := findQuantScript()
+	if findErr != nil {
+		err = findErr
+		return
+	}
 
 	// Timeout: 60s for complex models
 	cmdCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -612,7 +619,7 @@ func (h *Handler) fetchMultiAssetCloses(ctx context.Context, excludeSymbol strin
 // findQuantScript locates the quant_engine.py script
 // ---------------------------------------------------------------------------
 
-func findQuantScript() string {
+func findQuantScript() (string, error) {
 	candidates := []string{
 		"scripts/quant_engine.py",
 		"../scripts/quant_engine.py",
@@ -622,8 +629,8 @@ func findQuantScript() string {
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
-			return c
+			return c, nil
 		}
 	}
-	return "scripts/quant_engine.py"
+	return "", fmt.Errorf("quant_engine.py not found (searched: %v)", candidates)
 }
