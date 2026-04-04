@@ -8,11 +8,11 @@
 
 ## Overview
 
-ARK Intelligent uses a multi-agent system with specialized roles. Each agent operates on a continuous heartbeat cycle, picking up tasks from Paperclip and executing them.
+ARK Intelligent uses a multi-agent system with specialized roles. Each agent can run as an independent Agent instance on a continuous heartbeat cycle, picking up tasks from a shared workflow ledger and executing them.
 
 ---
 
-## 1. TechLead-Intel (Me)
+## 1. TechLead-Intel (Coordinator)
 
 **Role:** Tech Lead - ARK Intelligent  
 **Reports to:** CEO  
@@ -27,8 +27,8 @@ ARK Intelligent uses a multi-agent system with specialized roles. Each agent ope
    - Read .agents/DIRECTION.md
 
 2. TRIAGE
-   - Check .agents/tasks/pending/
-   - Check .agents/escalations/
+   - Check workflow queue / task ledger
+   - Check escalation queue
    - Check open PRs
 
 3. PLAN
@@ -67,11 +67,11 @@ ARK Intelligent uses a multi-agent system with specialized roles. Each agent ope
 
 ```
 1. HEARTBEAT WAKE
-   - Check Paperclip inbox
+   - Check assigned task queue
 
-2. CHECKOUT TASK
-   - POST /api/issues/{id}/checkout
-   - Fail if 409 (task owned by another agent)
+2. CLAIM TASK
+   - Claim task through the workflow coordinator
+   - Fail if already claimed by another agent
 
 3. IMPLEMENT
    - Read task specification
@@ -81,7 +81,7 @@ ARK Intelligent uses a multi-agent system with specialized roles. Each agent ope
 
 4. COMMIT
    - Commit with descriptive message
-   - Add Co-Authored-By: Paperclip
+   - Add Co-Authored-By: Hermes instance identity
 
 5. SUBMIT PR
    - Push branch to origin
@@ -89,7 +89,7 @@ ARK Intelligent uses a multi-agent system with specialized roles. Each agent ope
    - Update task status to in_review
 
 6. RELEASE
-   - POST /api/issues/{id}/release
+   - Release the task back to the queue when done
 ```
 
 ### Recent Completed Work
@@ -112,7 +112,7 @@ ARK Intelligent uses a multi-agent system with specialized roles. Each agent ope
 ```
 Same as Dev-A:
 1. Heartbeat wake
-2. Checkout task
+2. Claim task
 3. Implement on feature branch
 4. Test (go build, go vet)
 5. Commit and push
@@ -179,7 +179,7 @@ Same as Dev-A and Dev-B
 
 5. UPDATE STATUS
    - Move task to done/
-   - Update Paperclip status
+   - Update workflow status
 ```
 
 ### Current Queue
@@ -204,7 +204,7 @@ Same as Dev-A and Dev-B
    - Write research documents in .agents/research/
 
 2. CREATE TASK SPECIFICATIONS
-   - Write detailed task files
+   - Write detailed task specs
    - Define acceptance criteria
    - Prioritize tasks
 
@@ -253,24 +253,8 @@ Same as Dev-A and Dev-B
 
 ## Communication Flow
 
-1. **Paperclip** — Source of truth for tasks
 2. **GitHub** — Code repository, PRs
 3. **STATUS.md** — Team status board
-4. **Task files** — Specifications in .agents/tasks/
+4. **Task ledger** — Specifications and ownership records
 
 ---
-
-## Current Sprint Status (2026-04-03)
-
-### Completed ✅
-- TASK-001: Onboarding (PHI-116) — Dev-B
-- TASK-002: Button standardization (PHI-118) — Dev-A
-- TASK-003: Typing indicators (PHI-117) — Dev-B
-- TASK-004: Compact output (PHI-119) — Dev-C (PR submitted)
-- TASK-005: Error messages (PHI-120) — Dev-B
-
-### In QA Review 👀
-- 4 PRs awaiting merge
-
-### Next
-- All dev agents IDLE, awaiting new assignments

@@ -182,7 +182,7 @@ Advanced Market Theory — Market Profile / Auction Market Theory:
 - HMM → lebih banyak state, online learning
 
 ### Belum ada, bisa diriset:
-- **ICT (Inner Circle Trader)**: Fair Value Gap, Order Block, Breaker Block, Liquidity Sweep, Killzone, PD Array
+- **ICT (Inner Circle Trader)**: Fair Value Gap, Order Block, Breaker Block, Liquidity Sweep, Killzone, PD Array, MMXM, Session Time, Time & Price, Macros, IPDA, IPDA Data Range
 - **Smart Money Concepts (SMC)**: Change of Character (CHOCH), Break of Structure (BOS), premium/discount zones
 - **Quant/Institutional**: DTCC/CLS settlement data, dark pool prints, options flow, gamma exposure (GEX)
 - **Market Microstructure**: Bid-ask spread analysis, order book imbalance, VWAP deviation

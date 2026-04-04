@@ -5,7 +5,7 @@
 
 ---
 
-## Struktur Tim (Paperclip-Managed)
+## Struktur Tim (Agent Multi-Instance Orchestration)
 
 | Agent | Role | Reports To | Capabilities |
 |---|---|---|---|
@@ -38,7 +38,7 @@ main                  ← HANYA QA yang merge ke sini setelah testing
 
 ---
 
-## Workflow Paperclip (Research → Dev → QA)
+## Workflow Orkestrasi (Research → Dev → QA)
 
 ```
 ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
@@ -63,8 +63,8 @@ main                  ← HANYA QA yang merge ke sini setelah testing
 - Coordinate cross-team dependencies
 
 **Loop TechLead:**
-1. Review [Paperclip dashboard](/PHI/issues) untuk semua agent
-2. Monitor task queue balance (Research output vs Dev capacity)
+1. Review task ledger untuk semua agent
+2. Monitor balance output riset vs kapasitas dev
 3. Identifikasi bottleneck dalam workflow
 4. Buat keputusan arah pengembangan (fitur apa yang diprioritaskan)
 5. Update reporting structure jika diperlukan
@@ -77,14 +77,14 @@ main                  ← HANYA QA yang merge ke sini setelah testing
 **Responsibilities:**
 - Audit codebase untuk identify issues dan opportunities
 - Create task specifications dengan acceptance criteria yang jelas
-- Assign tasks ke Dev team via [Paperclip](/PHI/issues)
+- Assign tasks ke Dev team via workflow ledger
 
 **Loop Research:**
-1. Terima assignment dari [TechLead-Intel](/PHI/agents/techlead-intel) via [inbox](/PHI/agents/me/inbox-lite)
-2. Checkout task sebelum mulai kerja
+1. Terima assignment dari [TechLead-Intel](/PHI/agents/techlead-intel) via task queue internal
+2. Claim task sebelum mulai kerja
 3. `git pull origin agents/main`
 4. Audit codebase sesuai fokus area (UX, Data, Fitur, Refactor, BugHunt)
-5. Buat task spec di Paperclip dengan:
+5. Buat task spec di workflow ledger dengan:
    - Clear title dan description
    - Acceptance criteria (termasuk `go build ./...` dan `go vet ./...`)
    - Priority (high/medium/low)
@@ -120,8 +120,8 @@ main                  ← HANYA QA yang merge ke sini setelah testing
 - Bisa create [BLOCKING] tasks kalau menemukan dependencies
 
 **Loop Dev:**
-1. Cek [Paperclip inbox](/PHI/agents/me/inbox-lite) untuk assigned tasks
-2. Checkout task sebelum mulai kerja
+1. Cek task queue untuk assigned tasks
+2. Claim task sebelum mulai kerja
 3. `git pull origin agents/main`
 4. Buat feature branch: `git checkout -b feat/PHI-XXX-nama`
 5. Implement sesuai acceptance criteria
@@ -134,8 +134,8 @@ main                  ← HANYA QA yang merge ke sini setelah testing
    git push origin feat/PHI-XXX-nama
    gh pr create --base agents/main --title "feat(PHI-XXX): nama" --body "Implements PHI-XXX"
    ```
-8. Update task status dan beri comment dengan link PR
-9. Langsung ambil task berikutnya dari inbox
+8. Update task status dan beri catatan dengan link PR
+9. Langsung ambil task berikutnya dari queue
 
 **Aturan Dev:**
 - Kalau build gagal → fix dulu, jangan PR
@@ -224,9 +224,9 @@ git config user.email "qa@ark-intelligent.ai"
 
 ## Conflict Prevention
 
-- Satu task = satu agent (atomic via Paperclip checkout)
-- Kalau dua agent claim task yang sama → Paperclip akan prevent dengan 409 Conflict
-- Untuk refactor file besar: koordinasi via Paperclip comments
+- Satu task = satu agent (atomic via claim/lock mechanism)
+- Kalau dua agent claim task yang sama → mekanisme claim akan menolak konflik
+- Untuk refactor file besar: koordinasi via komentar workflow
   - Comment "working on formatter.go" sebelum mulai
   - Dev lain hindari file tersebut sampai PR merged
 
@@ -246,7 +246,7 @@ git config user.email "qa@ark-intelligent.ai"
 
 ## Format Task Spec (untuk Research)
 
-Gunakan Paperclip untuk create tasks dengan format:
+Gunakan task ledger untuk create tasks dengan format:
 
 ```markdown
 **Priority:** high / medium / low
@@ -299,7 +299,7 @@ Gunakan Paperclip untuk create tasks dengan format:
 
 ---
 
-## Referensi Paperclip
+## Referensi Workflow
 
 | Resource | Path |
 |----------|------|
@@ -330,4 +330,4 @@ Gunakan Paperclip untuk create tasks dengan format:
 ---
 
 *Last updated: 2026-04-03 oleh TechLead-Intel*
-*Dokumen ini menggantikan struktur task-file-based dengan Paperclip-managed workflow*
+*Dokumen ini menggantikan struktur task-file-based dengan workflow-ledger-based orchestration*
