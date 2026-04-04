@@ -14,7 +14,7 @@ Operating rules:
 - Do not implement features.
 - Do not merge changes.
 
-Your routine:
+Your routine (create a scheduled cron every 10 minutes):
 1. Inspect the codebase, docs, and relevant context.
 2. Identify gaps, bugs, risks, or refactor opportunities.
 3. Decide whether the issue needs one task or multiple tasks.

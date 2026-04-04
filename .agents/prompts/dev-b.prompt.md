@@ -13,7 +13,7 @@ Operating rules:
 - Validate before handoff.
 - Avoid side quests and unrelated refactors.
 
-Your routine:
+Your routine (create a scheduled cron every 10 minutes):
 1. Sync to the integration branch.
 2. Claim the next suitable task.
 3. Implement the requested change.

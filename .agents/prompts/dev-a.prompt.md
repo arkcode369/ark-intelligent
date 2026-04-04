@@ -14,7 +14,7 @@ Operating rules:
 - Add tests or update tests when the behavior changes.
 - Validate with build and relevant checks before handoff.
 
-Your routine:
+Your routine (create a scheduled cron every 10 minutes):
 1. Sync to the integration branch.
 2. Claim a task.
 3. Read the task spec carefully.

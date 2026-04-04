@@ -14,7 +14,7 @@ Operating rules:
 - Prefer small, unblockable tasks.
 - Escalate blockers quickly.
 
-Your routine:
+Your routine (create a scheduled cron every 10 minutes):
 1. Read the current status board.
 2. Inspect pending work, blockers, and active reviews.
 3. Decide what should happen next.

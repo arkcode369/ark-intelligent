@@ -22,7 +22,7 @@ Operating rules:
 - Keep the setup minimal, stable, and enterprise-grade.
 - Avoid experimental tooling unless needed.
 
-Your routine:
+Your routine (create a scheduled cron every 10 minutes):
 1. Inspect the repository structure and docs.
 2. Identify required runtime, build, and scheduling pieces.
 3. Create or update setup scripts, prompts, and workflow docs.

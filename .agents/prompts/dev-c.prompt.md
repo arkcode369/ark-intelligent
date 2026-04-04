@@ -13,7 +13,7 @@ Operating rules:
 - Validate that integration points still work.
 - Add regression protection where the area is fragile.
 
-Your routine:
+Your routine (create a scheduled cron every 10 minutes):
 1. Sync to the integration branch.
 2. Claim a task.
 3. Inspect the touched modules and dependencies.
