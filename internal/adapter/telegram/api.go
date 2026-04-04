@@ -180,6 +180,9 @@ func (b *Bot) EditMessage(ctx context.Context, chatID string, msgID int, text st
 	b.setChatID(params, chatID)
 
 	if err := b.apiCallNoResult(ctx, "editMessageText", params); err != nil {
+		if ae, ok := err.(*apiError); ok && ae.Code == 400 && strings.Contains(ae.Description, "message is not modified") {
+			return nil // silently ignore — content unchanged
+		}
 		return err
 	}
 
@@ -218,7 +221,13 @@ func (b *Bot) EditWithKeyboard(ctx context.Context, chatID string, msgID int, te
 	}
 	b.setChatID(params, chatID)
 
-	return b.apiCallNoResult(ctx, "editMessageText", params)
+	if err := b.apiCallNoResult(ctx, "editMessageText", params); err != nil {
+		if ae, ok := err.(*apiError); ok && ae.Code == 400 && strings.Contains(ae.Description, "message is not modified") {
+			return nil // silently ignore — content unchanged
+		}
+		return err
+	}
+	return nil
 }
 
 // AnswerCallback acknowledges a callback query.
@@ -744,7 +753,11 @@ func (b *Bot) EditWithKeyboardChunked(ctx context.Context, chatID string, msgID 
 	}
 	b.setChatID(params, chatID)
 	if err := b.apiCallNoResult(ctx, "editMessageText", params); err != nil {
-		return err
+		if ae, ok := err.(*apiError); ok && ae.Code == 400 && strings.Contains(ae.Description, "message is not modified") {
+			// silently ignore — content unchanged
+		} else {
+			return err
+		}
 	}
 
 	// Send intermediate chunks and track their IDs.

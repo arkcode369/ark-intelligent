@@ -171,7 +171,7 @@ func (h *Handler) executeDeepLinkCommand(ctx context.Context, chatID string, use
 	case "vp":
 		return h.cmdVP(ctx, chatID, userID, args)
 	case "alpha":
-		return h.cmdAlpha(ctx, chatID, 0, args)
+		return h.cmdAlpha(ctx, chatID, userID, args)
 	case "gex":
 		return h.cmdGEX(ctx, chatID, userID, args)
 	case "macro":
@@ -193,9 +193,9 @@ func (h *Handler) executeDeepLinkCommand(ctx context.Context, chatID string, use
 	case "backtest":
 		return h.cmdBacktest(ctx, chatID, userID, args)
 	case "impact":
-		return h.cmdImpact(ctx, chatID, 0, args)
+		return h.cmdImpact(ctx, chatID, userID, args)
 	case "intermarket":
-		return h.cmdIntermarket(ctx, chatID, 0, args)
+		return h.cmdIntermarket(ctx, chatID, userID, args)
 	case "wyckoff":
 		return h.cmdWyckoff(ctx, chatID, userID, args)
 	case "smc":

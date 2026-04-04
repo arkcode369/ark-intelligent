@@ -23,7 +23,7 @@ const (
 	ContractOil   ContractCode = "067651"
 	ContractSilver ContractCode = "084691"
 	ContractCopper ContractCode = "085692"
-	ContractSP500 ContractCode = "13874+"
+	ContractSP500 ContractCode = "13874A"
 	ContractNasdaq ContractCode = "209742"
 	ContractBTC   ContractCode = "133741"
 )

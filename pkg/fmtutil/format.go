@@ -334,13 +334,17 @@ func FmtBasisPoints(bps float64) string {
 	return fmt.Sprintf("%.1fbps", bps)
 }
 
-// FmtPrice formats a forex price with appropriate decimal places.
-// JPY pairs: 2 decimals. Others: 5 decimals.
+// FmtPrice formats a price with appropriate decimal places.
+// JPY pairs: 3 decimals, XAU/Gold: 2 decimals, Others: 5 decimals.
 func FmtPrice(price float64, symbol string) string {
 	if math.IsNaN(price) || math.IsInf(price, 0) {
 		return "N/A"
 	}
-	if strings.Contains(strings.ToUpper(symbol), "JPY") {
+	upper := strings.ToUpper(symbol)
+	if strings.Contains(upper, "XAU") || strings.Contains(upper, "GOLD") {
+		return fmt.Sprintf("%.2f", price)
+	}
+	if strings.Contains(upper, "JPY") {
 		return fmt.Sprintf("%.3f", price)
 	}
 	return fmt.Sprintf("%.5f", price)
