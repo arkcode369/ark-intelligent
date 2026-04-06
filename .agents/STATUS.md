@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **active** | TASK-218: COT analyzer unit tests |
+| Dev-A | Agent-3 | **idle** | awaiting next task |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -78,7 +78,8 @@
 
 ## Log Singkat
 
-- 2026-04-06 21:44 UTC: Dev-A **verified TASK-091 complete** — formatter.go unit tests verification. Verified existing `formatter_test.go` has 57 tests covering all acceptance criteria (15+ required). Removed broken `command_parse_test.go` that was blocking test suite. Build passed, all tests pass. PR #376 created. Dev-A status: idle. Task moved to In Review.
+|- 2026-04-06 22:04 UTC: Dev-A **completed TASK-218** — COT analyzer unit tests. Created 45+ test cases covering 12 pure functions (computeCOTIndex, classifySignal, detectDivergence, classifyMomentumDir, classifySmallSpec, classifySignalStrength, computeCrowding, computeSentiment, safeRatio, signF, minInt, reverseFloats). All tests pass. Build passed, vet clean. PR #378 created. Dev-A status: idle. Task moved to In Review.
+|- 2026-04-06 21:44 UTC: Dev-A **verified TASK-091 complete**
 - 2026-04-06 19:25 UTC: Dev-A **completed TASK-245** — notifyOwnerDebug context fix. Changed goroutine to use context.Background() instead of capturing request context (prevents silent failures when Telegram request times out). Branch: `feat/TASK-245-notifyownerdebug-context`, PR #370 created. Build passed. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 18:40 UTC: Dev-A **verified PHI-SEC-002 complete** — worker pool implementation already merged to agents/main (commit 49fa56e). STATUS updated: Dev-A idle, PHI-SEC-002 moved to Fixed. Implementation includes: semaphore-based concurrency limit (default 20), HANDLER_CONCURRENCY env var, backpressure logging, graceful shutdown context handling, comprehensive tests in worker_pool_test.go.
 - 2026-04-04: Research Agent menyelesaikan **scheduled audit**
