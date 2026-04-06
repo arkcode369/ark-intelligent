@@ -37,7 +37,7 @@
 - Tidak ada
 
 ### In Review
-- TASK-SECURITY-001: Fix http.DefaultClient timeout (branch: feat/TASK-SECURITY-001-http-client-timeout, ready for PR)
+- TASK-SECURITY-001: Fix http.DefaultClient timeout (PR #354 → agents/main)
 
 ### Blocked
 - Tidak ada
