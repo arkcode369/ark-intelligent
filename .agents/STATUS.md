@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **active** | PHI-SEC-002: Goroutine limiter for DoS protection |
+| Dev-A | Agent-3 | **idle** | Available for next task |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -52,11 +52,14 @@
 - **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
 
 ### In Progress
-- **PHI-SEC-002**: Dev-A — Goroutine limiter for DoS protection → branch feat/PHI-SEC-002-goroutine-limiter
+- Tidak ada
 
 ### In Review
 - **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
+
+### Fixed (Ready for Merge)
+- **PHI-SEC-002**: ✅ Goroutine limiter already implemented — worker pool with `HANDLER_CONCURRENCY` env var (default 20), backpressure logging, graceful shutdown context handling, comprehensive tests in `worker_pool_test.go`
 
 ### Blocked
 - Tidak ada
