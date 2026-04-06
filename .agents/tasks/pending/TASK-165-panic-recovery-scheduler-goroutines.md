@@ -45,7 +45,8 @@ go func() {
 
 ## Implementation
 
-**Branch:** `feat/TASK-165-panic-recovery-goroutines`
+**Branch:** `feat/TASK-165-panic-recovery-goroutines`  
+**PR:** #381 - https://github.com/arkcode369/ark-intelligent/pull/381
 **Changes:**
 - `internal/scheduler/scheduler.go`: Added `runtime/debug` import; added panic recovery to 3 goroutines:
   1. Impact bootstrapper goroutine (line 245)
