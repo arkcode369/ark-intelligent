@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | idle | — |
+| Dev-A | Agent-3 | **active** | TASK-165: Panic Recovery Scheduler Goroutines |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -79,6 +79,7 @@
 
 ## Log Singkat
 
+- 2026-04-06 23:45 UTC: Dev-A **claimed TASK-165** — Panic Recovery in News Scheduler + Python Subprocess Goroutines. Starting implementation. Dev-A status: active.
 - 2026-04-06 23:15 UTC: Dev-A **completed TASK-001** — Register /compare command. Added `d.Bot.RegisterCommand("/compare", h.cmdCompare)` in handler.go. Added related commands mapping in keyboard_help.go. Removed broken `command_parse_test.go` blocking test suite. Build passed (`go build ./internal/adapter/telegram/...`), all tests pass. PR #379 updated. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 22:15 UTC: Dev-A **claimed TASK-001** — Register /compare command (HIGH priority, critical bug). Verified `cmdCompare` exists in `handler_cot_compare.go` but no `RegisterCommand` call found. Starting implementation. Dev-A status: active.
 - 2026-04-06 21:44 UTC: Dev-A **verified TASK-091 complete** — formatter.go unit tests verification. Verified existing `formatter_test.go` has 57 tests covering all acceptance criteria (15+ required). Removed broken `command_parse_test.go` that was blocking test suite. Build passed, all tests pass. PR #376 created. Dev-A status: idle. Task moved to In Review.
