@@ -44,6 +44,7 @@
 - TASK-CODEQUALITY-005: sentiment type assertion (PR #359)
 - TASK-CODEQUALITY-006: impact_recorder context timeout (PR #355)
 - TASK-SECURITY-001: http timeout tradingeconomics (PR #354)
+- TASK-DOCS-001: task distribution guidelines (PR #362)
 
 ### Blocked
 - Tidak ada

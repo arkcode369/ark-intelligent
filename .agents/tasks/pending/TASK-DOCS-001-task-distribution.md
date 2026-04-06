@@ -1,12 +1,13 @@
 ---
 id: TASK-DOCS-001
 title: Populate TASK_DISTRIBUTION.md with task assignment guidelines
-status: pending
+status: in_review
 priority: low
 effort: 1h
-assigned_to: coordinator
+assigned_to: qa
 created_by: research
 created_at: 2026-04-06T05:13:00Z
+pr_url: https://github.com/arkcode369/ark-intelligent/pull/362
 ---
 
 ## Summary
