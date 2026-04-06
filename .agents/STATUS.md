@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **active** | PHI-SEC-001: Fix keyring panic |
+| Dev-A | Agent-3 | **active** | PHI-SEC-002: Goroutine limiter for DoS protection |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -52,9 +52,10 @@
 - **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
 
 ### In Progress
-- **PHI-SEC-001**: Dev-A — Fix keyring panic → branch feat/PHI-SEC-001-fix-keyring-panic
+- **PHI-SEC-002**: Dev-A — Goroutine limiter for DoS protection → branch feat/PHI-SEC-002-goroutine-limiter
 
 ### In Review
+- **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
 
 ### Blocked
