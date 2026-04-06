@@ -43,7 +43,10 @@ func cotAnalysisPrefix(contractCode string) []byte {
 // --- COTRepository interface implementation ---
 
 // SaveRecords stores a batch of COT records.
-func (r *COTRepo) SaveRecords(_ context.Context, records []domain.COTRecord) error {
+func (r *COTRepo) SaveRecords(ctx context.Context, records []domain.COTRecord) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	wb := r.db.NewWriteBatch()
 	defer wb.Cancel()
 
@@ -66,7 +69,10 @@ func (r *COTRepo) SaveRecords(_ context.Context, records []domain.COTRecord) err
 
 // GetLatest returns the most recent COT record for a contract.
 // Uses reverse iteration to find the last entry by date.
-func (r *COTRepo) GetLatest(_ context.Context, contractCode string) (*domain.COTRecord, error) {
+func (r *COTRepo) GetLatest(ctx context.Context, contractCode string) (*domain.COTRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var record *domain.COTRecord
 
 	prefix := cotRecordPrefix(contractCode)
@@ -110,7 +116,10 @@ func (r *COTRepo) GetLatest(_ context.Context, contractCode string) (*domain.COT
 // the latest record in DB may be older than (weeks*7) days when called shortly
 // after a new release cycle. The function therefore uses the prefix start as
 // the seek fallback so at least one record is always returned when data exists.
-func (r *COTRepo) GetHistory(_ context.Context, contractCode string, weeks int) ([]domain.COTRecord, error) {
+func (r *COTRepo) GetHistory(ctx context.Context, contractCode string, weeks int) ([]domain.COTRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var records []domain.COTRecord
 
 	cutoff := time.Now().AddDate(0, 0, -weeks*7).Format("20060102")
@@ -178,7 +187,10 @@ func (r *COTRepo) GetHistory(_ context.Context, contractCode string, weeks int) 
 }
 
 // SaveAnalyses stores a batch of COT analysis results.
-func (r *COTRepo) SaveAnalyses(_ context.Context, analyses []domain.COTAnalysis) error {
+func (r *COTRepo) SaveAnalyses(ctx context.Context, analyses []domain.COTAnalysis) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	wb := r.db.NewWriteBatch()
 	defer wb.Cancel()
 
@@ -200,7 +212,10 @@ func (r *COTRepo) SaveAnalyses(_ context.Context, analyses []domain.COTAnalysis)
 }
 
 // GetLatestAnalysis returns the most recent COT analysis for a contract.
-func (r *COTRepo) GetLatestAnalysis(_ context.Context, contractCode string) (*domain.COTAnalysis, error) {
+func (r *COTRepo) GetLatestAnalysis(ctx context.Context, contractCode string) (*domain.COTAnalysis, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var analysis *domain.COTAnalysis
 
 	prefix := cotAnalysisPrefix(contractCode)
@@ -238,7 +253,10 @@ func (r *COTRepo) GetLatestAnalysis(_ context.Context, contractCode string) (*do
 
 // GetAllLatestAnalyses returns the latest analysis for every contract.
 // Scans all cotanl: keys and keeps only the most recent per contract.
-func (r *COTRepo) GetAllLatestAnalyses(_ context.Context) ([]domain.COTAnalysis, error) {
+func (r *COTRepo) GetAllLatestAnalyses(ctx context.Context) ([]domain.COTAnalysis, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	latest := make(map[string]*domain.COTAnalysis)
 
 	err := r.db.View(func(txn *badger.Txn) error {
@@ -285,7 +303,10 @@ func (r *COTRepo) GetAllLatestAnalyses(_ context.Context) ([]domain.COTAnalysis,
 }
 
 // GetAnalysisHistory returns COT analyses for a contract over N weeks.
-func (r *COTRepo) GetAnalysisHistory(_ context.Context, contractCode string, weeks int) ([]domain.COTAnalysis, error) {
+func (r *COTRepo) GetAnalysisHistory(ctx context.Context, contractCode string, weeks int) ([]domain.COTAnalysis, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var analyses []domain.COTAnalysis
 
 	cutoff := time.Now().AddDate(0, 0, -weeks*7).Format("20060102")
@@ -329,7 +350,10 @@ func (r *COTRepo) GetAnalysisHistory(_ context.Context, contractCode string, wee
 }
 
 // GetLatestReportDate finds the most recent report date across all COT records.
-func (r *COTRepo) GetLatestReportDate(_ context.Context) (time.Time, error) {
+func (r *COTRepo) GetLatestReportDate(ctx context.Context) (time.Time, error) {
+	if err := ctx.Err(); err != nil {
+		return time.Time{}, err
+	}
 	var latest time.Time
 
 	err := r.db.View(func(txn *badger.Txn) error {

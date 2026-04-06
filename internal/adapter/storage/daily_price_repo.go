@@ -34,7 +34,10 @@ func dailyPricePrefix(contractCode string) []byte {
 // --- DailyPriceRepo methods ---
 
 // SaveDailyPrices stores a batch of daily price records.
-func (r *DailyPriceRepo) SaveDailyPrices(_ context.Context, records []domain.DailyPrice) error {
+func (r *DailyPriceRepo) SaveDailyPrices(ctx context.Context, records []domain.DailyPrice) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if len(records) == 0 {
 		return nil
 	}
@@ -60,7 +63,10 @@ func (r *DailyPriceRepo) SaveDailyPrices(_ context.Context, records []domain.Dai
 }
 
 // GetLatestDaily returns the most recent daily price record for a contract.
-func (r *DailyPriceRepo) GetLatestDaily(_ context.Context, contractCode string) (*domain.DailyPrice, error) {
+func (r *DailyPriceRepo) GetLatestDaily(ctx context.Context, contractCode string) (*domain.DailyPrice, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var record *domain.DailyPrice
 
 	prefix := dailyPricePrefix(contractCode)
@@ -100,7 +106,10 @@ func (r *DailyPriceRepo) GetLatestDaily(_ context.Context, contractCode string) 
 
 // GetDailyHistory returns daily price records for a contract over N days.
 // Returns records in reverse chronological order (newest first).
-func (r *DailyPriceRepo) GetDailyHistory(_ context.Context, contractCode string, days int) ([]domain.DailyPrice, error) {
+func (r *DailyPriceRepo) GetDailyHistory(ctx context.Context, contractCode string, days int) ([]domain.DailyPrice, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var records []domain.DailyPrice
 
 	cutoff := time.Now().AddDate(0, 0, -days).Format("20060102")
@@ -146,7 +155,10 @@ func (r *DailyPriceRepo) GetDailyHistory(_ context.Context, contractCode string,
 
 // GetDailyPriceAt retrieves the daily price record closest to the given date,
 // searching within ±3 days (to handle weekends/holidays).
-func (r *DailyPriceRepo) GetDailyPriceAt(_ context.Context, contractCode string, date time.Time) (*domain.DailyPrice, error) {
+func (r *DailyPriceRepo) GetDailyPriceAt(ctx context.Context, contractCode string, date time.Time) (*domain.DailyPrice, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var record *domain.DailyPrice
 
 	prefix := dailyPricePrefix(contractCode)
@@ -216,7 +228,10 @@ func (r *DailyPriceRepo) GetDailyPriceAt(_ context.Context, contractCode string,
 // GetDailyHistoryBefore returns daily price records for a contract before a specific date.
 // Returns up to `days` records in reverse chronological order (newest first),
 // ending at or before `before`. Used by the bootstrap to get historical daily context.
-func (r *DailyPriceRepo) GetDailyHistoryBefore(_ context.Context, contractCode string, before time.Time, days int) ([]domain.DailyPrice, error) {
+func (r *DailyPriceRepo) GetDailyHistoryBefore(ctx context.Context, contractCode string, before time.Time, days int) ([]domain.DailyPrice, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var records []domain.DailyPrice
 
 	prefix := dailyPricePrefix(contractCode)
@@ -259,7 +274,10 @@ func (r *DailyPriceRepo) GetDailyHistoryBefore(_ context.Context, contractCode s
 
 // GetDailyRange returns daily price records for a contract between two dates (inclusive).
 // Returns records in chronological (oldest-first) order.
-func (r *DailyPriceRepo) GetDailyRange(_ context.Context, contractCode string, from, to time.Time) ([]domain.DailyPrice, error) {
+func (r *DailyPriceRepo) GetDailyRange(ctx context.Context, contractCode string, from, to time.Time) ([]domain.DailyPrice, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var records []domain.DailyPrice
 
 	prefix := dailyPricePrefix(contractCode)
@@ -302,7 +320,10 @@ func (r *DailyPriceRepo) GetDailyRange(_ context.Context, contractCode string, f
 }
 
 // CountDailyRecords returns the total number of daily price records for a contract.
-func (r *DailyPriceRepo) CountDailyRecords(_ context.Context, contractCode string) (int, error) {
+func (r *DailyPriceRepo) CountDailyRecords(ctx context.Context, contractCode string) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	count := 0
 	prefix := dailyPricePrefix(contractCode)
 

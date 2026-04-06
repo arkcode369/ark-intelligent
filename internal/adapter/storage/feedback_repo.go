@@ -27,7 +27,10 @@ func feedbackKey(userID int64, analysisType, analysisKey string, ts time.Time) [
 }
 
 // Save persists a feedback entry.
-func (r *FeedbackRepo) Save(_ context.Context, fb *domain.Feedback) error {
+func (r *FeedbackRepo) Save(ctx context.Context, fb *domain.Feedback) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(fb)
 	if err != nil {
 		return fmt.Errorf("marshal feedback: %w", err)
@@ -43,7 +46,10 @@ func (r *FeedbackRepo) Save(_ context.Context, fb *domain.Feedback) error {
 }
 
 // CountByType returns (upCount, downCount) for a given analysis type+key across all users.
-func (r *FeedbackRepo) CountByType(_ context.Context, analysisType, analysisKey string) (up, down int, err error) {
+func (r *FeedbackRepo) CountByType(ctx context.Context, analysisType, analysisKey string) (up, down int, err error) {
+	if err := ctx.Err(); err != nil {
+		return 0, 0, err
+	}
 	prefix := []byte("fb:")
 
 	err = r.db.View(func(txn *badger.Txn) error {

@@ -30,7 +30,10 @@ func NewCacheRepo(db *DB) *CacheRepo {
 }
 
 // Get retrieves a cached AI response. Returns ("", false) on miss.
-func (r *CacheRepo) Get(_ context.Context, key string) (string, bool) {
+func (r *CacheRepo) Get(ctx context.Context, key string) (string, bool) {
+	if err := ctx.Err(); err != nil {
+		return "", false
+	}
 	var response string
 	err := r.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
@@ -53,7 +56,10 @@ func (r *CacheRepo) Get(_ context.Context, key string) (string, bool) {
 }
 
 // Set stores an AI response with TTL.
-func (r *CacheRepo) Set(_ context.Context, key string, response string, cacheType string, dataVersion string) error {
+func (r *CacheRepo) Set(ctx context.Context, key string, response string, cacheType string, dataVersion string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	entry := domain.AICacheEntry{
 		CacheType:   cacheType,
 		CacheKey:    key,
@@ -73,7 +79,10 @@ func (r *CacheRepo) Set(_ context.Context, key string, response string, cacheTyp
 }
 
 // InvalidateByPrefix deletes all cache entries matching a key prefix.
-func (r *CacheRepo) InvalidateByPrefix(_ context.Context, prefix string) error {
+func (r *CacheRepo) InvalidateByPrefix(ctx context.Context, prefix string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	deleteKeys := make([][]byte, 0)
 
 	err := r.db.View(func(txn *badger.Txn) error {

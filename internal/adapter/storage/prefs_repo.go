@@ -45,7 +45,10 @@ func alertPrefix(chatID int64) []byte {
 
 // GetPrefs retrieves preferences for a chat ID.
 // Returns default prefs if none exist.
-func (r *PrefsRepo) GetPrefs(_ context.Context, chatID int64) (*domain.UserPrefs, error) {
+func (r *PrefsRepo) GetPrefs(ctx context.Context, chatID int64) (*domain.UserPrefs, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var prefs domain.UserPrefs
 
 	key := prefsKey(chatID)
@@ -70,7 +73,10 @@ func (r *PrefsRepo) GetPrefs(_ context.Context, chatID int64) (*domain.UserPrefs
 }
 
 // SavePrefs persists user preferences.
-func (r *PrefsRepo) SavePrefs(_ context.Context, prefs domain.UserPrefs) error {
+func (r *PrefsRepo) SavePrefs(ctx context.Context, prefs domain.UserPrefs) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(&prefs)
 	if err != nil {
 		return fmt.Errorf("marshal prefs: %w", err)
@@ -94,7 +100,10 @@ func (r *PrefsRepo) SavePrefs(_ context.Context, prefs domain.UserPrefs) error {
 }
 
 // GetAlerts retrieves alert subscriptions for a chat.
-func (r *PrefsRepo) GetAlerts(_ context.Context, chatID int64) ([]domain.AlertConfig, error) {
+func (r *PrefsRepo) GetAlerts(ctx context.Context, chatID int64) ([]domain.AlertConfig, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var alerts []domain.AlertConfig
 	prefix := alertPrefix(chatID)
 
@@ -129,7 +138,10 @@ func (r *PrefsRepo) GetAlerts(_ context.Context, chatID int64) ([]domain.AlertCo
 }
 
 // SaveAlert persists or updates an alert configuration.
-func (r *PrefsRepo) SaveAlert(_ context.Context, alert domain.AlertConfig) error {
+func (r *PrefsRepo) SaveAlert(ctx context.Context, alert domain.AlertConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(&alert)
 	if err != nil {
 		return fmt.Errorf("marshal alert: %w", err)
@@ -148,7 +160,10 @@ func (r *PrefsRepo) SaveAlert(_ context.Context, alert domain.AlertConfig) error
 }
 
 // DeleteAlert removes an alert subscription.
-func (r *PrefsRepo) DeleteAlert(_ context.Context, chatID int64, alertID string) error {
+func (r *PrefsRepo) DeleteAlert(ctx context.Context, chatID int64, alertID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	key := alertKey(chatID, alertID)
 	err := r.db.Update(func(txn *badger.Txn) error {
 		return txn.Delete(key)
@@ -164,7 +179,10 @@ func (r *PrefsRepo) DeleteAlert(_ context.Context, chatID int64, alertID string)
 
 // GetAllActiveAlerts retrieves all enabled alerts across all users.
 // Used by the alert dispatcher to check which alerts need firing.
-func (r *PrefsRepo) GetAllActiveAlerts(_ context.Context) ([]domain.AlertConfig, error) {
+func (r *PrefsRepo) GetAllActiveAlerts(ctx context.Context) ([]domain.AlertConfig, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var alerts []domain.AlertConfig
 	prefix := []byte("alert:")
 
@@ -199,7 +217,10 @@ func (r *PrefsRepo) GetAllActiveAlerts(_ context.Context) ([]domain.AlertConfig,
 }
 
 // Get retrieves preferences for a user by ID. Returns defaults if not found.
-func (r *PrefsRepo) Get(_ context.Context, userID int64) (domain.UserPrefs, error) {
+func (r *PrefsRepo) Get(ctx context.Context, userID int64) (domain.UserPrefs, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.UserPrefs{}, err
+	}
 	var prefs domain.UserPrefs
 
 	key := prefsKey(userID)
@@ -222,7 +243,10 @@ func (r *PrefsRepo) Get(_ context.Context, userID int64) (domain.UserPrefs, erro
 }
 
 // Set persists preferences for a user and invalidates the GetAllActive cache.
-func (r *PrefsRepo) Set(_ context.Context, userID int64, prefs domain.UserPrefs) error {
+func (r *PrefsRepo) Set(ctx context.Context, userID int64, prefs domain.UserPrefs) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(&prefs)
 	if err != nil {
 		return fmt.Errorf("marshal prefs: %w", err)

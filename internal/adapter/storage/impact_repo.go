@@ -50,7 +50,10 @@ func normalizeEventName(name string) string {
 // --- ImpactRepo methods ---
 
 // SaveEventImpact persists a single EventImpact record.
-func (r *ImpactRepo) SaveEventImpact(_ context.Context, impact domain.EventImpact) error {
+func (r *ImpactRepo) SaveEventImpact(ctx context.Context, impact domain.EventImpact) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(&impact)
 	if err != nil {
 		return fmt.Errorf("marshal event impact: %w", err)
@@ -67,7 +70,10 @@ func (r *ImpactRepo) SaveEventImpact(_ context.Context, impact domain.EventImpac
 }
 
 // GetEventImpacts retrieves all impact records for a specific event and currency.
-func (r *ImpactRepo) GetEventImpacts(_ context.Context, eventTitle, currency string) ([]domain.EventImpact, error) {
+func (r *ImpactRepo) GetEventImpacts(ctx context.Context, eventTitle, currency string) ([]domain.EventImpact, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var impacts []domain.EventImpact
 
 	prefix := impactPrefixEvent(currency, eventTitle)
@@ -105,7 +111,10 @@ func (r *ImpactRepo) GetEventImpacts(_ context.Context, eventTitle, currency str
 
 // GetEventImpactSummary computes aggregated impact summaries by sigma bucket
 // for a given event title across all currencies and time horizons.
-func (r *ImpactRepo) GetEventImpactSummary(_ context.Context, eventTitle string) ([]domain.EventImpactSummary, error) {
+func (r *ImpactRepo) GetEventImpactSummary(ctx context.Context, eventTitle string) ([]domain.EventImpactSummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Collect all impacts matching this event title across currencies
 	var allImpacts []domain.EventImpact
 
@@ -257,7 +266,10 @@ func (r *ImpactRepo) GetEventImpactSummary(_ context.Context, eventTitle string)
 }
 
 // GetTrackedEvents returns a deduplicated list of event titles that have impact records.
-func (r *ImpactRepo) GetTrackedEvents(_ context.Context) ([]string, error) {
+func (r *ImpactRepo) GetTrackedEvents(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	seen := make(map[string]bool)
 	prefix := impactPrefixAll()
 

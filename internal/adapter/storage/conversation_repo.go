@@ -92,7 +92,10 @@ func (r *ConversationRepo) setMeta(txn *badger.Txn, userID int64, meta *conversa
 }
 
 // GetHistory returns the most recent N messages for a user.
-func (r *ConversationRepo) GetHistory(_ context.Context, userID int64, limit int) ([]ports.ChatMessage, error) {
+func (r *ConversationRepo) GetHistory(ctx context.Context, userID int64, limit int) ([]ports.ChatMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var entries []conversationEntry
 
 	err := r.db.View(func(txn *badger.Txn) error {
@@ -138,7 +141,10 @@ func (r *ConversationRepo) GetHistory(_ context.Context, userID int64, limit int
 }
 
 // AppendMessage adds a message and prunes oldest if over the cap.
-func (r *ConversationRepo) AppendMessage(_ context.Context, userID int64, msg ports.ChatMessage) error {
+func (r *ConversationRepo) AppendMessage(ctx context.Context, userID int64, msg ports.ChatMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return r.db.Update(func(txn *badger.Txn) error {
 		meta, err := r.getMeta(txn, userID)
 		if err != nil {
@@ -182,7 +188,10 @@ func (r *ConversationRepo) AppendMessage(_ context.Context, userID int64, msg po
 }
 
 // ClearHistory deletes all conversation history for a user.
-func (r *ConversationRepo) ClearHistory(_ context.Context, userID int64) error {
+func (r *ConversationRepo) ClearHistory(ctx context.Context, userID int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	deleteKeys := make([][]byte, 0)
 
 	err := r.db.View(func(txn *badger.Txn) error {

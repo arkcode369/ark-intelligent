@@ -36,7 +36,10 @@ func newsPrefix(date string) []byte {
 }
 
 // SaveEvents stores a batch of NewsEvent records.
-func (r *NewsRepo) SaveEvents(_ context.Context, events []domain.NewsEvent) error {
+func (r *NewsRepo) SaveEvents(ctx context.Context, events []domain.NewsEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	wb := r.db.NewWriteBatch()
 	defer wb.Cancel()
 
@@ -62,7 +65,10 @@ func (r *NewsRepo) SaveEvents(_ context.Context, events []domain.NewsEvent) erro
 }
 
 // GetByDate returns all events for a specific date "YYYYMMDD".
-func (r *NewsRepo) GetByDate(_ context.Context, date string) ([]domain.NewsEvent, error) {
+func (r *NewsRepo) GetByDate(ctx context.Context, date string) ([]domain.NewsEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var events []domain.NewsEvent
 	prefix := newsPrefix(date)
 
@@ -247,7 +253,10 @@ func (r *NewsRepo) UpdateActual(ctx context.Context, id string, actual string) e
 
 // updateActualFallback scans news events for the last 3 days to find and update an event.
 // Called only when the direct-key lookup in UpdateActual fails.
-func (r *NewsRepo) updateActualFallback(_ context.Context, id string, actual string) error {
+func (r *NewsRepo) updateActualFallback(ctx context.Context, id string, actual string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	for offset := 0; offset <= 2; offset++ {
 		dateStr := now.AddDate(0, 0, -offset).Format("20060102")
@@ -300,7 +309,10 @@ func (r *NewsRepo) updateActualFallback(_ context.Context, id string, actual str
 }
 
 // UpdateStatus updates the event status using the same bounded-lookup strategy as UpdateActual.
-func (r *NewsRepo) UpdateStatus(_ context.Context, id string, status string, retryCount int) error {
+func (r *NewsRepo) UpdateStatus(ctx context.Context, id string, status string, retryCount int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	for offset := 0; offset <= 2; offset++ {
 		dateStr := now.AddDate(0, 0, -offset).Format("20060102")
@@ -346,7 +358,10 @@ func (r *NewsRepo) UpdateStatus(_ context.Context, id string, status string, ret
 // a given event name + currency pair, looking back up to lookbackMonths months.
 // It scans monthly prefixes in BadgerDB and collects past releases where both
 // Actual and Forecast are non-empty. Returns nil (not an error) if < 3 data points exist.
-func (r *NewsRepo) GetHistoricalSurprises(_ context.Context, eventName string, currency string, lookbackMonths int) ([]float64, error) {
+func (r *NewsRepo) GetHistoricalSurprises(ctx context.Context, eventName string, currency string, lookbackMonths int) ([]float64, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var diffs []float64
 
 	now := time.Now()
@@ -436,7 +451,10 @@ func parseSimpleFloat(s string) (float64, bool) {
 }
 
 // SaveRevision stores an event revision record for historical tracking.
-func (r *NewsRepo) SaveRevision(_ context.Context, rev domain.EventRevision) error {
+func (r *NewsRepo) SaveRevision(ctx context.Context, rev domain.EventRevision) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(&rev)
 	if err != nil {
 		return fmt.Errorf("marshal revision: %w", err)

@@ -48,7 +48,10 @@ func memPrefix(userID int64) []byte {
 }
 
 // LoadAll loads all memory files for a user.
-func (r *MemoryRepo) LoadAll(_ context.Context, userID int64) (map[string]string, error) {
+func (r *MemoryRepo) LoadAll(ctx context.Context, userID int64) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	files := make(map[string]string)
 	prefix := memPrefix(userID)
 
@@ -90,7 +93,10 @@ func (r *MemoryRepo) LoadAll(_ context.Context, userID int64) (map[string]string
 }
 
 // Save persists a single memory file.
-func (r *MemoryRepo) Save(_ context.Context, userID int64, path string, content string) error {
+func (r *MemoryRepo) Save(ctx context.Context, userID int64, path string, content string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	entry := memEntry{
 		Content:   content,
 		UpdatedAt: time.Now(),
@@ -108,7 +114,10 @@ func (r *MemoryRepo) Save(_ context.Context, userID int64, path string, content 
 }
 
 // Delete removes a memory file.
-func (r *MemoryRepo) Delete(_ context.Context, userID int64, path string) error {
+func (r *MemoryRepo) Delete(ctx context.Context, userID int64, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return r.db.Update(func(txn *badger.Txn) error {
 		return txn.Delete(memKey(userID, path))
 	})

@@ -25,7 +25,10 @@ func userKey(userID int64) []byte {
 }
 
 // GetUser retrieves a user profile. Returns nil, nil if not found.
-func (r *UserRepo) GetUser(_ context.Context, userID int64) (*domain.UserProfile, error) {
+func (r *UserRepo) GetUser(ctx context.Context, userID int64) (*domain.UserProfile, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var profile domain.UserProfile
 
 	err := r.db.View(func(txn *badger.Txn) error {
@@ -48,7 +51,10 @@ func (r *UserRepo) GetUser(_ context.Context, userID int64) (*domain.UserProfile
 }
 
 // UpsertUser creates or updates a user profile.
-func (r *UserRepo) UpsertUser(_ context.Context, profile *domain.UserProfile) error {
+func (r *UserRepo) UpsertUser(ctx context.Context, profile *domain.UserProfile) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(profile)
 	if err != nil {
 		return fmt.Errorf("marshal user: %w", err)
@@ -74,7 +80,10 @@ func (r *UserRepo) SetRole(ctx context.Context, userID int64, role domain.UserRo
 }
 
 // GetAllUsers retrieves all user profiles from the database.
-func (r *UserRepo) GetAllUsers(_ context.Context) ([]*domain.UserProfile, error) {
+func (r *UserRepo) GetAllUsers(ctx context.Context) ([]*domain.UserProfile, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var users []*domain.UserProfile
 	prefix := []byte("user:")
 

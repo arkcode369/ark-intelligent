@@ -37,7 +37,10 @@ type fredEntry struct {
 }
 
 // SaveSnapshot persists a single FRED observation.
-func (r *FREDRepo) SaveSnapshot(_ context.Context, seriesID string, date time.Time, value float64) error {
+func (r *FREDRepo) SaveSnapshot(ctx context.Context, seriesID string, date time.Time, value float64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(&fredEntry{Value: value, Date: date})
 	if err != nil {
 		return fmt.Errorf("marshal fred entry: %w", err)
@@ -50,7 +53,10 @@ func (r *FREDRepo) SaveSnapshot(_ context.Context, seriesID string, date time.Ti
 }
 
 // SaveSnapshots persists multiple observations in a batch.
-func (r *FREDRepo) SaveSnapshots(_ context.Context, observations []ports.FREDObservation) error {
+func (r *FREDRepo) SaveSnapshots(ctx context.Context, observations []ports.FREDObservation) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	wb := r.db.NewWriteBatch()
 	defer wb.Cancel()
 
@@ -69,7 +75,10 @@ func (r *FREDRepo) SaveSnapshots(_ context.Context, observations []ports.FREDObs
 }
 
 // GetHistory returns the last N days of observations for a series, newest first.
-func (r *FREDRepo) GetHistory(_ context.Context, seriesID string, days int) ([]ports.FREDObservation, error) {
+func (r *FREDRepo) GetHistory(ctx context.Context, seriesID string, days int) ([]ports.FREDObservation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var results []ports.FREDObservation
 	prefix := fredPrefix(seriesID)
 
