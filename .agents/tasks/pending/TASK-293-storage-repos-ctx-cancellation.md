@@ -124,12 +124,16 @@ grep -r "_ context.Context" internal/adapter/storage/
 
 ## Acceptance Criteria
 
-- [ ] `grep "_ context.Context" internal/adapter/storage/` menghasilkan 0 baris
-- [ ] Setiap fungsi yang sebelumnya pakai `_` sekarang punya `if err := ctx.Err(); err != nil { return ... }` di awal
-- [ ] Batch loops dengan WriteBatch punya `select ctx.Done()` check di dalam loop
-- [ ] `go build ./...` clean
-- [ ] `go vet ./...` clean
-- [ ] Tidak ada behavior change (REFACTOR — bukan feature)
+- [x] `grep "_ context.Context" internal/adapter/storage/` menghasilkan 0 baris
+- [x] Setiap fungsi yang sebelumnya pakai `_` sekarang punya `if err := ctx.Err(); err != nil { return ... }` di awal
+- [x] Batch loops dengan WriteBatch punya `select ctx.Done()` check di dalam loop
+- [x] `go build ./...` clean
+- [x] `go vet ./...` clean
+- [x] Tidak ada behavior change (REFACTOR — bukan feature)
+
+## Pull Request
+
+- **PR #377**: https://github.com/arkcode369/ark-intelligent/pull/377
 
 ## Referensi
 
