@@ -9,7 +9,7 @@
 
 - Orkestrasi: aktif
 - Model kerja: banyak instance Agent
-- Queue task: 9 tasks pending
+- Queue task: 13 tasks pending
 - Blocker aktif: tidak ada
 - Review pending: tidak ada
 
@@ -17,10 +17,10 @@
 
 ## Siklus Terakhir
 
-- **Siklus:** 2 (Data & Integrasi Baru Gratis)
+- **Siklus:** 3 (Feature Deep Dive: ICT/SMC/Wyckoff/Elliott/GEX/OrderFlow)
 - **Last Run:** 2026-04-06
-- **Tasks Dibuat:** TASK-006 s/d TASK-009
-- **Next Cycle:** 3 (Fitur Baru: ICT/SMC/Wyckoff/Elliott/GEX/Footprint)
+- **Tasks Dibuat:** TASK-010 s/d TASK-014
+- **Next Cycle:** 4 (Tech Refactor Plan)
 
 ---
 
@@ -29,7 +29,7 @@
 | Role | Instance | Status | Fokus |
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
-| Research | Agent-2 | idle | siklus 2 selesai, menunggu siklus 3 |
+| Research | Agent-2 | idle | siklus 3 selesai, menunggu siklus 4 |
 | Dev-A | Agent-3 | idle | implementasi |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
@@ -49,6 +49,11 @@
 - TASK-007: Add Market Breadth via Barchart Firecrawl [MEDIUM, M]
 - TASK-008: COT Open Interest Trend Analysis [MEDIUM, M]
 - TASK-009: Add OECD Consumer Confidence & Business Climate [MEDIUM, S]
+- TASK-010: Expose COT Seasonal via /cotseasonal command [HIGH, M]
+- TASK-011: ICT IPDA Data Range Detection [HIGH, M]
+- TASK-012: ICT Intraday Macro Windows Detection [MEDIUM, S]
+- TASK-013: Elliott Wave ABC Corrective Count (Phase 2) [MEDIUM, L]
+- TASK-014: COT Disaggregated Swap Dealer vs Leveraged Fund Divergence [MEDIUM, M]
 
 ### In Progress
 - Tidak ada
@@ -76,3 +81,4 @@
 - 2026-04-04: Workflow dinetralkan dari istilah Paperclip/Hermes-specific ke Agent Multi-Instance Orchestration.
 - 2026-04-05: Research Siklus 1 selesai (UX/UI). 5 tasks dibuat (TASK-001 s/d TASK-005). Critical bug: /compare tidak teregistrasi.
 - 2026-04-06: Research Siklus 2 selesai (Data & Integrasi Gratis). Temuan: sebagian besar data sources SUDAH diimplementasikan. 4 genuine gaps ditemukan: GDPNow, Market Breadth, COT OI Trend Analysis, OECD CCI/BCI. TASK-006 s/d TASK-009 dibuat.
+- 2026-04-06: Research Siklus 3 selesai (Feature Deep Dive: ICT/SMC/Wyckoff/Elliott/GEX). Temuan: semua major features sudah implemented. 4 genuine gaps: COT Seasonal (dead code!), ICT IPDA, ICT Macro Windows, Elliott ABC corrective (Phase 2 belum). Bonus: COT Disaggregated divergence. TASK-010 s/d TASK-014 dibuat.
