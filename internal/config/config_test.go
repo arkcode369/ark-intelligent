@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -189,5 +191,112 @@ func TestValidate_DataDirNotWritable(t *testing.T) {
 	cfg.DataDir = "/nonexistent/path/xyz123"
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected error for non-writable DataDir")
+	}
+}
+
+// TestLoad_MissingRequiredEnv tests that Load() returns an error (not panic)
+// when required environment variables are missing.
+func TestLoad_MissingRequiredEnv(t *testing.T) {
+	// Clear the required env vars
+	oldBotToken := os.Getenv("BOT_TOKEN")
+	oldChatID := os.Getenv("CHAT_ID")
+	defer func() {
+		os.Setenv("BOT_TOKEN", oldBotToken)
+		os.Setenv("CHAT_ID", oldChatID)
+	}()
+
+	os.Unsetenv("BOT_TOKEN")
+	os.Unsetenv("CHAT_ID")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when required env vars are missing, got nil")
+	}
+
+	// Should report both missing vars
+	errStr := err.Error()
+	if !strings.Contains(errStr, "BOT_TOKEN") {
+		t.Errorf("error message should mention BOT_TOKEN, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "CHAT_ID") {
+		t.Errorf("error message should mention CHAT_ID, got: %s", errStr)
+	}
+}
+
+// TestLoad_MissingBotTokenOnly tests error when only BOT_TOKEN is missing.
+func TestLoad_MissingBotTokenOnly(t *testing.T) {
+	oldBotToken := os.Getenv("BOT_TOKEN")
+	oldChatID := os.Getenv("CHAT_ID")
+	defer func() {
+		os.Setenv("BOT_TOKEN", oldBotToken)
+		os.Setenv("CHAT_ID", oldChatID)
+	}()
+
+	os.Unsetenv("BOT_TOKEN")
+	os.Setenv("CHAT_ID", "123456")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when BOT_TOKEN is missing")
+	}
+	if !strings.Contains(err.Error(), "BOT_TOKEN") {
+		t.Errorf("error should mention BOT_TOKEN, got: %s", err.Error())
+	}
+}
+
+// TestLoad_Success tests that Load() succeeds with valid required env vars.
+func TestLoad_Success(t *testing.T) {
+	oldBotToken := os.Getenv("BOT_TOKEN")
+	oldChatID := os.Getenv("CHAT_ID")
+	defer func() {
+		os.Setenv("BOT_TOKEN", oldBotToken)
+		os.Setenv("CHAT_ID", oldChatID)
+	}()
+
+	// Set required env vars with valid test values
+	os.Setenv("BOT_TOKEN", "test-bot-token-123")
+	os.Setenv("CHAT_ID", "-1001234567890")
+	// Use temp dir for DATA_DIR
+	t.Setenv("DATA_DIR", t.TempDir())
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected no error with valid env vars, got: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if cfg.BotToken != "test-bot-token-123" {
+		t.Errorf("expected BotToken to be set, got: %s", cfg.BotToken)
+	}
+	if cfg.ChatID != "-1001234567890" {
+		t.Errorf("expected ChatID to be set, got: %s", cfg.ChatID)
+	}
+}
+
+// TestRequireEnv_Success tests the requireEnv helper with a set env var.
+func TestRequireEnv_Success(t *testing.T) {
+	t.Setenv("TEST_REQ_VAR", "test-value")
+	val, err := requireEnv("TEST_REQ_VAR")
+	if err != nil {
+		t.Fatalf("expected no error for set env var, got: %v", err)
+	}
+	if val != "test-value" {
+		t.Errorf("expected 'test-value', got: %s", val)
+	}
+}
+
+// TestRequireEnv_Missing tests the requireEnv helper with a missing env var.
+func TestRequireEnv_Missing(t *testing.T) {
+	os.Unsetenv("TEST_REQ_VAR_MISSING")
+	val, err := requireEnv("TEST_REQ_VAR_MISSING")
+	if err == nil {
+		t.Fatal("expected error for missing env var")
+	}
+	if val != "" {
+		t.Errorf("expected empty value, got: %s", val)
+	}
+	if !strings.Contains(err.Error(), "TEST_REQ_VAR_MISSING") {
+		t.Errorf("error should mention the var name, got: %s", err.Error())
 	}
 }

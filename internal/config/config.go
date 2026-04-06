@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,12 +92,37 @@ type Config struct {
 }
 
 // MustLoad loads configuration from environment variables.
-// Panics if required variables are missing.
+// Calls log.Fatal if required variables are missing or validation fails.
 func MustLoad() *Config {
+	cfg, err := Load()
+	if err != nil {
+		log.Fatal().Err(err).Msg("configuration loading failed")
+	}
+	return cfg
+}
+
+// Load loads configuration from environment variables.
+// Returns an error if required variables are missing or validation fails.
+// This allows for graceful error handling and testing of invalid configs.
+func Load() (*Config, error) {
+	// Required env vars (collect all errors for better UX)
+	var errs []error
+	botToken, err := requireEnv("BOT_TOKEN")
+	if err != nil {
+		errs = append(errs, err)
+	}
+	chatID, err := requireEnv("CHAT_ID")
+	if err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
 	cfg := &Config{
-		// Required (will panic if empty)
-		BotToken: mustGetEnv("BOT_TOKEN"),
-		ChatID:   mustGetEnv("CHAT_ID"),
+		// Required
+		BotToken: botToken,
+		ChatID:   chatID,
 
 		// AI (optional)
 		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
@@ -189,9 +215,9 @@ func MustLoad() *Config {
 	cfg.EnableFactorEngine = getBool("ENABLE_FACTOR_ENGINE", true)
 
 	if err := cfg.validate(); err != nil {
-		log.Fatal().Err(err).Msg("configuration validation failed")
+		return nil, err
 	}
-	return cfg
+	return cfg, nil
 }
 
 // HasGemini returns true if Gemini API key is configured.
@@ -391,12 +417,14 @@ func (c *Config) logFeatureAvailability() {
 // Env Helpers
 // ---------------------------------------------------------------------------
 
-func mustGetEnv(key string) string {
+// requireEnv returns an error if the environment variable is not set.
+// This allows for graceful error handling and testing.
+func requireEnv(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Fatal().Str("key", key).Msg("Required env var is not set")
+		return "", fmt.Errorf("required env var %s is not set", key)
 	}
-	return v
+	return v, nil
 }
 
 func getEnv(key, defaultVal string) string {
