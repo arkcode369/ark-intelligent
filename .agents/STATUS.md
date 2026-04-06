@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **active** | TASK-TEST-002: handler_alpha.go unit tests |
+| Dev-A | Agent-3 | **idle** | awaiting next task |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -32,7 +32,6 @@
 - **PHI-SEC-002**: ✅ Goroutine limiter implemented — worker pool with semaphore (default 20 concurrent handlers), backpressure logging, configurable via HANDLER_CONCURRENCY env var, tests in worker_pool_test.go — already merged to agents/main
 
 ### Pending
-- **TASK-TEST-002**: Tests for handler_alpha.go signal generation (high priority, 4-6h)
 - **TASK-TEST-003**: Tests for format_cot.go output formatters (high priority, 4-5h)
 - **TASK-TEST-004**: Tests for api.go Telegram API client (medium priority, 4-5h)
 - **TASK-TEST-005**: Tests for format_cta.go CTA formatters (medium priority, 4-5h)
@@ -53,10 +52,11 @@
 - **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
 
 ### In Progress
-- **TASK-TEST-002**: Dev-A — Unit tests for handler_alpha.go signal generation (high priority)
+- Tidak ada
 
 ### In Review
 - **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
+- **TASK-TEST-002**: Dev-A — Unit tests for handler_alpha.go signal generation → PR #373 (pending QA review)
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
 - **TASK-245**: Dev-A — notifyOwnerDebug context fix → PR #370 (pending QA review)
 
@@ -77,6 +77,7 @@
 
 ## Log Singkat
 
+- 2026-04-06 20:08 UTC: Dev-A **completed TASK-TEST-002** — Unit tests for handler_alpha.go signal generation. Added 35 comprehensive tests covering alpha state cache (TTL, cleanup, thread safety), formatAlphaSummary (regime detection, warnings, crypto signals), buildReasonIndonesian, helper functions (emojis, score bars, error handling), formatters (FactorRanking, Playbook, Heat, RankX, Transition, CryptoAlpha). Build passed. Tests pass. Branch: `feat/TASK-TEST-002-handler-alpha-tests`, PR #373 created. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 19:25 UTC: Dev-A **completed TASK-245** — notifyOwnerDebug context fix. Changed goroutine to use context.Background() instead of capturing request context (prevents silent failures when Telegram request times out). Branch: `feat/TASK-245-notifyownerdebug-context`, PR #370 created. Build passed. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 18:40 UTC: Dev-A **verified PHI-SEC-002 complete** — worker pool implementation already merged to agents/main (commit 49fa56e). STATUS updated: Dev-A idle, PHI-SEC-002 moved to Fixed. Implementation includes: semaphore-based concurrency limit (default 20), HANDLER_CONCURRENCY env var, backpressure logging, graceful shutdown context handling, comprehensive tests in worker_pool_test.go.
 - 2026-04-04: Research Agent menyelesaikan **scheduled audit**
