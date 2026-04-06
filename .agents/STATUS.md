@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **active** | TASK-218: COT analyzer unit tests |
+| Dev-A | Agent-3 | **idle** | Available for next task |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -52,10 +52,11 @@
 - **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
 
 ### In Progress
-- **TASK-218**: Dev-A — COT analyzer unit tests (internal/service/cot/analyzer_test.go)
+- Tidak ada
 
 ### In Review
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
+- **TASK-218**: Dev-A — COT analyzer pure function unit tests → PR #366 (pending QA review)
 
 ### Blocked
 - Tidak ada

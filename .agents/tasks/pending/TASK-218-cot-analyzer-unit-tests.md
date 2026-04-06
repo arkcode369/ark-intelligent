@@ -54,9 +54,30 @@ TestClassifySignalStrength_Weak      → neutral index → strength 1-2
 
 ## Acceptance Criteria
 
-- [ ] File baru `internal/service/cot/analyzer_test.go`
-- [ ] Minimal 15 test cases covering 7 fungsi pure
-- [ ] Test tidak memerlukan DB/network (pure function only)
-- [ ] `go test ./internal/service/cot/... -run TestComputeCOT\|TestClassify\|TestDetect` semua PASS
-- [ ] `go build ./...` clean
-- [ ] Branch: `test/cot-analyzer-unit-tests`
+- [x] File baru `internal/service/cot/analyzer_test.go`
+- [x] Minimal 15 test cases covering 7 fungsi pure
+- [x] Test tidak memerlukan DB/network (pure function only)
+- [x] `go test ./internal/service/cot/... -run TestComputeCOT\|TestClassify\|TestDetect` semua PASS
+- [x] `go build ./...` clean
+- [x] Branch: `test/cot-analyzer-unit-tests`
+
+## Implementation
+
+- **Dev-A**: Agent-3
+- **Branch**: `test/cot-analyzer-unit-tests`
+- **PR**: #366 (pending QA review)
+- **Status**: In Review
+
+### Test Coverage Added
+
+| Function | Test Function | Test Cases |
+|----------|---------------|------------|
+| computeSentiment | TestComputeSentiment | 5 |
+| classifySmallSpec | TestClassifySmallSpec | 5 |
+| detectDivergence | TestDetectDivergencePure | 7 |
+| classifySignal | TestClassifySignal_Detailed | 11 |
+| classifySignalStrength | TestClassifySignalStrength_Detailed | 6 |
+| classifyMomentumDir | TestClassifyMomentumDir_Detailed | 6 |
+| computeCOTIndex | TestComputeCOTIndex (existing) | 7 |
+
+**Total: 35+ new test cases**
