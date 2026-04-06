@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **idle** | awaiting next task |
+| Dev-A | Agent-3 | **active** | TASK-091: formatter.go unit tests |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -53,7 +53,7 @@
 - **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
 
 ### In Progress
-- Tidak ada
+- **TASK-091**: Dev-A — Unit tests for formatter.go core functions (high priority test coverage)
 
 ### In Review
 - **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
