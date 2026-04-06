@@ -147,3 +147,328 @@ func TestSignF(t *testing.T) {
 		t.Error("signF(0) should be 0")
 	}
 }
+
+// TestComputeSentiment tests the composite sentiment score calculation
+func TestComputeSentiment(t *testing.T) {
+	tests := []struct {
+		name string
+		a    domain.COTAnalysis
+		want float64 // expected approximate value
+	}{
+		{
+			name: "neutral_all_mid",
+			a: domain.COTAnalysis{
+				COTIndex:       50,
+				COTIndexComm:   50,
+				SpecMomentum4W: 0,
+				CrowdingIndex:  50,
+				Contract:       domain.COTContract{ReportType: "TFF"},
+			},
+			want: 0,
+		},
+		{
+			name: "strong_bullish_spec_high",
+			a: domain.COTAnalysis{
+				COTIndex:       90,
+				COTIndexComm:   10,
+				SpecMomentum4W: 5000,
+				CrowdingIndex:  30,
+				Contract:       domain.COTContract{ReportType: "TFF"},
+			},
+			want: 80, // bullish: 32+24+20+4 = 80 (index*0.4 + comm*0.3 + momentum + crowding)
+		},
+		{
+			name: "strong_bearish_spec_low",
+			a: domain.COTAnalysis{
+				COTIndex:       10,
+				COTIndexComm:   90,
+				SpecMomentum4W: -5000,
+				CrowdingIndex:  70,
+				Contract:       domain.COTContract{ReportType: "TFF"},
+			},
+			want: -80, // bearish: -32-24-20-4 = -80
+		},
+		{
+			name: "disaggregated_same_direction",
+			a: domain.COTAnalysis{
+				COTIndex:       80,
+				COTIndexComm:   80,
+				SpecMomentum4W: 1000,
+				CrowdingIndex:  40,
+				Contract:       domain.COTContract{ReportType: "DISAGGREGATED"},
+			},
+			want: 54, // for DISAGG, commercial is same direction: (80-50)*2*0.4 + (80-50)*2*0.3
+		},
+		{
+			name: "extreme_crowding_penalty",
+			a: domain.COTAnalysis{
+				COTIndex:       60,
+				COTIndexComm:   40,
+				SpecMomentum4W: 0,
+				CrowdingIndex:  90, // extreme crowding penalty
+				Contract:       domain.COTContract{ReportType: "TFF"},
+			},
+			want: -2, // low positive from index, negative crowding contribution
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := computeSentiment(tt.a)
+			// Allow 15 point tolerance due to complex formula interactions
+			if math.Abs(got-tt.want) > 15 {
+				t.Errorf("computeSentiment() = %v, want ~%v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestClassifySmallSpec tests the small speculator signal classification
+func TestClassifySmallSpec(t *testing.T) {
+	tests := []struct {
+		name string
+		a    domain.COTAnalysis
+		want string
+	}{
+		{
+			name: "neutral_no_crowd",
+			a: domain.COTAnalysis{
+				NetSmallSpec: 1000,
+				CrowdingIndex:  50,
+			},
+			want: "NEUTRAL",
+		},
+		{
+			name: "crowd_long",
+			a: domain.COTAnalysis{
+				NetSmallSpec: 5000,
+				CrowdingIndex:  70,
+			},
+			want: "CROWD_LONG",
+		},
+		{
+			name: "crowd_short",
+			a: domain.COTAnalysis{
+				NetSmallSpec: -5000,
+				CrowdingIndex:  70,
+			},
+			want: "CROWD_SHORT",
+		},
+		{
+			name: "neutral_edge_crowding",
+			a: domain.COTAnalysis{
+				NetSmallSpec: 1000,
+				CrowdingIndex:  65, // exactly at threshold (>65 required, so NEUTRAL)
+			},
+			want: "NEUTRAL",
+		},
+		{
+			name: "neutral_low_crowding",
+			a: domain.COTAnalysis{
+				NetSmallSpec: 1000,
+				CrowdingIndex:  60, // below threshold
+			},
+			want: "NEUTRAL",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifySmallSpec(tt.a)
+			if got != tt.want {
+				t.Errorf("classifySmallSpec() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDetectDivergencePure tests the pure divergence detection function in analyzer.go
+func TestDetectDivergencePure(t *testing.T) {
+	tests := []struct {
+		name         string
+		specNetChange  float64
+		commNetChange  float64
+		want         bool
+	}{
+		{
+			name:          "divergence_spec_up_comm_down",
+			specNetChange: 5000,
+			commNetChange: -3000,
+			want:          true,
+		},
+		{
+			name:          "divergence_spec_down_comm_up",
+			specNetChange: -5000,
+			commNetChange: 3000,
+			want:          true,
+		},
+		{
+			name:          "no_divergence_both_up",
+			specNetChange: 5000,
+			commNetChange: 3000,
+			want:          false,
+		},
+		{
+			name:          "no_divergence_both_down",
+			specNetChange: -5000,
+			commNetChange: -3000,
+			want:          false,
+		},
+		{
+			name:          "no_divergence_below_threshold",
+			specNetChange: 500,  // too small
+			commNetChange: -500, // too small
+			want:          false,
+		},
+		{
+			name:          "no_divergence_both_zero",
+			specNetChange: 0,
+			commNetChange: 0,
+			want:          false,
+		},
+		{
+			name:          "divergence_large_values",
+			specNetChange: 15000,
+			commNetChange: -12000,
+			want:          true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectDivergence(tt.specNetChange, tt.commNetChange)
+			if got != tt.want {
+				t.Errorf("detectDivergence(%v, %v) = %v, want %v",
+					tt.specNetChange, tt.commNetChange, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestClassifySignal_Detailed tests signal classification with specific expected outputs
+func TestClassifySignal_Detailed(t *testing.T) {
+	tests := []struct {
+		name         string
+		cotIndex     float64
+		momentum     float64
+		isCommercial bool
+		want         string
+	}{
+		// Speculator (isCommercial=false) - directional
+		{name: "spec_strong_bullish", cotIndex: 80, momentum: 10, isCommercial: false, want: "STRONG_BULLISH"},
+		{name: "spec_bullish_no_momentum", cotIndex: 80, momentum: 0, isCommercial: false, want: "BULLISH"},
+		{name: "spec_strong_bearish", cotIndex: 20, momentum: -10, isCommercial: false, want: "STRONG_BEARISH"},
+		{name: "spec_bearish_no_momentum", cotIndex: 20, momentum: 0, isCommercial: false, want: "BEARISH"},
+		{name: "spec_neutral_mid", cotIndex: 50, momentum: 0, isCommercial: false, want: "NEUTRAL"},
+		{name: "spec_neutral_high_nomomentum", cotIndex: 75, momentum: 0, isCommercial: false, want: "BULLISH"},
+		{name: "spec_neutral_low_nomomentum", cotIndex: 25, momentum: 0, isCommercial: false, want: "BEARISH"},
+		// Commercial (isCommercial=true) - contrarian (same thresholds, inverse interpretation)
+		{name: "comm_strong_bullish", cotIndex: 80, momentum: 10, isCommercial: true, want: "STRONG_BULLISH"},
+		{name: "comm_bullish_no_momentum", cotIndex: 80, momentum: 0, isCommercial: true, want: "BULLISH"},
+		{name: "comm_strong_bearish", cotIndex: 20, momentum: -10, isCommercial: true, want: "STRONG_BEARISH"},
+		{name: "comm_bearish_no_momentum", cotIndex: 20, momentum: 0, isCommercial: true, want: "BEARISH"},
+		{name: "comm_neutral_mid", cotIndex: 50, momentum: 0, isCommercial: true, want: "NEUTRAL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifySignal(tt.cotIndex, tt.momentum, tt.isCommercial)
+			if got != tt.want {
+				t.Errorf("classifySignal(%v, %v, %v) = %q, want %q",
+					tt.cotIndex, tt.momentum, tt.isCommercial, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestClassifySignalStrength_Detailed tests signal strength classification
+func TestClassifySignalStrength_Detailed(t *testing.T) {
+	tests := []struct {
+		name string
+		a    domain.COTAnalysis
+		want domain.SignalStrength
+	}{
+		{
+			name: "strong_extreme_plus_high_sentiment",
+			a: domain.COTAnalysis{
+				SentimentScore: 70,
+				IsExtremeBull:  true,
+			},
+			want: domain.SignalStrong,
+		},
+		{
+			name: "strong_extreme_bear_plus_high_sentiment",
+			a: domain.COTAnalysis{
+				SentimentScore: -70,
+				IsExtremeBear:  true,
+			},
+			want: domain.SignalStrong,
+		},
+		{
+			name: "moderate_sentiment_50",
+			a: domain.COTAnalysis{
+				SentimentScore: 50,
+				IsExtremeBull:  false,
+				IsExtremeBear:  false,
+			},
+			want: domain.SignalModerate,
+		},
+		{
+			name: "weak_sentiment_30",
+			a: domain.COTAnalysis{
+				SentimentScore: 30,
+				IsExtremeBull:  false,
+				IsExtremeBear:  false,
+			},
+			want: domain.SignalWeak,
+		},
+		{
+			name: "neutral_low_sentiment",
+			a: domain.COTAnalysis{
+				SentimentScore: 10,
+				IsExtremeBull:  false,
+				IsExtremeBear:  false,
+			},
+			want: domain.SignalNeutral,
+		},
+		{
+			name: "neutral_zero_sentiment",
+			a: domain.COTAnalysis{
+				SentimentScore: 0,
+				IsExtremeBull:  false,
+				IsExtremeBear:  false,
+			},
+			want: domain.SignalNeutral,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifySignalStrength(tt.a)
+			if got != tt.want {
+				t.Errorf("classifySignalStrength() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestClassifyMomentumDir_Detailed tests momentum direction classification
+func TestClassifyMomentumDir_Detailed(t *testing.T) {
+	tests := []struct {
+		name    string
+		specMom float64
+		commMom float64
+		want    domain.MomentumDirection
+	}{
+		{name: "building_spec_up_comm_down", specMom: 5000, commMom: -3000, want: domain.MomentumBuilding},
+		{name: "reversing_spec_down_comm_up", specMom: -5000, commMom: 3000, want: domain.MomentumReversing},
+		{name: "stable_both_low", specMom: 50, commMom: 50, want: domain.MomentumStable},
+		{name: "stable_both_zero", specMom: 0, commMom: 0, want: domain.MomentumStable},
+		{name: "unwinding_spec_down", specMom: -5000, commMom: -100, want: domain.MomentumUnwinding},
+		{name: "building_spec_up_comm_small", specMom: 5000, commMom: 100, want: domain.MomentumBuilding},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyMomentumDir(tt.specMom, tt.commMom)
+			if got != tt.want {
+				t.Errorf("classifyMomentumDir(%v, %v) = %q, want %q",
+					tt.specMom, tt.commMom, got, tt.want)
+			}
+		})
+	}
+}
