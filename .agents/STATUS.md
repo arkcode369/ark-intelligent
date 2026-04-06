@@ -21,7 +21,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | idle | audit, task spec, discovery |
-| Dev-A | Agent-3 | idle | implementasi |
+| Dev-A | Agent-3 | active | TASK-CODEQUALITY-003 |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -31,10 +31,15 @@
 ## Queue Kerja
 
 ### Pending
-- Tidak ada
+- TASK-CODEQUALITY-004-scheduler-skew-vix-context
+- TASK-CODEQUALITY-005-sentiment-type-assertion
+- TASK-DOCS-001-task-distribution
+- TASK-SECURITY-001-http-timeout-tradingeconomics
+- TASK-TEST-001-scheduler-tests
+- TASK-TEST-002-news-scheduler-tests
 
 ### In Progress
-- Tidak ada
+- TASK-CODEQUALITY-003: chat_service context timeout (Dev-A)
 
 ### In Review
 - TASK-CODEQUALITY-006: impact_recorder context timeout (PR #355 → agents/main)

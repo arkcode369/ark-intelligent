@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/ports"
@@ -305,11 +306,16 @@ func templateFallback() string {
 // notifyOwner sends a notification to the bot owner if the callback is set.
 // Non-blocking — fires in a goroutine with a detached context so the
 // notification survives even if the request context is cancelled.
+// Uses a 30-second timeout to prevent goroutine leaks.
 func (cs *ChatService) notifyOwner(_ context.Context, html string) {
 	if cs.ownerNotify == nil {
 		return
 	}
-	go cs.ownerNotify(context.Background(), html)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cs.ownerNotify(ctx, html)
+	}()
 }
 
 // truncateErr returns a truncated error string (max 150 chars) safe for Telegram HTML.
