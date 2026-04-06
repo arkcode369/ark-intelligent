@@ -74,6 +74,7 @@ Hexagonal (ports & adapters) architecture in Go 1.22:
 | `COT_HISTORY_WEEKS`  | No       | `52`                           | Weeks of COT history to retain     |
 | `AI_CACHE_TTL`       | No       | `1h`                           | AI response cache duration         |
 | `AI_MAX_RPM`         | No       | `15`                           | AI requests per minute limit       |
+| `HANDLER_CONCURRENCY`| No       | `20`                           | Max concurrent message handlers (DoS protection) |
 | `LOG_LEVEL`          | No       | `info`                         | Logging verbosity                  |
 
 ## License
