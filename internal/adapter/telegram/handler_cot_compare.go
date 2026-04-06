@@ -15,13 +15,17 @@ import (
 
 // cmdCompare handles /compare EUR GBP — side-by-side COT positioning.
 func (h *Handler) cmdCompare(ctx context.Context, chatID string, userID int64, args string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "⚖️ Membandingkan data COT... ⏳")
 
 	parts := strings.Fields(strings.ToUpper(strings.TrimSpace(args)))
 	if len(parts) < 2 {
-		_, err := h.bot.SendHTML(ctx, chatID,
-			"⚖️ <b>COT Compare</b>\n\nUsage: <code>/compare EUR GBP</code>\n\nBandingkan positioning dua aset secara side-by-side.")
-		return err
+		msg := "⚖️ <b>COT Compare</b>\n\nUsage: <code>/compare EUR GBP</code>\n\nBandingkan positioning dua aset secara side-by-side."
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, loadingID, msg)
+		} else {
+			_, _ = h.bot.SendHTML(ctx, chatID, msg)
+		}
+		return nil
 	}
 
 	currA, currB := parts[0], parts[1]
@@ -31,11 +35,21 @@ func (h *Handler) cmdCompare(ctx context.Context, chatID string, userID int64, a
 	recsA, errA := h.cotRepo.GetHistory(ctx, codeA, 1)
 	recsB, errB := h.cotRepo.GetHistory(ctx, codeB, 1)
 	if errA != nil || len(recsA) == 0 {
-		h.sendUserError(ctx, chatID, fmt.Errorf("no data for %s", currA), "compare")
+		if loadingID > 0 {
+			errMsg := fmt.Sprintf("⚠️ Tidak ada data COT untuk %s", currA)
+			_ = h.bot.EditMessage(ctx, chatID, loadingID, errMsg)
+		} else {
+			h.sendUserError(ctx, chatID, fmt.Errorf("no data for %s", currA), "compare")
+		}
 		return nil
 	}
 	if errB != nil || len(recsB) == 0 {
-		h.sendUserError(ctx, chatID, fmt.Errorf("no data for %s", currB), "compare")
+		if loadingID > 0 {
+			errMsg := fmt.Sprintf("⚠️ Tidak ada data COT untuk %s", currB)
+			_ = h.bot.EditMessage(ctx, chatID, loadingID, errMsg)
+		} else {
+			h.sendUserError(ctx, chatID, fmt.Errorf("no data for %s", currB), "compare")
+		}
 		return nil
 	}
 
@@ -72,8 +86,12 @@ func (h *Handler) cmdCompare(ctx context.Context, chatID string, userID int64, a
 	b.WriteString(fmt.Sprintf("\n%s <b>%s</b> %s   |   %s <b>%s</b> %s",
 		iconA, currA, biasA, iconB, currB, biasB))
 
-	_, err := h.bot.SendHTML(ctx, chatID, b.String())
-	return err
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, loadingID, b.String())
+	} else {
+		_, _ = h.bot.SendHTML(ctx, chatID, b.String())
+	}
+	return nil
 }
 
 // cotBiasLabel returns a human-readable bias label and icon for a net position value.

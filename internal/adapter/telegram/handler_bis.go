@@ -12,7 +12,7 @@ import (
 
 // cmdBIS handles /bis — BIS Statistics dashboard (policy rates, credit gaps, REER).
 func (h *Handler) cmdBIS(ctx context.Context, chatID string, _ int64, _ string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "🏦 Mengambil data BIS policy rates... ⏳")
 
 	policyCh := make(chan *bis.PolicyRateSuite, 1)
 	creditCh := make(chan *bis.CreditGapReport, 1)
@@ -30,6 +30,10 @@ func (h *Handler) cmdBIS(ctx context.Context, chatID string, _ int64, _ string) 
 	reer := <-reerCh
 
 	txt := formatBISDashboard(reer, policy, creditGap)
-	_, err := h.bot.SendHTML(ctx, chatID, txt)
-	return err
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, loadingID, txt)
+	} else {
+		_, _ = h.bot.SendHTML(ctx, chatID, txt)
+	}
+	return nil
 }

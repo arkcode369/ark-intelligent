@@ -22,19 +22,28 @@ import (
 // Aggregates today's High/Medium calendar events, top 3 COT conviction scores,
 // and a currency bias one-liner into a compact ≤15-line summary.
 func (h *Handler) cmdBriefing(ctx context.Context, chatID string, userID int64, args string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "🌅 Memuat daily briefing... ⏳")
 
 	now := timeutil.NowWIB()
 	data, err := h.buildBriefingData(ctx, now)
 	if err != nil {
-		h.sendUserError(ctx, chatID, err, "briefing")
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, loadingID, "⚠️ Gagal memuat briefing. Coba lagi nanti.")
+		} else {
+			h.sendUserError(ctx, chatID, err, "briefing")
+		}
 		return nil
 	}
 
 	html := h.fmt.FormatBriefing(data)
 	kb := h.kb.BriefingMenu()
-	_, sendErr := h.bot.SendWithKeyboard(ctx, chatID, html, kb)
-	return sendErr
+	if loadingID > 0 {
+		_ = h.bot.EditWithKeyboard(ctx, chatID, loadingID, html, kb)
+	} else {
+		_, err := h.bot.SendWithKeyboard(ctx, chatID, html, kb)
+		return err
+	}
+	return nil
 }
 
 // cbBriefingRefresh handles the "briefing:refresh" callback for the Refresh button.

@@ -9,19 +9,27 @@ import (
 // cmdCarry handles the /carry command — shows carry trade monitor with
 // ranked pairs and unwind detection.
 func (h *Handler) cmdCarry(ctx context.Context, chatID string, _ int64, _ string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "💰 Mengambil data carry trades... ⏳")
 
 	monitor := fred.GetCarryMonitor()
 	result, err := monitor.FetchCarryDashboard(ctx)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID,
-			"❌ <b>Carry monitor error</b>\n\n"+
-				"<code>"+err.Error()+"</code>\n\n"+
-				"<i>FRED API may be temporarily unavailable.</i>")
-		return sendErr
+		errMsg := "❌ <b>Carry monitor error</b>\n\n" +
+			"<code>" + err.Error() + "</code>\n\n" +
+			"<i>FRED API may be temporarily unavailable.</i>"
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, loadingID, errMsg)
+		} else {
+			_, _ = h.bot.SendHTML(ctx, chatID, errMsg)
+		}
+		return nil
 	}
 
 	text := h.fmt.FormatCarryMonitor(result)
-	_, sendErr := h.bot.SendHTML(ctx, chatID, text)
-	return sendErr
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, loadingID, text)
+	} else {
+		_, _ = h.bot.SendHTML(ctx, chatID, text)
+	}
+	return nil
 }
