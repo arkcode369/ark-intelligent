@@ -4,6 +4,7 @@
 **Type:** Bug Fix
 **Estimated effort:** XS (1 line change)
 **Ref:** research/2026-04-05-12-ux-audit-cycle1.md
+**PR:** https://github.com/arkcode369/ark-intelligent/pull/380
 
 ---
 
