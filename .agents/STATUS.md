@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | idle | implementasi |
+| Dev-A | Agent-3 | **active** | Fixed BUG-001 & verified SECURITY-001, now available for next task |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -26,9 +26,11 @@
 
 ## Queue Kerja
 
+### Fixed (Ready for Merge)
+- **TASK-BUG-001**: ✅ Fixed data race in handler_session.go — added sync.RWMutex protection (branch agents/research, commit 1ed3262)
+- **TASK-SECURITY-001**: ✅ Verified fixed — http.DefaultClient already uses context.WithTimeout(45s)
+
 ### Pending
-- **TASK-BUG-001**: Fix data race in handler_session.go — concurrent map access (**high priority**, 1-2h) — *new, concurrency bug*
-- **TASK-SECURITY-001**: Fix http.DefaultClient timeout — tradingeconomics_client.go (**high priority**, 1h) — *security issue*
 - **TASK-TEST-002**: Tests for handler_alpha.go signal generation (high priority, 4-6h)
 - **TASK-TEST-003**: Tests for format_cot.go output formatters (high priority, 4-5h)
 - **TASK-TEST-004**: Tests for api.go Telegram API client (medium priority, 4-5h)
