@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **active** | TASK-002: Standardize Loading Feedback |
+| Dev-A | Agent-3 | **idle** | awaiting next task |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -45,13 +45,11 @@
 - **TASK-TEST-012**: Tests for bot.go bot orchestration (medium priority, 4-5h) — *new*
 - **TASK-REFACTOR-001**: Extract magic numbers to constants (medium priority, 3-4h)
 - **TASK-REFACTOR-002**: Decompose keyboard.go into domain files (medium priority, 6-8h)
-- **TASK-CODEQUALITY-002**: Fix context.Background() in production code (medium priority, 3-4h) — *new, 9 occurrences in 5 production files*
+- **TASK-CODEQUALITY-002**: Fix context.Background() in production code (medium priority, 3-4h) — *new, 9 occurrences in 6 production files*
 - **TASK-CODEQUALITY-001**: Fix context.Background() in test files (low priority, 2-3h)
 - **TASK-DOCS-001**: Document emoji system standardization (low priority, 1-2h)
 - **TASK-TEST-013**: Tests for scheduler.go — core orchestration (**high priority**, 6-8h) — *critical infrastructure*
 - **TASK-TEST-014**: Tests for ta/indicators.go — technical indicators (**medium priority**, 6-8h) — *1025 lines of pure calculation logic*
-- **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
-
 ### In Progress
 - Tidak ada
 
@@ -59,6 +57,7 @@
 - **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
 - **TASK-245**: Dev-A — notifyOwnerDebug context fix → PR #370 (pending QA review)
+- **TASK-002**: Dev-A — Standardize loading feedback → PR #372 (pending QA review)
 
 ### Blocked
 - Tidak ada
@@ -77,6 +76,7 @@
 
 ## Log Singkat
 
+- 2026-04-06 19:52 UTC: Dev-A **completed TASK-002** — Standardize loading feedback. Replaced SendTyping with SendLoading + EditMessage pattern in 11 handlers (price, carry, bis, onchain, briefing, levels, scenario, defi, vix, regime, compare). Branch: `feat/TASK-002-loading-feedback-consistency`, PR #372 created. Build passed (`go build ./...`). Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 19:25 UTC: Dev-A **completed TASK-245** — notifyOwnerDebug context fix. Changed goroutine to use context.Background() instead of capturing request context (prevents silent failures when Telegram request times out). Branch: `feat/TASK-245-notifyownerdebug-context`, PR #370 created. Build passed. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 18:40 UTC: Dev-A **verified PHI-SEC-002 complete** — worker pool implementation already merged to agents/main (commit 49fa56e). STATUS updated: Dev-A idle, PHI-SEC-002 moved to Fixed. Implementation includes: semaphore-based concurrency limit (default 20), HANDLER_CONCURRENCY env var, backpressure logging, graceful shutdown context handling, comprehensive tests in worker_pool_test.go.
 - 2026-04-04: Research Agent menyelesaikan **scheduled audit**

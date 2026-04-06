@@ -3,6 +3,8 @@
 **Priority:** HIGH
 **Type:** UX Improvement
 **Ref:** UX_AUDIT.md TASK-UX-004, research/2026-04-05-12-ux-audit-cycle1.md
+**Status:** In Review
+**PR:** #372
 
 ---
 
@@ -23,32 +25,30 @@ h.bot.EditWithKeyboard(ctx, chatID, loadingID, result, kb)
 
 ---
 
-## Handlers yang Harus Diupdate
+## Handlers Updated
 
-| File | Command | Action |
-|------|---------|--------|
-| `handler_price.go` | `/price` | Ganti SendTyping → SendLoading |
-| `handler_carry.go` | `/carry` | Ganti SendTyping → SendLoading |
-| `handler_bis.go` | `/bis` | Ganti SendTyping → SendLoading |
-| `handler_onchain.go` | `/onchain` | Ganti SendTyping → SendLoading |
-| `handler_briefing.go` | `/briefing` | Ganti SendTyping → SendLoading |
-| `handler_levels.go` | `/levels` | Ganti SendTyping → SendLoading |
-| `handler_scenario.go` | `/scenario` | Ganti SendTyping → SendLoading |
-| `handler_defi.go` | `/defi` | Ganti SendTyping → SendLoading |
-| `handler_vix_cmd.go` | `/vix` | Ganti SendTyping → SendLoading |
-| `handler_regime.go` | `/regime` | Ganti SendTyping → SendLoading |
-| `handler_cot_compare.go` | `/compare` | Ganti SendTyping → SendLoading |
+| File | Command | Loading Message |
+|------|---------|-----------------|
+| `handler_price.go` | `/price` | "💹 Mengambil data price overview... ⏳" |
+| `handler_carry.go` | `/carry` | "💰 Mengambil data carry trades... ⏳" |
+| `handler_bis.go` | `/bis` | "🏦 Mengambil data BIS policy rates... ⏳" |
+| `handler_onchain.go` | `/onchain` | "⛓️ Mengambil data on-chain... ⏳" |
+| `handler_briefing.go` | `/briefing` | "🌅 Memuat daily briefing... ⏳" |
+| `handler_levels.go` | `/levels` | "📏 Mengambil data support/resistance levels... ⏳" |
+| `handler_scenario.go` | `/scenario` | "📊 Menghitung Monte Carlo scenarios... ⏳" |
+| `handler_defi.go` | `/defi` | "🌾 Mengambil data DeFi dashboard... ⏳" |
+| `handler_vix_cmd.go` | `/vix` | "📊 Mengambil data CBOE VIX... ⏳" |
+| `handler_regime.go` | `/regime` | "📊 Mengambil data regime monitor... ⏳" |
+| `handler_cot_compare.go` | `/compare` | "⚖️ Membandingkan data COT... ⏳" |
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Semua handler di list di atas menggunakan `SendLoading` + `EditMessage`/`EditWithKeyboard`
-- [ ] Loading message text deskriptif (bukan hanya "⏳ Loading...")
-  - Contoh: "💰 Mengambil data carry trades... ⏳"
-  - Contoh: "🏦 Mengambil data BIS policy rates... ⏳"
-- [ ] Error path juga menggunakan `EditMessage` (bukan kirim message baru)
-- [ ] `go build ./...` bersih
+- [x] Semua handler di list di atas menggunakan `SendLoading` + `EditMessage`/`EditWithKeyboard`
+- [x] Loading message text deskriptif (bukan hanya "⏳ Loading...")
+- [x] Error path juga menggunakan `EditMessage` (bukan kirim message baru)
+- [x] `go build ./...` bersih
 
 ---
 
