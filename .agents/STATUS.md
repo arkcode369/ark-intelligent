@@ -9,7 +9,7 @@
 
 - Orkestrasi: aktif
 - Model kerja: banyak instance Agent
-- Queue task: 5 tasks pending
+- Queue task: 9 tasks pending
 - Blocker aktif: tidak ada
 - Review pending: tidak ada
 
@@ -17,10 +17,10 @@
 
 ## Siklus Terakhir
 
-- **Siklus:** 1 (UX/UI Improvement)
-- **Last Run:** 2026-04-05
-- **Tasks Dibuat:** TASK-001 s/d TASK-005
-- **Next Cycle:** 2 (Data & Integrasi Baru Gratis)
+- **Siklus:** 2 (Data & Integrasi Baru Gratis)
+- **Last Run:** 2026-04-06
+- **Tasks Dibuat:** TASK-006 s/d TASK-009
+- **Next Cycle:** 3 (Fitur Baru: ICT/SMC/Wyckoff/Elliott/GEX/Footprint)
 
 ---
 
@@ -29,7 +29,7 @@
 | Role | Instance | Status | Fokus |
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
-| Research | Agent-2 | idle | siklus 1 selesai, menunggu siklus 2 |
+| Research | Agent-2 | idle | siklus 2 selesai, menunggu siklus 3 |
 | Dev-A | Agent-3 | idle | implementasi |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
@@ -45,6 +45,10 @@
 - TASK-003: Implement OutputMinimal mode [MEDIUM, M]
 - TASK-004: Unify navigation button labels [LOW, XS]
 - TASK-005: Extend context carry-over to VP/ICT/Wyckoff/SMC/Elliott/Session [MEDIUM, S]
+- TASK-006: Add Atlanta Fed GDPNow via Firecrawl [HIGH, S]
+- TASK-007: Add Market Breadth via Barchart Firecrawl [MEDIUM, M]
+- TASK-008: COT Open Interest Trend Analysis [MEDIUM, M]
+- TASK-009: Add OECD Consumer Confidence & Business Climate [MEDIUM, S]
 
 ### In Progress
 - Tidak ada
@@ -71,3 +75,4 @@
 
 - 2026-04-04: Workflow dinetralkan dari istilah Paperclip/Hermes-specific ke Agent Multi-Instance Orchestration.
 - 2026-04-05: Research Siklus 1 selesai (UX/UI). 5 tasks dibuat (TASK-001 s/d TASK-005). Critical bug: /compare tidak teregistrasi.
+- 2026-04-06: Research Siklus 2 selesai (Data & Integrasi Gratis). Temuan: sebagian besar data sources SUDAH diimplementasikan. 4 genuine gaps ditemukan: GDPNow, Market Breadth, COT OI Trend Analysis, OECD CCI/BCI. TASK-006 s/d TASK-009 dibuat.
