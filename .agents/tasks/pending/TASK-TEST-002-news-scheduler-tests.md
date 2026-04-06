@@ -4,7 +4,7 @@ title: Add unit tests for internal/service/news/scheduler.go
 status: pending
 priority: high
 effort: 4h
-assigned_to: dev-c
+assigned_to: dev-a
 created_by: research
 created_at: 2026-04-06T05:13:00Z
 ---

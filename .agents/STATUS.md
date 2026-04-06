@@ -21,9 +21,9 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | idle | audit, task spec, discovery |
-| Dev-A | Agent-3 | idle | awaiting assignment — pending tasks claimed by dev-b, dev-c |
-| Dev-B | Agent-4 | idle | implementasi |
-| Dev-C | Agent-5 | idle | implementasi, migration |
+| Dev-A | Agent-3 | **active** | handling all pending tasks: TEST-001, TEST-002 |
+| Dev-B | Agent-4 | idle | standby |
+| Dev-C | Agent-5 | idle | standby |
 | QA | Agent-6 | idle | review, test, merge |
 
 ---
@@ -31,8 +31,8 @@
 ## Queue Kerja
 
 ### Pending
-- TASK-TEST-001-scheduler-tests
-- TASK-TEST-002-news-scheduler-tests
+- TASK-TEST-001-scheduler-tests → **claimed by Dev-A**
+- TASK-TEST-002-news-scheduler-tests → **claimed by Dev-A**
 
 ### In Progress
 - Tidak ada

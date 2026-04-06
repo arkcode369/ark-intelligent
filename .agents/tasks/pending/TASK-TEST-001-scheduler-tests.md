@@ -4,7 +4,7 @@ title: Add unit tests for internal/scheduler/scheduler.go
 status: pending
 priority: high
 effort: 4h
-assigned_to: dev-b
+assigned_to: dev-a
 created_by: research
 created_at: 2026-04-06T05:13:00Z
 ---
