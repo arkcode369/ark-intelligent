@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"encoding/json"
 	"net/http"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -55,6 +56,11 @@ func (c *Checker) Start(ctx context.Context, addr string) {
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Str("goroutine", "health-server").Str("stack", string(debug.Stack())).Msg("PANIC recovered")
+			}
+		}()
 		log.Info().Str("addr", addr).Msg("health server started")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("health server error")

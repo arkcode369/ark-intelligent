@@ -16,6 +16,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -241,6 +242,11 @@ func (s *Scheduler) Start(ctx context.Context, intervals *Intervals) {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("goroutine", "impact-bootstrap").Str("stack", string(debug.Stack())).Msg("PANIC recovered")
+				}
+			}()
 			// Delay to let price data load first.
 			select {
 			case <-time.After(2 * time.Minute):
@@ -295,6 +301,11 @@ func (s *Scheduler) startJobWithDelay(ctx context.Context, name string, interval
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Str("goroutine", "job-"+name).Str("stack", string(debug.Stack())).Msg("PANIC recovered")
+			}
+		}()
 
 		// Initial delay to stagger jobs
 		if delay > 0 {
@@ -695,6 +706,11 @@ func (s *Scheduler) jobFREDAlerts(ctx context.Context) error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Str("goroutine", "skew-vix-alert").Str("stack", string(debug.Stack())).Msg("PANIC recovered")
+			}
+		}()
 		s.checkSKEWVIXAlert(ctx)
 	}()
 
