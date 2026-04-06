@@ -1,10 +1,19 @@
-# TASK-CODEQUALITY-005: Add ok check for type assertion in sentiment cache
+---
+id: TASK-CODEQUALITY-005
+title: Add ok check for type assertion in sentiment cache
+status: in_progress
+priority: low
+effort: 15m
+assigned_to: dev-a
+created_by: research
+created_at: 2026-04-06T05:13:00Z
+claimed_at: 2026-04-06T07:35:00Z
+claimed_by: Dev-A
+---
 
-**Priority:** Low  
-**Estimated Effort:** 15 minutes  
-**Status:** Pending
+## Summary
 
-## Issue Description
+Add type assertion ok check in `sentiment/cache.go` `GetCachedOrFetch` function for defensive programming.
 
 The `GetCachedOrFetch` function in `sentiment/cache.go` performs an unchecked type assertion at line 116. While the type is guaranteed by singleflight, adding the check improves code robustness.
 

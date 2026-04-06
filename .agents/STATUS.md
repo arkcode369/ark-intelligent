@@ -21,7 +21,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | idle | audit, task spec, discovery |
-| Dev-A | Agent-3 | active | TASK-CODEQUALITY-006: impact_recorder context timeout |
+| Dev-A | Agent-3 | active | TASK-CODEQUALITY-005: sentiment type assertion |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -31,13 +31,18 @@
 ## Queue Kerja
 
 ### Pending
-- Tidak ada
+- TASK-DOCS-001-task-distribution
+- TASK-TEST-001-scheduler-tests
+- TASK-TEST-002-news-scheduler-tests
 
 ### In Progress
-- Tidak ada
+- TASK-CODEQUALITY-005: sentiment type assertion (Dev-A)
 
 ### In Review
-- Tidak ada
+- TASK-CODEQUALITY-003: chat_service context timeout (PR #357)
+- TASK-CODEQUALITY-004: scheduler_skew_vix context fix (PR #358)
+- TASK-CODEQUALITY-006: impact_recorder context timeout (PR #355)
+- TASK-SECURITY-001: http timeout tradingeconomics (PR #354)
 
 ### Blocked
 - Tidak ada
@@ -56,4 +61,6 @@
 
 ## Log Singkat
 
+- 2026-04-06: Dev-A moving from TASK-CODEQUALITY-006 (PR #355 in review) → TASK-CODEQUALITY-005
+- 2026-04-06: Updated queue — 4 PRs in review, 3 tasks pending
 - 2026-04-04: Workflow dinetralkan dari istilah Paperclip/Hermes-specific ke Agent Multi-Instance Orchestration.
