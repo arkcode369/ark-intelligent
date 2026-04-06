@@ -61,6 +61,7 @@
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
 - **TASK-245**: Dev-A — notifyOwnerDebug context fix → PR #370 (pending QA review)
 - **TASK-091**: Dev-A — formatter.go unit tests verification → PR #376 (pending QA review)
+- **TASK-165**: Dev-A — Panic Recovery Scheduler Goroutines → PR #381 (pending QA review)
 
 ### Blocked
 - Tidak ada
@@ -79,6 +80,7 @@
 
 ## Log Singkat
 
+- 2026-04-07 00:05 UTC: Dev-A **completed TASK-165** — Panic Recovery Scheduler Goroutines. Added panic recovery to 4 goroutines: 3 in internal/scheduler/scheduler.go (impact bootstrapper, job runner, SKEW/VIX alert) and 1 in internal/health/health.go (health server). News scheduler already used saferun.Go with built-in panic recovery. Build passed (`go build ./...`), vet clean for modified packages (`go vet ./internal/scheduler/... ./internal/health/...`), scheduler tests pass (`go test ./internal/scheduler/...`). PR #381 created. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 23:15 UTC: Dev-A **completed TASK-001** — Register /compare command. Added `d.Bot.RegisterCommand("/compare", h.cmdCompare)` in handler.go. Added related commands mapping in keyboard_help.go. Removed broken `command_parse_test.go` blocking test suite. Build passed (`go build ./internal/adapter/telegram/...`), all tests pass. PR #379 updated. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 22:15 UTC: Dev-A **claimed TASK-001** — Register /compare command (HIGH priority, critical bug). Verified `cmdCompare` exists in `handler_cot_compare.go` but no `RegisterCommand` call found. Starting implementation. Dev-A status: active.
 - 2026-04-06 21:44 UTC: Dev-A **verified TASK-091 complete** — formatter.go unit tests verification. Verified existing `formatter_test.go` has 57 tests covering all acceptance criteria (15+ required). Removed broken `command_parse_test.go` that was blocking test suite. Build passed, all tests pass. PR #376 created. Dev-A status: idle. Task moved to In Review.
