@@ -59,7 +59,7 @@
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
 
 ### Fixed (Ready for Merge)
-- **PHI-SEC-002**: ✅ Goroutine limiter already implemented — worker pool with `HANDLER_CONCURRENCY` env var (default 20), backpressure logging, graceful shutdown context handling, comprehensive tests in `worker_pool_test.go`
+- **PHI-SEC-002**: ✅ Goroutine limiter already implemented — worker pool with `HANDLER_CONCURRENCY` env var (default 20), backpressure logging, graceful shutdown context handling, comprehensive tests in `worker_pool_test.go` → PR #367 (README documentation)
 
 ### Blocked
 - Tidak ada
