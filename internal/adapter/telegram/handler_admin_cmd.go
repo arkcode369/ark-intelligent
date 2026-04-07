@@ -294,13 +294,15 @@ func (h *Handler) cmdUnban(ctx context.Context, chatID string, userID int64, arg
 }
 
 // notifyOwnerDebug sends a debug message to the bot owner (non-blocking, best-effort).
+// Uses context.Background() so the notification survives even if the request context
+// is cancelled before the goroutine fires (e.g. Telegram timeout, user disconnect).
 // Does nothing if OwnerID is not set.
-func (h *Handler) notifyOwnerDebug(ctx context.Context, html string) {
+func (h *Handler) notifyOwnerDebug(_ context.Context, html string) {
 	ownerID := h.bot.OwnerID()
 	if ownerID <= 0 {
 		return
 	}
 	go func() {
-		_, _ = h.bot.SendHTML(ctx, fmt.Sprintf("%d", ownerID), html)
+		_, _ = h.bot.SendHTML(context.Background(), fmt.Sprintf("%d", ownerID), html)
 	}()
 }
