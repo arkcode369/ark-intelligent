@@ -6,7 +6,8 @@
 **Type:** feature  
 **Estimated:** M (2-4h)  
 **Area:** internal/service  
-**Assignee:** Dev-A 
+**Assignee:** Dev-A  
+**PR:** https://github.com/arkcode369/ark-intelligent/pull/395 
 
 ---
 
