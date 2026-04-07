@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | **active** | PHI-REL-006: WorldBank goroutine panic recovery |
+| Dev-A | Agent-3 | idle | — |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -58,16 +58,17 @@
 ||- _None currently active_
 
 ### In Review
-||- **PHI-REL-002**: Dev-A — Panic recovery scheduler bootstrap → PR #385 (pending QA review)
-||- **TASK-002**: Dev-A — Standardize loading feedback → PR #382 (pending QA review)
-|- **TASK-001**: Dev-A — Register /compare command → PR #379 (pending QA review)
-|- **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
-|- **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
-|- **TASK-245**: Dev-A — notifyOwnerDebug context fix → PR #370 (pending QA review)
-|- **TASK-091**: Dev-A — formatter.go unit tests verification → PR #376 (pending QA review)
-|- **TASK-165**: Dev-A — Panic Recovery Scheduler Goroutines → PR #381 (pending QA review)
-|- **TASK-CODEQUALITY-006**: Dev-A — Add context timeout to impact_recorder.go → PR #355 (pending QA review)
-|- **TASK-TEST-003**: Dev-A — Unit tests for format_cot.go → PR #388 (pending QA review)
+|||- **PHI-REL-002**: Dev-A — Panic recovery scheduler bootstrap → PR #385 (pending QA review)
+|||- **TASK-002**: Dev-A — Standardize loading feedback → PR #382 (pending QA review)
+||- **TASK-001**: Dev-A — Register /compare command → PR #379 (pending QA review)
+||- **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
+||- **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
+||- **TASK-245**: Dev-A — notifyOwnerDebug context fix → PR #370 (pending QA review)
+||- **TASK-091**: Dev-A — formatter.go unit tests verification → PR #376 (pending QA review)
+||- **TASK-165**: Dev-A — Panic Recovery Scheduler Goroutines → PR #381 (pending QA review)
+||- **TASK-CODEQUALITY-006**: Dev-A — Add context timeout to impact_recorder.go → PR #355 (pending QA review)
+||- **TASK-TEST-003**: Dev-A — Unit tests for format_cot.go → PR #388 (pending QA review)
+||- **PHI-REL-006**: Dev-A — WorldBank goroutine panic recovery → PR #389 (pending QA review)
 
 ### Blocked
 - Tidak ada
