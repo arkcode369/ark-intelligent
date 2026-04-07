@@ -23,13 +23,17 @@ func (h *Handler) WithRegime(provider RegimeAlertProvider) *Handler {
 // cmdRegime handles the /regime command — shows the multi-asset regime dashboard
 // with current HMM states, probabilities, alert tiers, and divergence detection.
 func (h *Handler) cmdRegime(ctx context.Context, chatID string, _ int64, _ string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📊 Mengambil data regime... ⏳")
 
 	if h.regimeProvider == nil {
-		_, err := h.bot.SendHTML(ctx, chatID,
-			"📊 <b>Regime Monitor</b>\n\n"+
-				"<i>Regime alert system not configured. "+
-				"Requires daily price data.</i>")
+		text := "📊 <b>Regime Monitor</b>\n\n" +
+			"<i>Regime alert system not configured. " +
+			"Requires daily price data.</i>"
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+			return nil
+		}
+		_, err := h.bot.SendHTML(ctx, chatID, text)
 		return err
 	}
 
@@ -37,6 +41,10 @@ func (h *Handler) cmdRegime(ctx context.Context, chatID string, _ int64, _ strin
 	divergence := h.regimeProvider.GetRegimeDivergence()
 
 	text := scheduler.FormatRegimeDashboard(states, divergence)
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+		return nil
+	}
 	_, err := h.bot.SendHTML(ctx, chatID, text)
 	return err
 }

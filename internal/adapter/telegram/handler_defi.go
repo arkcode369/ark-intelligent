@@ -13,11 +13,15 @@ func (h *Handler) registerDeFiCommands() {
 
 // cmdDeFi handles /defi — shows DeFi health dashboard with TVL, DEX volume, and stablecoin supply.
 func (h *Handler) cmdDeFi(ctx context.Context, chatID string, _ int64, _ string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "🌊 Mengambil data DeFi... ⏳")
 
 	report := defi.GetCachedOrFetch(ctx)
 
 	txt := formatDeFiReport(report)
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, int(loadingID), txt)
+		return nil
+	}
 	_, err := h.bot.SendHTML(ctx, chatID, txt)
 	return err
 }

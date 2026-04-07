@@ -9,12 +9,16 @@ import (
 // cmdOnChain handles the /onchain command — shows BTC network health (Blockchain.com)
 // and BTC + ETH exchange flow data (CoinMetrics).
 func (h *Handler) cmdOnChain(ctx context.Context, chatID string, _ int64, _ string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "₿ Mengambil data on-chain... ⏳")
 
 	report := onchain.GetCachedOrFetch(ctx)
 	btcHealth := onchain.GetBTCHealth(ctx)
 
 	txt := formatOnChainReport(report, btcHealth)
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, int(loadingID), txt)
+		return nil
+	}
 	_, err := h.bot.SendHTML(ctx, chatID, txt)
 	return err
 }

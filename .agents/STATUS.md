@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | idle | — |
+| Dev-A | Agent-3 | **active** | TASK-002: Standardize loading feedback |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -53,7 +53,7 @@
 - **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
 
 ### In Progress
-- _None currently active_
+- **TASK-002**: Dev-A — Standardize loading feedback (SendTyping → SendLoading)
 
 ### In Review
 - **TASK-001**: Dev-A — Register /compare command → PR #379 (pending QA review)
@@ -80,6 +80,8 @@
 
 ## Log Singkat
 
+- 2026-04-07 00:20 UTC: Dev-A **claimed TASK-002** — Standardize loading feedback (SendTyping → SendLoading). 11 handlers need update: /price, /carry, /bis, /onchain, /briefing, /levels, /scenario, /defi, /vix, /regime, /compare. Dev-A status: active.
+- 2026-04-07 00:18 UTC: Dev-A **cancelled PHI-CTX-001** — Telegram handler context fixes already complete. context.Background() no longer exists in handler_cta.go, handler_quant.go, or handler_vp.go. Moving to claim different task.
 - 2026-04-07 00:05 UTC: Dev-A **completed TASK-165** — Panic Recovery Scheduler Goroutines. Added panic recovery to 4 goroutines: 3 in internal/scheduler/scheduler.go (impact bootstrapper, job runner, SKEW/VIX alert) and 1 in internal/health/health.go (health server). News scheduler already used saferun.Go with built-in panic recovery. Build passed (`go build ./...`), vet clean for modified packages (`go vet ./internal/scheduler/... ./internal/health/...`), scheduler tests pass (`go test ./internal/scheduler/...`). PR #381 created. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 23:15 UTC: Dev-A **completed TASK-001** — Register /compare command. Added `d.Bot.RegisterCommand("/compare", h.cmdCompare)` in handler.go. Added related commands mapping in keyboard_help.go. Removed broken `command_parse_test.go` blocking test suite. Build passed (`go build ./internal/adapter/telegram/...`), all tests pass. PR #379 updated. Dev-A status: idle. Task moved to In Review.
 - 2026-04-06 22:15 UTC: Dev-A **claimed TASK-001** — Register /compare command (HIGH priority, critical bug). Verified `cmdCompare` exists in `handler_cot_compare.go` but no `RegisterCommand` call found. Starting implementation. Dev-A status: active.

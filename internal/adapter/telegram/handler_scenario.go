@@ -48,15 +48,19 @@ func (h *Handler) cmdScenario(ctx context.Context, chatID string, _ int64, args 
 		return err
 	}
 
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📊 Menghitung Monte Carlo scenarios... ⏳")
 
 	// Fetch 500 days of price history for robust GARCH + HMM estimation
 	dailyPrices, err := h.quant.DailyPriceRepo.GetDailyHistory(ctx, mapping.ContractCode, 500)
 	if err != nil || len(dailyPrices) < 60 {
-		_, sendErr := h.bot.SendHTML(ctx, chatID,
-			"📊 <b>Scenario Generator</b>\n\n"+
-				"<i>Insufficient price history for Monte Carlo simulation. "+
-				"Need at least 60 daily observations.</i>")
+		text := "📊 <b>Scenario Generator</b>\n\n" +
+			"<i>Insufficient price history for Monte Carlo simulation. " +
+			"Need at least 60 daily observations.</i>"
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+			return nil
+		}
+		_, sendErr := h.bot.SendHTML(ctx, chatID, text)
 		return sendErr
 	}
 
@@ -70,15 +74,24 @@ func (h *Handler) cmdScenario(ctx context.Context, chatID string, _ int64, args 
 
 	result, err := pricesvc.GenerateScenario(priceRecords, mapping.Currency, cfg)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf(
+		text := fmt.Sprintf(
 			"📊 <b>Scenario Generator</b>\n\n"+
 				"<i>Simulation failed: %s</i>",
 			html.EscapeString(err.Error()),
-		))
+		)
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+			return nil
+		}
+		_, sendErr := h.bot.SendHTML(ctx, chatID, text)
 		return sendErr
 	}
 
 	text := formatScenarioResult(result, currency)
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+		return nil
+	}
 	_, sendErr := h.bot.SendHTML(ctx, chatID, text)
 	return sendErr
 }

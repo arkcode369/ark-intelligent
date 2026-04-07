@@ -46,7 +46,7 @@ func (h *Handler) cmdPrice(ctx context.Context, chatID string, userID int64, arg
 
 // priceOverview shows a categorized snapshot of all major instruments.
 func (h *Handler) priceOverview(ctx context.Context, chatID string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "💹 Mengambil data harga... ⏳")
 
 	builder := pricesvc.NewDailyContextBuilder(h.dailyPriceRepo)
 
@@ -92,7 +92,12 @@ func (h *Handler) priceOverview(ctx context.Context, chatID string) error {
 	}
 
 	if len(blocks) == 0 {
-		_, err := h.bot.SendHTML(ctx, chatID, "No daily price data available yet. Data is fetched every 6 hours.")
+		text := "No daily price data available yet. Data is fetched every 6 hours."
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+			return nil
+		}
+		_, err := h.bot.SendHTML(ctx, chatID, text)
 		return err
 	}
 
@@ -101,6 +106,10 @@ func (h *Handler) priceOverview(ctx context.Context, chatID string) error {
 		"\n\n<i>Tap below for detailed view</i>"
 
 	kb := h.kb.PriceMenu()
+	if loadingID > 0 {
+		err := h.bot.EditWithKeyboard(ctx, chatID, int(loadingID), msg, kb)
+		return err
+	}
 	_, err := h.bot.SendWithKeyboard(ctx, chatID, msg, kb)
 	return err
 }

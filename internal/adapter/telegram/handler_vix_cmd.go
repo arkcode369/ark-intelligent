@@ -15,7 +15,7 @@ import (
 //
 // Cache TTL: 12 hours (EOD data from CBOE).
 func (h *Handler) cmdVix(ctx context.Context, chatID string, _ int64, _ string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📊 Mengambil data VIX... ⏳")
 
 	fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
@@ -23,6 +23,10 @@ func (h *Handler) cmdVix(ctx context.Context, chatID string, _ int64, _ string) 
 	ts, err := vixsvc.FetchTermStructure(fetchCtx)
 	text := formatVIXDashboard(ts, err)
 
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+		return nil
+	}
 	_, sendErr := h.bot.SendHTML(ctx, chatID, text)
 	return sendErr
 }

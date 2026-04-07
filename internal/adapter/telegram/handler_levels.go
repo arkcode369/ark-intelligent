@@ -37,7 +37,7 @@ func (h *Handler) cmdLevels(ctx context.Context, chatID string, userID int64, ar
 
 // levelsOverview shows key support/resistance summary for major instruments.
 func (h *Handler) levelsOverview(ctx context.Context, chatID string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📏 Menghitung key levels... ⏳")
 
 	builder := pricesvc.NewLevelsBuilder(h.dailyPriceRepo)
 
@@ -70,7 +70,12 @@ func (h *Handler) levelsOverview(ctx context.Context, chatID string) error {
 	}
 
 	if len(lines) == 0 {
-		_, err := h.bot.SendHTML(ctx, chatID, "No daily price data available yet for level computation.")
+		text := "No daily price data available yet for level computation."
+		if loadingID > 0 {
+			_ = h.bot.EditMessage(ctx, chatID, int(loadingID), text)
+			return nil
+		}
+		_, err := h.bot.SendHTML(ctx, chatID, text)
 		return err
 	}
 
@@ -78,6 +83,10 @@ func (h *Handler) levelsOverview(ctx context.Context, chatID string) error {
 		strings.Join(lines, "\n") +
 		"\n\n<i>Use</i> <code>/levels EUR</code> <i>for detailed S/R + sizing</i>"
 
+	if loadingID > 0 {
+		_ = h.bot.EditMessage(ctx, chatID, int(loadingID), msg)
+		return nil
+	}
 	_, err := h.bot.SendHTML(ctx, chatID, msg)
 	return err
 }

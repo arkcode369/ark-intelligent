@@ -22,17 +22,24 @@ import (
 // Aggregates today's High/Medium calendar events, top 3 COT conviction scores,
 // and a currency bias one-liner into a compact ≤15-line summary.
 func (h *Handler) cmdBriefing(ctx context.Context, chatID string, userID int64, args string) error {
-	h.bot.SendTyping(ctx, chatID)
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, "📋 Menyusun daily briefing... ⏳")
 
 	now := timeutil.NowWIB()
 	data, err := h.buildBriefingData(ctx, now)
 	if err != nil {
+		if loadingID > 0 {
+			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
+		}
 		h.sendUserError(ctx, chatID, err, "briefing")
 		return nil
 	}
 
 	html := h.fmt.FormatBriefing(data)
 	kb := h.kb.BriefingMenu()
+	if loadingID > 0 {
+		sendErr := h.bot.EditWithKeyboard(ctx, chatID, int(loadingID), html, kb)
+		return sendErr
+	}
 	_, sendErr := h.bot.SendWithKeyboard(ctx, chatID, html, kb)
 	return sendErr
 }
