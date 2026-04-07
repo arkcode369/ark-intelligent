@@ -243,7 +243,10 @@ func scrapeIndicator(ctx context.Context, apiKey, country, indicator string) (*t
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		Timeout: teFetchTimeout,
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tradingeconomics: http: %w", err)
 	}

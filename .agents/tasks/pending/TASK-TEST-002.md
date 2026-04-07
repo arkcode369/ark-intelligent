@@ -1,57 +1,83 @@
 # TASK-TEST-002: Unit Tests for handler_alpha.go Signal Generation
 
-**Priority:** High  
-**Estimated Effort:** 4-6 hours  
+**Task ID:** TASK-TEST-002  
 **Type:** Test Coverage  
-**Scope:** `internal/adapter/telegram/handler_alpha.go`
+**Priority:** High  
+**Effort Estimate:** 4-6 hours  
+**Created:** 2026-04-07  
+**Author:** Dev-A (ARK Intelligent)
 
 ---
 
-## Overview
+## Objective
 
-Implement comprehensive unit tests for the alpha handler signal generation logic. The handler_alpha.go file contains the Alpha Engine dashboard commands (/alpha, /xfactors, /playbook, /heat, /rankx, /transition, /cryptoalpha) with complex signal generation, caching, and callback navigation.
+Create comprehensive unit tests for `internal/adapter/telegram/handler_alpha.go` signal generation functions — testing the alpha ranking, factor computation, and signal classification logic.
+
+---
+
+## Background
+
+The handler_alpha.go file (1,276 lines) handles new factor/strategy/microstructure commands:
+- `/alpha` — unified dashboard with inline keyboard navigation
+- `/xfactors` — cross-sectional factor ranking
+- `/playbook` — strategy playbook (top long/short + macro context)
+- `/heat` — portfolio exposure heat
+- `/rankx` — compact rank leaderboard
+- `/transition` — regime transition warning
+- `/cryptoalpha` — Bybit microstructure confirmation for top crypto signals
+
+**Current State:** 1,276 lines, **0 unit tests** for the signal generation logic.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Tests for `alphaStateCache` (get, set, TTL expiration, cleanup)
-- [ ] Tests for `computeAlphaState` (factor ranking, strategy playbook, crypto microstructure)
-- [ ] Tests for `formatAlphaSummary` (regime detection, recommendations, warnings)
-- [ ] Tests for `buildReasonIndonesian` (reason string generation)
-- [ ] Tests for helper functions: `alphaConvEmoji`, `alphaHeatEmoji`, `alphaErr`
-- [ ] Mock implementations for AlphaServices dependencies
-- [ ] Test coverage target: >80% for signal generation logic
-- [ ] All tests pass: `go test ./internal/adapter/telegram/...`
+### Coverage Targets
+- [ ] Minimum 60% code coverage for pure functions (aim for 70%+)
+- [ ] All signal generation functions have test cases
+- [ ] Alpha ranking computation logic fully tested
+- [ ] Error handling paths tested
+
+### Specific Test Cases Required
+
+#### 1. Alpha State Cache
+- [ ] Test `alphaStateCache.get()` returns nil for missing chatID
+- [ ] Test `alphaStateCache.get()` returns nil for expired TTL
+- [ ] Test `alphaStateCache.get()` returns valid state within TTL
+- [ ] Test `alphaStateCache.set()` stores state correctly
+- [ ] Test `alphaStateCache.set()` opportunistic cleanup after 50 entries
+
+#### 2. Signal Classification
+- [ ] Test `classifySignal()` for bullish spec (cotIndex=80, isCommercial=false)
+- [ ] Test `classifySignal()` for bearish spec (cotIndex=20, isCommercial=false)
+- [ ] Test `classifySignal()` for neutral spec (cotIndex=50)
+- [ ] Test `classifySignal()` for commercial inverse logic
+
+#### 3. Factor Ranking Integration
+- [ ] Test alpha state computation with valid ranking result
+- [ ] Test alpha state computation with nil ranking (graceful handling)
+- [ ] Test factor score aggregation
+- [ ] Test currency filtering in ranking
+
+#### 4. Crypto Alpha Signal
+- [ ] Test microstructure signal parsing
+- [ ] Test crypto signal confidence scoring
+- [ ] Test signal validation (sufficient data points)
+
+#### 5. Playbook Generation
+- [ ] Test playbook result generation with valid data
+- [ ] Test playbook with empty/unavailable data
+- [ ] Test top long/short selection logic
+
+#### 6. Edge Cases
+- [ ] Test with empty asset profile list
+- [ ] Test with missing services (graceful degradation)
+- [ ] Test concurrent access to alpha state cache
+- [ ] Test division by zero guards in calculations
 
 ---
 
-## Technical Details
-
-### Key Components to Test
-
-1. **alphaStateCache** (lines 69-104)
-   - Thread-safe get/set operations
-   - TTL expiration (AlphaStateTTL from config)
-   - Opportunistic cleanup when store > 50 entries
-
-2. **computeAlphaState** (lines 136-180)
-   - AssetProfileBuilder.BuildProfiles() integration
-   - FactorEngine.Rank() result processing
-   - StrategyEngine.Generate() playbook creation
-   - MicroEngine.AnalyzeMultiple() crypto signals
-   - Error handling when engines not configured
-
-3. **formatAlphaSummary** (lines 351-472)
-   - Regime and stability assessment
-   - Top recommendations extraction (TopLong/TopShort)
-   - Warnings generation (heat, transition, crypto)
-   - HTML escaping and formatting
-
-4. **Callback handlers** (lines 212-344)
-   - handleAlphaCallback routing
-   - State recompute on expiration
-   - Action handling: back, refresh, factors, playbook, heat, rankx, transition, crypto
+## Technical Notes
 
 ### Dependencies to Mock
 
@@ -64,31 +90,98 @@ type AlphaServices struct {
 }
 ```
 
-### Test File Location
+### Key Challenges
+1. Testing time-based TTL expiration
+2. Mocking external service dependencies (factors.Engine, strategy.Engine)
+3. Testing concurrent access to shared state (alphaStateCache)
+4. Testing private/unexported functions
 
-`internal/adapter/telegram/handler_alpha_test.go`
+### Critical Code Patterns to Test
+
+```go
+// From handler_alpha.go - these patterns need coverage:
+
+// Alpha state TTL and cache access (lines 81-89)
+func (c *alphaStateCache) get(chatID string) *alphaState {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    s, ok := c.store[chatID]
+    if !ok || time.Since(s.computedAt) > alphaStateTTL {
+        return nil
+    }
+    return s
+}
+
+// Opportunistic cleanup (lines 95-101)
+if len(c.store) > 50 {
+    // cleanup logic
+}
+
+// Signal classification logic
+func classifySignal(cotIndex, momentum float64, isCommercial bool) SignalType
+```
+
+### Suggested Test Structure
+
+```go
+func TestAlphaStateCache_GetMissing(t *testing.T) { }
+func TestAlphaStateCache_GetExpired(t *testing.T) { }
+func TestAlphaStateCache_SetAndGet(t *testing.T) { }
+func TestAlphaStateCache_Cleanup(t *testing.T) { }
+func TestClassifySignal_BullishSpec(t *testing.T) { }
+func TestClassifySignal_BearishSpec(t *testing.T) { }
+func TestClassifySignal_CommercialInverse(t *testing.T) { }
+func TestAlphaState_ComputeRanking(t *testing.T) { }
+func TestCryptoAlpha_SignalValidation(t *testing.T) { }
+```
 
 ---
 
-## Implementation Notes
+## Implementation Guidelines
 
-1. Use testify/mock for dependency mocking
-2. Create test fixtures for AssetProfile, RankingResult, PlaybookResult
-3. Test both success paths and error conditions
-4. Verify thread safety for cache operations
-5. Test TTL expiration with time.Now() patching or manual time manipulation
-
----
-
-## Related
-
-- handler_alpha.go (1276 lines of signal generation logic)
-- factors.Engine (ranking algorithm)
-- strategy.Engine (playbook generation)
-- microstructure.Engine (crypto analysis)
+1. **Create** `internal/adapter/telegram/handler_alpha_test.go`
+2. **Use** `testify/mock` or manual mocks for dependency interfaces
+3. **Use** `testify/assert` for assertions
+4. **Follow** existing test patterns from `pkg/retry/retry_test.go`
+5. **Ensure** tests run quickly (< 5s total)
+6. **Avoid** actual network calls or external dependencies
+7. **Use** `t.Parallel()` where safe
+8. **Test** both success and error paths
 
 ---
 
-## Created
+## Definition of Done
 
-2026-04-06 by Dev-A ARK Intelligent
+- [ ] Test file created with comprehensive coverage
+- [ ] All tests passing (`go test ./internal/adapter/telegram/... -run TestAlpha`)
+- [ ] Coverage report shows 60%+ for tested functions
+- [ ] No race conditions detected (`go test -race`)
+- [ ] Code review approved
+- [ ] Merged to main branch
+
+---
+
+## Related Files
+
+- `internal/adapter/telegram/handler_alpha.go` (1,276 lines) — primary target
+- `internal/service/factors/` — for factor engine mocks
+- `internal/service/strategy/` — for strategy engine mocks
+- `internal/service/microstructure/` — for microstructure mocks
+
+---
+
+## Context
+
+This file is critical for the bot's alpha ranking and signal generation features. It:
+- Computes cross-sectional factor rankings
+- Generates strategy playbooks
+- Provides microstructure confirmation for crypto signals
+- Caches computation results with TTL for performance
+
+**Related Issues:**
+- Shares cache concurrency patterns with other handlers
+- Uses AlphaServices dependency injection pattern
+
+---
+
+*Task created by Dev-A — ARK Intelligent*
