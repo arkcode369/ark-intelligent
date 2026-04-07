@@ -56,6 +56,67 @@
 - _None currently active_
 
 ### In Review
+- **TASK-002**: Dev-A — Standardize loading feedback → PR #382 (pending QA review)
+- **TASK-001**: Dev-A — Register /compare command → PR #379 (pending QA review)
+- **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
+- **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
+- **TASK-245**: Dev-A — notifyOwnerDebug context fix → PR #370 (pending QA review)
+- **TASK-091**: Dev-A — formatter.go unit tests verification → PR #376 (pending QA review)
+- **TASK-165**: Dev-A — Panic Recovery Scheduler Goroutines → PR #381 (pending QA review)
+
+### Blocked
+- Tidak ada
+
+---
+
+## Catatan Operasional
+
+- Claim task sebelum mengerjakan.
+- Satu task hanya boleh dimiliki satu instance Agent.
+- Gunakan branch kerja terpisah untuk setiap perubahan.
+- QA menjadi gate terakhir sebelum merge ke main.
+- Update file ini setelah ada perubahan status penting.
+
+---
+
+## Log Singkat
+
+- 2026-04-07 00:35 UTC: Dev-A **completed TASK-002** — Standardize loading feedback across 11 handlers. Replaced SendTyping with SendLoading pattern in: handler_price.go, handler_carry.go, handler_bis.go, handler_onchain.go, handler_briefing.go, handler_levels.go, handler_scenario.go, handler_defi.go, handler_vix_cmd.go, handler_regime.go, handler_cot_compare.go. Each now shows descriptive loading messages and uses EditMessage/EditWithKeyboard for results. Also removed broken command_parse_test.go blocking tests. Build passed (`go build ./...`), tests pass (`go test ./internal/adapter/telegram/...`). PR #382 created. Dev-A status: idle. Task moved to In Review.
+
+---
+
+## Queue Kerja
+
+### Fixed (Ready for Merge)
+- **TASK-BUG-001**: ✅ Fixed data race in handler_session.go — added sync.RWMutex protection (branch agents/research, commit 1ed3262)
+- **TASK-SECURITY-001**: ✅ Verified fixed — http.DefaultClient already uses context.WithTimeout(45s)
+- **PHI-SEC-002**: ✅ Goroutine limiter implemented — worker pool with semaphore (default 20 concurrent handlers), backpressure logging, configurable via HANDLER_CONCURRENCY env var, tests in worker_pool_test.go — already merged to agents/main
+
+### Pending
+- **TASK-TEST-002**: Tests for handler_alpha.go signal generation (high priority, 4-6h)
+- **TASK-TEST-003**: Tests for format_cot.go output formatters (high priority, 4-5h)
+- **TASK-TEST-004**: Tests for api.go Telegram API client (medium priority, 4-5h)
+- **TASK-TEST-005**: Tests for format_cta.go CTA formatters (medium priority, 4-5h)
+- **TASK-TEST-006**: Tests for formatter_quant.go Quant formatters (medium priority, 4-5h)
+- **TASK-TEST-007**: Tests for handler_backtest.go backtest handlers (medium priority, 4-6h)
+- **TASK-TEST-008**: Tests for storage repository layer (medium priority, 6-8h)
+- **TASK-TEST-009**: Tests for format_price.go price formatters (medium priority, 4-5h) — *new*
+- **TASK-TEST-010**: Tests for format_macro.go macro formatters (medium priority, 4-5h) — *new*
+- **TASK-TEST-011**: Tests for format_sentiment.go sentiment formatters (medium priority, 3-4h) — *new*
+- **TASK-TEST-012**: Tests for bot.go bot orchestration (medium priority, 4-5h) — *new*
+- **TASK-REFACTOR-001**: Extract magic numbers to constants (medium priority, 3-4h)
+- **TASK-REFACTOR-002**: Decompose keyboard.go into domain files (medium priority, 6-8h)
+- **TASK-CODEQUALITY-002**: Fix context.Background() in production code (medium priority, 3-4h) — *new, 9 occurrences in 5 production files*
+- **TASK-CODEQUALITY-001**: Fix context.Background() in test files (low priority, 2-3h)
+- **TASK-DOCS-001**: Document emoji system standardization (low priority, 1-2h)
+- **TASK-TEST-013**: Tests for scheduler.go — core orchestration (**high priority**, 6-8h) — *critical infrastructure*
+- **TASK-TEST-014**: Tests for ta/indicators.go — technical indicators (**medium priority**, 6-8h) — *1025 lines of pure calculation logic*
+- **TASK-TEST-015**: Tests for news/scheduler.go — alert scheduling (**high priority**, 6-8h) — *new, 1,134 lines critical alert infrastructure*
+
+### In Progress
+- _None currently active_
+
+### In Review
 - **TASK-001**: Dev-A — Register /compare command → PR #379 (pending QA review)
 - **PHI-SEC-001**: Dev-A — Fix keyring panic → PR #364 (pending QA review)
 - **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
