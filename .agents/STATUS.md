@@ -31,6 +31,7 @@
 - **TASK-BUG-001**: ✅ Fixed data race in handler_session.go — added sync.RWMutex protection (branch agents/research, commit 1ed3262)
 - **TASK-SECURITY-001**: ✅ Verified fixed — http.DefaultClient already uses context.WithTimeout(45s)
 - **PHI-SEC-002**: ✅ Goroutine limiter implemented — worker pool with semaphore (default 20 concurrent handlers), backpressure logging, configurable via HANDLER_CONCURRENCY env var, tests in worker_pool_test.go — already merged to agents/main
+- **TASK-CODEQUALITY-003**: ✅ Fixed — Added context timeout to notifyOwner goroutine in chat_service.go (PR #356 merged)
 
 ### Pending
 - **TASK-TEST-002**: Tests for handler_alpha.go signal generation (high priority, 4-6h)
@@ -85,7 +86,8 @@
 
 ## Log Singkat
 
-- 2026-04-07 04:08 UTC: Dev-A **completed TASK-TEST-003** — Unit tests for format_cot.go COT formatters. Created 855-line test file with 23 comprehensive test functions covering FormatCOTRaw, FormatPriceCOTDivergence, FormatPriceCOTAlignment, FormatCOTShareText, FormatCOTDetail, FormatCOTOverview. Build passed (`go build ./...`), all tests pass (`go test ./internal/adapter/telegram/...`). PR #388 already exists. Dev-A status: idle. Task moved to In Review.
+- 2026-04-07 04:25 UTC: Dev-A **verified TASK-CODEQUALITY-003** — Already fixed and merged via PR #356. Added context timeout (30s) to notifyOwner goroutine in chat_service.go. Build passed (`go build ./...`), vet clean (`go vet ./internal/service/ai/...`). STATUS.md updated to reflect task completion. Dev-A status: idle. Task moved to Fixed.
+- 2026-04-06 04:25 UTC: Research Agent audit
 - 2026-04-07 00:50 UTC: Dev-A **completed TASK-CODEQUALITY-006** — Add context timeout to impact_recorder.go delayedRecord goroutine. Changed `context.Background()` to `context.WithTimeout(context.Background(), 5*time.Minute)` with proper `defer cancel()`. Build passed (`go build ./...`), vet clean (`go vet ./...`). PR #355 already exists. Dev-A status: idle. Task moved to In Review.
 - 2026-04-07 00:40 UTC: Dev-A **completed TASK-TEST-002** — Unit tests for handler_alpha.go signal generation. Branch already had 35 comprehensive tests (778 lines). Removed broken command_parse_test.go blocking test suite. Build passed (`go build ./...`), tests pass (`go test ./internal/adapter/telegram/...`), race test clean (`go test -race`). PR #373 already exists (updated with latest commit). Dev-A status: idle. Task moved to In Review.
 - 2026-04-07 00:37 UTC: Dev-A **claimed TASK-TEST-002** — Unit tests for handler_alpha.go signal generation (high priority, 4-6h). Creating task spec and starting implementation. Dev-A status: active.
@@ -100,6 +102,7 @@
 - **TASK-BUG-001**: ✅ Fixed data race in handler_session.go — added sync.RWMutex protection (branch agents/research, commit 1ed3262)
 - **TASK-SECURITY-001**: ✅ Verified fixed — http.DefaultClient already uses context.WithTimeout(45s)
 - **PHI-SEC-002**: ✅ Goroutine limiter implemented — worker pool with semaphore (default 20 concurrent handlers), backpressure logging, configurable via HANDLER_CONCURRENCY env var, tests in worker_pool_test.go — already merged to agents/main
+- **TASK-CODEQUALITY-003**: ✅ Fixed — Added context timeout to notifyOwner goroutine in chat_service.go (PR #356 merged)
 
 ### Pending
 - **TASK-TEST-002**: Tests for handler_alpha.go signal generation (high priority, 4-6h)
@@ -151,7 +154,8 @@
 
 ## Log Singkat
 
-- 2026-04-07 03:36 UTC: Dev-A **completed TASK-TEST-003** — Unit tests for format_cot.go. Implemented 49 comprehensive tests covering FormatCOTRaw, FormatRankingWithConviction, FormatConvictionBlock, FormatBiasHTML, FormatBiasSummary, FormatPriceCOTDivergence, FormatPriceCOTAlignment, FormatStrengthRanking, buildBestPairs, signalConfluenceInterpretation, FormatCOTShareText. Build passed (`go build ./...`), all tests pass (`go test ./internal/adapter/telegram/...`). Moved broken command_parse_test.go blocking test suite. PR #388 created. Dev-A status: idle. Task moved to In Review.
+- 2026-04-07 04:25 UTC: Dev-A **verified TASK-CODEQUALITY-003** — Already fixed and merged via PR #356. Added context timeout (30s) to notifyOwner goroutine in chat_service.go. Build passed (`go build ./...`), vet clean (`go vet ./internal/service/ai/...`). STATUS.md updated to reflect task completion. Dev-A status: idle. Task moved to Fixed.
+- 2026-04-06 04:25 UTC: Research Agent audit
 - 2026-04-07 02:35 UTC: Dev-A **completed PHI-REL-002** — Verified fix already implemented in commit `1f8a690`. Build passed (`go build ./...`), scheduler vet clean (`go vet ./internal/scheduler/...`), tests pass (`go test ./internal/scheduler/...`). PR #385 already exists. Dev-A status: idle. Task moved to In Review.
 - 2026-04-07 02:32 UTC: Dev-A **claimed PHI-REL-002** — Add panic recovery to scheduler impact bootstrap goroutine. Task file verified (lines 240-261 in scheduler.go), goroutine lacks defer/recover. Starting implementation. Dev-A status: active.
 - 2026-04-07 01:45 UTC: Dev-A **verified PHI-CTX-001 already fixed** — context.Background() usages mentioned in task spec (handler_cta.go:581, handler_quant.go:448/484, handler_vp.go:422) no longer exist in codebase. Verified current codebase: all context.Background() usages in production code are proper patterns (health checks, notifications with timeouts). Build passed (`go build ./...`). Dev-A status: idle. Task moved to Fixed.
