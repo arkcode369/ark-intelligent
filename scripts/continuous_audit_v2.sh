@@ -4,6 +4,10 @@
 
 set -e
 
+# Setup Go environment
+export PATH=$PATH:/home/node/go/bin
+export GOPATH=/home/node/.go
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$PROJECT_DIR/.agents/audit/audit-daemon.log"
@@ -93,11 +97,12 @@ EOF
             fi
             
             # Security check
-            SECRETS=$(grep -r "ghp_\|sk-[A-Za-z0-9]" --include="*.go" . 2>/dev/null | grep -v test | wc -l || echo "0")
+            SECRETS=$(grep -r "ghp_\|sk-[A-Za-z0-9]" --include="*.go" . 2>/dev/null | grep -v test | grep -v ".git" | wc -l || echo "0")
             if [ "$SECRETS" -eq 0 ]; then
                 echo "- ✅ No hardcoded secrets" >> "$report_file"
             else
-                echo "- ❌ $SECRETS hardcoded secrets found" >> "$report_file"
+                echo "- ❌ $SECRETS hardcoded secrets found in .go files" >> "$report_file"
+                echo "  (Check: grep -r 'ghp_\|sk-' --include='*.go' . | grep -v test)" >> "$report_file"
                 pass=false
             fi
             ;;
