@@ -17,7 +17,7 @@
 |---|---|---|---|
 | Coordinator | Agent-1 | idle | triage, assignment, review |
 | Research | Agent-2 | **audit complete** | task spec, discovery |
-| Dev-A | Agent-3 | idle | — |
+| Dev-A | Agent-3 | **active** | TASK-TEST-002: handler_alpha.go unit tests |
 | Dev-B | Agent-4 | idle | implementasi |
 | Dev-C | Agent-5 | idle | implementasi, migration |
 | QA | Agent-6 | idle | review, test, merge |
@@ -81,6 +81,7 @@
 
 ## Log Singkat
 
+- 2026-04-07 00:37 UTC: Dev-A **claimed TASK-TEST-002** — Unit tests for handler_alpha.go signal generation (high priority, 4-6h). Creating task spec and starting implementation. Dev-A status: active.
 - 2026-04-07 00:35 UTC: Dev-A **completed TASK-002** — Standardize loading feedback across 11 handlers. Replaced SendTyping with SendLoading pattern in: handler_price.go, handler_carry.go, handler_bis.go, handler_onchain.go, handler_briefing.go, handler_levels.go, handler_scenario.go, handler_defi.go, handler_vix_cmd.go, handler_regime.go, handler_cot_compare.go. Each now shows descriptive loading messages and uses EditMessage/EditWithKeyboard for results. Also removed broken command_parse_test.go blocking tests. Build passed (`go build ./...`), tests pass (`go test ./internal/adapter/telegram/...`). PR #382 created. Dev-A status: idle. Task moved to In Review.
 
 ---
