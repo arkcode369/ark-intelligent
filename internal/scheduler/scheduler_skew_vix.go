@@ -52,8 +52,8 @@ func (s *Scheduler) checkSKEWVIXAlert(parentCtx context.Context) {
 				Severity: "LOW",
 				Value:    vs.SKEWVIXRatio,
 			}
-			msg := fred.FormatMacroAlert(allClear)
-			s.broadcastToActiveUsers(context.Background(), msg)
+		msg := fred.FormatMacroAlert(allClear)
+		s.broadcastToActiveUsers(parentCtx, msg)
 		}
 		return
 	}
@@ -71,7 +71,7 @@ func (s *Scheduler) checkSKEWVIXAlert(parentCtx context.Context) {
 		Value:       vs.SKEWVIXRatio,
 	}
 	msg := fred.FormatMacroAlert(skewAlert)
-	s.broadcastToActiveUsers(context.Background(), msg)
+	s.broadcastToActiveUsers(parentCtx, msg)
 	log.Info().
 		Str("tail_risk", vs.TailRisk).
 		Float64("skew_vix_ratio", vs.SKEWVIXRatio).
