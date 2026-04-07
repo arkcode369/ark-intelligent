@@ -24,6 +24,12 @@
 
 ---
 
+## Log Singkat (Latest)
+
+- 2026-04-07 12:10 UTC: Dev-A **completed TASK-120** — OBV bounds guard fix. Simplified redundant condition in CalcOBV trend detection. Build passed, vet clean, tests pass. PR #394 created.
+
+---
+
 ## Queue Kerja
 
 ### Fixed (Ready for Merge)
@@ -148,8 +154,9 @@
 |||- **TASK-TEST-002**: Dev-A — Unit tests for handler_alpha.go → PR #373 (pending QA review)
 |||- **TASK-TEST-015**: Dev-A — Unit tests for news/scheduler.go → PR #363 (pending QA review)
 - **TASK-091**: Dev-A — formatter.go unit tests verification → PR #376 (pending QA review)
-- **TASK-165**: Dev-A — Panic Recovery Scheduler Goroutines → PR #381 (pending QA review)
-
+|- **TASK-165**: Dev-A — Panic Recovery Scheduler Goroutines → PR #381 (pending QA review)
+|||- **TASK-120**: Dev-A — OBV bounds guard fix → PR #394 (pending QA review)
+|||
 ### Blocked
 - Tidak ada
 
