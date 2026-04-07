@@ -46,7 +46,7 @@
 - **TASK-TEST-012**: Tests for bot.go bot orchestration (medium priority, 4-5h) — *new*
 - **TASK-REFACTOR-001**: Extract magic numbers to constants (medium priority, 3-4h)
 - **TASK-REFACTOR-002**: Decompose keyboard.go into domain files (medium priority, 6-8h)
-- **TASK-CODEQUALITY-002**: Fix context.Background() in production code (medium priority, 3-4h) — *new, 9 occurrences in 5 production files*
+- **TASK-CODEQUALITY-002**: ✅ Fixed — Replaced context.Background() with parentCtx in scheduler_skew_vix.go and chat_service.go
 - **TASK-CODEQUALITY-001**: Fix context.Background() in test files (low priority, 2-3h)
 - **TASK-DOCS-001**: Document emoji system standardization (low priority, 1-2h)
 - **TASK-TEST-013**: Tests for scheduler.go — core orchestration (**high priority**, 6-8h) — *critical infrastructure*
@@ -115,7 +115,7 @@
 - **TASK-TEST-012**: Tests for bot.go bot orchestration (medium priority, 4-5h) — *new*
 - **TASK-REFACTOR-001**: Extract magic numbers to constants (medium priority, 3-4h)
 - **TASK-REFACTOR-002**: Decompose keyboard.go into domain files (medium priority, 6-8h)
-- **TASK-CODEQUALITY-002**: Fix context.Background() in production code (medium priority, 3-4h) — *new, 9 occurrences in 5 production files*
+- **TASK-CODEQUALITY-002**: ✅ Fixed — Replaced context.Background() with parentCtx in scheduler_skew_vix.go and chat_service.go
 - **TASK-CODEQUALITY-001**: Fix context.Background() in test files (low priority, 2-3h)
 - **TASK-DOCS-001**: Document emoji system standardization (low priority, 1-2h)
 - **TASK-TEST-013**: Tests for scheduler.go — core orchestration (**high priority**, 6-8h) — *critical infrastructure*
