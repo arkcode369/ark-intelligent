@@ -85,6 +85,7 @@
 
 ## Log Singkat
 
+- 2026-04-07 04:08 UTC: Dev-A **completed TASK-TEST-003** — Unit tests for format_cot.go COT formatters. Created 855-line test file with 23 comprehensive test functions covering FormatCOTRaw, FormatPriceCOTDivergence, FormatPriceCOTAlignment, FormatCOTShareText, FormatCOTDetail, FormatCOTOverview. Build passed (`go build ./...`), all tests pass (`go test ./internal/adapter/telegram/...`). PR #388 already exists. Dev-A status: idle. Task moved to In Review.
 - 2026-04-07 00:50 UTC: Dev-A **completed TASK-CODEQUALITY-006** — Add context timeout to impact_recorder.go delayedRecord goroutine. Changed `context.Background()` to `context.WithTimeout(context.Background(), 5*time.Minute)` with proper `defer cancel()`. Build passed (`go build ./...`), vet clean (`go vet ./...`). PR #355 already exists. Dev-A status: idle. Task moved to In Review.
 - 2026-04-07 00:40 UTC: Dev-A **completed TASK-TEST-002** — Unit tests for handler_alpha.go signal generation. Branch already had 35 comprehensive tests (778 lines). Removed broken command_parse_test.go blocking test suite. Build passed (`go build ./...`), tests pass (`go test ./internal/adapter/telegram/...`), race test clean (`go test -race`). PR #373 already exists (updated with latest commit). Dev-A status: idle. Task moved to In Review.
 - 2026-04-07 00:37 UTC: Dev-A **claimed TASK-TEST-002** — Unit tests for handler_alpha.go signal generation (high priority, 4-6h). Creating task spec and starting implementation. Dev-A status: active.
