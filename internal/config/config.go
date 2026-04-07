@@ -90,13 +90,23 @@ type Config struct {
 	EnableFactorEngine        bool // Enable cross-sectional factor ranking engine (default: true)
 }
 
-// MustLoad loads configuration from environment variables.
-// Panics if required variables are missing.
-func MustLoad() *Config {
+// Load loads configuration from environment variables.
+// Returns an error if required variables are missing or validation fails.
+func Load() (*Config, error) {
+	// Required vars - collect all errors
+	botToken, err := getRequiredEnv("BOT_TOKEN")
+	if err != nil {
+		return nil, err
+	}
+	chatID, err := getRequiredEnv("CHAT_ID")
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
-		// Required (will panic if empty)
-		BotToken: mustGetEnv("BOT_TOKEN"),
-		ChatID:   mustGetEnv("CHAT_ID"),
+		// Required
+		BotToken: botToken,
+		ChatID:   chatID,
 
 		// AI (optional)
 		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
@@ -189,7 +199,17 @@ func MustLoad() *Config {
 	cfg.EnableFactorEngine = getBool("ENABLE_FACTOR_ENGINE", true)
 
 	if err := cfg.validate(); err != nil {
-		log.Fatal().Err(err).Msg("configuration validation failed")
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// MustLoad loads configuration from environment variables.
+// Panics if required variables are missing (backward compatibility).
+func MustLoad() *Config {
+	cfg, err := Load()
+	if err != nil {
+		log.Fatal().Err(err).Msg("configuration loading failed")
 	}
 	return cfg
 }
@@ -391,9 +411,20 @@ func (c *Config) logFeatureAvailability() {
 // Env Helpers
 // ---------------------------------------------------------------------------
 
-func mustGetEnv(key string) string {
+// getRequiredEnv returns an error if the environment variable is not set.
+func getRequiredEnv(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {
+		return "", fmt.Errorf("required environment variable %s is not set", key)
+	}
+	return v, nil
+}
+
+// mustGetEnv loads a required env var and calls log.Fatal if not set.
+// Deprecated: Use getRequiredEnv() with proper error handling instead.
+func mustGetEnv(key string) string {
+	v, err := getRequiredEnv(key)
+	if err != nil {
 		log.Fatal().Str("key", key).Msg("Required env var is not set")
 	}
 	return v

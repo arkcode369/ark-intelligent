@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	tgbot "github.com/arkcode369/ark-intelligent/internal/adapter/telegram"
 	"github.com/arkcode369/ark-intelligent/internal/adapter/storage"
+	tgbot "github.com/arkcode369/ark-intelligent/internal/adapter/telegram"
 	"github.com/arkcode369/ark-intelligent/internal/config"
 	"github.com/arkcode369/ark-intelligent/internal/domain"
 	"github.com/arkcode369/ark-intelligent/internal/health"
@@ -27,16 +27,16 @@ import (
 	aisvc "github.com/arkcode369/ark-intelligent/internal/service/ai"
 	backtestsvc "github.com/arkcode369/ark-intelligent/internal/service/backtest"
 	cotsvc "github.com/arkcode369/ark-intelligent/internal/service/cot"
+	elliottsvc "github.com/arkcode369/ark-intelligent/internal/service/elliott"
 	factorsvc "github.com/arkcode369/ark-intelligent/internal/service/factors"
+	gexsvc "github.com/arkcode369/ark-intelligent/internal/service/gex"
+	ictsvc "github.com/arkcode369/ark-intelligent/internal/service/ict"
 	bybitpkg "github.com/arkcode369/ark-intelligent/internal/service/marketdata/bybit"
 	microsvc "github.com/arkcode369/ark-intelligent/internal/service/microstructure"
 	newssvc "github.com/arkcode369/ark-intelligent/internal/service/news"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	strategysvc "github.com/arkcode369/ark-intelligent/internal/service/strategy"
 	ta "github.com/arkcode369/ark-intelligent/internal/service/ta"
-	ictsvc "github.com/arkcode369/ark-intelligent/internal/service/ict"
-	gexsvc "github.com/arkcode369/ark-intelligent/internal/service/gex"
-	elliottsvc "github.com/arkcode369/ark-intelligent/internal/service/elliott"
 	wyckoffsvc "github.com/arkcode369/ark-intelligent/internal/service/wyckoff"
 	"github.com/arkcode369/ark-intelligent/pkg/logger"
 )
@@ -58,7 +58,20 @@ func main() {
 	// -----------------------------------------------------------------------
 	// 1. Configuration
 	// -----------------------------------------------------------------------
-	cfg := config.MustLoad()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\n❌ Configuration Error\n\n")
+		fmt.Fprintf(os.Stderr, "   %s\n\n", err)
+		fmt.Fprintf(os.Stderr, "Required environment variables:\n")
+		fmt.Fprintf(os.Stderr, "   BOT_TOKEN    - Telegram bot token (get from @BotFather)\n")
+		fmt.Fprintf(os.Stderr, "   CHAT_ID      - Default Telegram chat ID\n")
+		fmt.Fprintf(os.Stderr, "\nOptional environment variables:\n")
+		fmt.Fprintf(os.Stderr, "   GEMINI_API_KEY     - Google Gemini API key for AI features\n")
+		fmt.Fprintf(os.Stderr, "   DATA_DIR           - BadgerDB data directory (default: /app/data)\n")
+		fmt.Fprintf(os.Stderr, "   LOG_LEVEL          - debug, info, warn, error (default: info)\n")
+		fmt.Fprintf(os.Stderr, "\nFor a complete list, see: .env.example\n\n")
+		os.Exit(1)
+	}
 	logger.Init(cfg.LogLevel)
 	// Re-initialize component logger after Init
 	log = logger.Component("main")
