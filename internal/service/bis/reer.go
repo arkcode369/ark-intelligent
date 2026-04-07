@@ -137,7 +137,12 @@ func FetchBISData(ctx context.Context) (*BISData, error) {
 	for i, cc := range currencyConfig {
 		wg.Add(1)
 		go func(idx int, code, currency string) {
-			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("code", code).Str("currency", currency).Msg("PANIC in BIS REER fetch")
+				}
+				wg.Done()
+			}()
 			data := fetchCurrency(ctx, code, currency)
 			ch <- result{data: data, idx: idx}
 		}(i, cc.Code, cc.Currency)
