@@ -14,7 +14,6 @@
 package sentiment
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -92,7 +91,8 @@ func (f *SentimentFetcher) Fetch(ctx context.Context) (*SentimentData, error) {
 
 	// AAII Sentiment — wrapped in circuit breaker
 	if err := f.cbAAII.Execute(func() error {
-		fetchAAIISentiment(ctx, f.httpClient, data)
+		aaiiData := FetchAAIISentiment(ctx)
+		IntegrateAAIIIntoSentiment(data, aaiiData)
 		if !data.AAIIAvailable {
 			// Only count as breaker failure if FIRECRAWL_API_KEY is set
 			// (if no key, it's expected skip — don't penalise the breaker)
@@ -469,130 +469,8 @@ func normalizeFearGreedLabel(rating string) string {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// AAII Investor Sentiment Survey (via Firecrawl)
-// ---------------------------------------------------------------------------
-
 // firecrawlScrapeURL is the Firecrawl v1 scrape endpoint.
 const firecrawlScrapeURL = "https://api.firecrawl.dev/v1/scrape"
-
-// aaiiFCRequest is the Firecrawl scrape request body for AAII.
-type aaiiFCRequest struct {
-	URL         string       `json:"url"`
-	Formats     []string     `json:"formats"`
-	WaitFor     int          `json:"waitFor"`
-	JSONOptions *fcJSONOpts  `json:"jsonOptions,omitempty"`
-}
-
-type fcJSONOpts struct {
-	Prompt string          `json:"prompt"`
-	Schema json.RawMessage `json:"schema"`
-}
-
-// aaiiFCResponse models the Firecrawl scrape response for AAII data.
-type aaiiFCResponse struct {
-	Success bool `json:"success"`
-	Data    struct {
-		JSON struct {
-			LatestWeek  string  `json:"latest_week"`
-			BullishPct  float64 `json:"bullish_pct"`
-			NeutralPct  float64 `json:"neutral_pct"`
-			BearishPct  float64 `json:"bearish_pct"`
-		} `json:"json"`
-	} `json:"data"`
-}
-
-// aaiiFCSchema is the JSON schema for Firecrawl structured extraction.
-var aaiiFCSchema = json.RawMessage(`{
-	"type": "object",
-	"properties": {
-		"latest_week":  {"type": "string"},
-		"bullish_pct":  {"type": "number"},
-		"neutral_pct":  {"type": "number"},
-		"bearish_pct":  {"type": "number"}
-	}
-}`)
-
-func fetchAAIISentiment(ctx context.Context, client *http.Client, data *SentimentData) {
-	apiKey := os.Getenv("FIRECRAWL_API_KEY")
-	if apiKey == "" {
-		log.Debug().Str("source", "aaii").Msg("AAII: skipping — FIRECRAWL_API_KEY not set")
-		data.AAIIAvailable = false
-		return
-	}
-
-	reqBody := aaiiFCRequest{
-		URL:     "https://www.aaii.com/sentimentsurvey",
-		Formats: []string{"json"},
-		WaitFor: 5000,
-		JSONOptions: &fcJSONOpts{
-			Prompt: "Extract the latest AAII sentiment survey data: latest week ending date, bullish %, neutral %, and bearish %.",
-			Schema: aaiiFCSchema,
-		},
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		log.Warn().Str("source", "aaii").Err(err).Msg("AAII: failed to marshal Firecrawl request")
-		data.AAIIAvailable = false
-		return
-	}
-
-	// Use a longer timeout for Firecrawl (it needs to render the page)
-	fcClient := httpclient.New(httpclient.WithTimeout(30 * time.Second))
-	req, err := http.NewRequestWithContext(ctx, "POST", firecrawlScrapeURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		log.Warn().Str("source", "aaii").Err(err).Msg("AAII: failed to build Firecrawl request")
-		data.AAIIAvailable = false
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-
-	resp, err := fcClient.Do(req)
-	if err != nil {
-		log.Warn().Str("source", "aaii").Err(err).Msg("AAII: Firecrawl request failed")
-		data.AAIIAvailable = false
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Warn().Str("source", "aaii").Int("status", resp.StatusCode).Msg("AAII: Firecrawl non-2xx response")
-		data.AAIIAvailable = false
-		return
-	}
-
-	var result aaiiFCResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Warn().Str("source", "aaii").Err(err).Msg("AAII: Firecrawl decode failed")
-		data.AAIIAvailable = false
-		return
-	}
-
-	if !result.Success || result.Data.JSON.BullishPct == 0 {
-		log.Warn().Str("source", "aaii").Msg("AAII: Firecrawl returned empty or failed result")
-		data.AAIIAvailable = false
-		return
-	}
-
-	j := result.Data.JSON
-	data.AAIIBullish = j.BullishPct
-	data.AAIINeutral = j.NeutralPct
-	data.AAIIBearish = j.BearishPct
-	data.AAIIWeekDate = j.LatestWeek
-	if j.BearishPct > 0 {
-		data.AAIIBullBear = j.BullishPct / j.BearishPct
-	}
-	data.AAIIAvailable = true
-
-	log.Debug().
-		Float64("bullish", data.AAIIBullish).
-		Float64("bearish", data.AAIIBearish).
-		Float64("neutral", data.AAIINeutral).
-		Str("week", data.AAIIWeekDate).
-		Msg("AAII fetched via Firecrawl")
-}
 
 // ---------------------------------------------------------------------------
 // Crypto Fear & Greed Index (alternative.me — no API key required)

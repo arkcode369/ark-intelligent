@@ -68,6 +68,20 @@ type openInsiderFCResponse struct {
 	} `json:"data"`
 }
 
+// openinsiderFCJSONOpts defines the JSON extraction options for Firecrawl.
+type openinsiderFCJSONOpts struct {
+	Prompt string          `json:"prompt"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+// openinsiderFCRequest is the Firecrawl scrape request body.
+type openinsiderFCRequest struct {
+	URL         string                 `json:"url"`
+	Formats     []string               `json:"formats"`
+	WaitFor     int                    `json:"waitFor"`
+	JSONOptions *openinsiderFCJSONOpts `json:"jsonOptions,omitempty"`
+}
+
 // fetchInsiderClusterBuys scrapes OpenInsider cluster buys via Firecrawl
 // and populates InsiderClusters on the SentimentData.
 func fetchInsiderClusterBuys(ctx context.Context, client *http.Client, data *SentimentData) {
@@ -77,11 +91,11 @@ func fetchInsiderClusterBuys(ctx context.Context, client *http.Client, data *Sen
 		return
 	}
 
-	reqBody := aaiiFCRequest{
+	reqBody := openinsiderFCRequest{
 		URL:     "https://openinsider.com/latest-cluster-buys",
 		Formats: []string{"json"},
 		WaitFor: 3000,
-		JSONOptions: &fcJSONOpts{
+		JSONOptions: &openinsiderFCJSONOpts{
 			Prompt: "Extract: total number of cluster buy entries in the table, total dollar value of all purchases, and the top 5 entries with ticker symbol, company name, number of insiders buying, and value in USD.",
 			Schema: openInsiderSchema,
 		},
