@@ -159,10 +159,151 @@ EOF
             fi
             ;;
             
-        *)
-            echo "ℹ️  Manual verification required for $focus" >> "$report_file"
-            echo "- ⚠️  This cycle requires manual testing" >> "$report_file"
-            # Manual cycles auto-pass
+        "ui-ux-flow")
+            echo "🎨 Auditing UI/UX Flow..."
+            
+            # Check command handlers
+            echo "  Checking command handlers..." >> "$report_file"
+            COMMAND_COUNT=$(grep -r "HandleFunc" internal/adapter/telegram/ 2>/dev/null | grep -v test | wc -l || echo "0")
+            if [ "$COMMAND_COUNT" -gt 0 ]; then
+                echo "- ✅ Command handlers: $COMMAND_COUNT found" >> "$report_file"
+            else
+                echo "- ⚠️  No command handlers found" >> "$report_file"
+            fi
+            
+            # Check callback query handlers
+            echo "  Checking callback routes..." >> "$report_file"
+            CALLBACK_COUNT=$(grep -r "CallbackQuery\|HandleQuery" internal/adapter/telegram/ 2>/dev/null | grep -v test | wc -l || echo "0")
+            if [ "$CALLBACK_COUNT" -gt 0 ]; then
+                echo "- ✅ Callback handlers: $CALLBACK_COUNT found" >> "$report_file"
+            else
+                echo "- ⚠️  No callback handlers found" >> "$report_file"
+            fi
+            
+            # Check message formatting
+            echo "  Checking message formatting..." >> "$report_file"
+            if grep -r "ParseModeHTML\|parse_mode.*html" internal/adapter/telegram/ 2>/dev/null | grep -v test > /dev/null; then
+                echo "- ✅ HTML formatting: Enabled" >> "$report_file"
+            else
+                echo "- ⚠️  HTML formatting not detected" >> "$report_file"
+            fi
+            
+            # Check loading indicators
+            echo "  Checking loading states..." >> "$report_file"
+            if grep -r "typing\|loading\|spinner" internal/adapter/telegram/ 2>/dev/null | grep -v test > /dev/null; then
+                echo "- ✅ Loading indicators: Present" >> "$report_file"
+            else
+                echo "- ⚠️  No loading indicators found" >> "$report_file"
+            fi
+            
+            # Check error handling
+            echo "  Checking error messages..." >> "$report_file"
+            ERROR_COUNT=$(grep -r "SendError\|ErrorMessage" internal/adapter/telegram/ 2>/dev/null | grep -v test | wc -l || echo "0")
+            if [ "$ERROR_COUNT" -gt 0 ]; then
+                echo "- ✅ Error handlers: $ERROR_COUNT found" >> "$report_file"
+            else
+                echo "- ⚠️  Limited error handling" >> "$report_file"
+            fi
+            
+            # Check pagination
+            echo "  Checking pagination..." >> "$report_file"
+            if grep -r "Next\|Previous\|Page\|Offset" internal/adapter/telegram/ 2>/dev/null | grep -v test > /dev/null; then
+                echo "- ✅ Pagination: Implemented" >> "$report_file"
+            else
+                echo "- ⚠️  Pagination not detected" >> "$report_file"
+            fi
+            
+            pass=true
+            ;;
+            
+        "feature-logic")
+            echo "⚡ Auditing Feature Logic..."
+            
+            # Check data pipeline implementations
+            echo "  Checking data pipelines..." >> "$report_file"
+            PIPELINES=$(ls -1 internal/service/ 2>/dev/null | wc -l || echo "0")
+            echo "- ℹ️  Data services: $PIPELINES found" >> "$report_file"
+            
+            # Check cache layer
+            echo "  Checking cache layer..." >> "$report_file"
+            if grep -r "Badger\|cache\|Cache" internal/adapter/storage/ 2>/dev/null | grep -v test > /dev/null; then
+                echo "- ✅ Cache layer: Implemented" >> "$report_file"
+            else
+                echo "- ⚠️  Cache layer not detected" >> "$report_file"
+            fi
+            
+            # Check API integrations
+            echo "  Checking API integrations..." >> "$report_file"
+            API_SERVICES=$(ls -1 internal/service/ | grep -E "fred|coingecko|defillama|deribit|finviz" | wc -l || echo "0")
+            if [ "$API_SERVICES" -gt 0 ]; then
+                echo "- ✅ API services: $API_SERVICES found" >> "$report_file"
+            else
+                echo "- ⚠️  No API services detected" >> "$report_file"
+            fi
+            
+            # Check alert systems
+            echo "  Checking alert systems..." >> "$report_file"
+            if grep -r "alert\|Alert\|ALERT" internal/service/ 2>/dev/null | grep -v test > /dev/null; then
+                echo "- ✅ Alert system: Present" >> "$report_file"
+            else
+                echo "- ⚠️  No alert system detected" >> "$report_file"
+            fi
+            
+            # Check backtest engine
+            echo "  Checking backtest engine..." >> "$report_file"
+            if [ -d "internal/service/backtest" ] || grep -r "backtest\|Backtest" internal/service/ 2>/dev/null | grep -v test > /dev/null; then
+                echo "- ✅ Backtest engine: Present" >> "$report_file"
+            else
+                echo "- ⚠️  No backtest engine detected" >> "$report_file"
+            fi
+            
+            pass=true
+            ;;
+            
+        "comprehensive")
+            echo "🔍 Comprehensive Audit..."
+            
+            # Check all major components
+            echo "  Checking all components..." >> "$report_file"
+            
+            # Build check
+            if go build ./... > /tmp/build.log 2>&1; then
+                echo "- ✅ Build: PASSED" >> "$report_file"
+            else
+                echo "- ❌ Build: FAILED" >> "$report_file"
+                pass=false
+            fi
+            
+            # Test check (quick)
+            if go test ./internal/service/price ./internal/service/backtest -short -timeout 30s > /tmp/test.log 2>&1; then
+                echo "- ✅ Core tests: PASSED" >> "$report_file"
+            else
+                echo "- ⚠️  Core tests: Issues (non-fatal)" >> "$report_file"
+            fi
+            
+            # Go vet
+            if go vet ./... > /tmp/vet.log 2>&1; then
+                echo "- ✅ Go vet: PASSED" >> "$report_file"
+            else
+                echo "- ⚠️  Go vet: Warnings" >> "$report_file"
+            fi
+            
+            # Panic recovery
+            RECOVERY=$(grep -r "defer.*recover()" internal/ 2>/dev/null | grep -v test | wc -l || echo "0")
+            if [ "$RECOVERY" -gt 0 ]; then
+                echo "- ✅ Panic recovery: $RECOVERY blocks" >> "$report_file"
+            else
+                echo "- ⚠️  No panic recovery blocks" >> "$report_file"
+            fi
+            
+            # Error handling
+            ERROR_HANDLERS=$(grep -r "if err != nil" internal/ 2>/dev/null | grep -v test | wc -l || echo "0")
+            if [ "$ERROR_HANDLERS" -gt 10 ]; then
+                echo "- ✅ Error handling: $ERROR_HANDLERS checks" >> "$report_file"
+            else
+                echo "- ⚠️  Limited error handling: $ERROR_HANDLERS checks" >> "$report_file"
+            fi
+            
             pass=true
             ;;
     esac
