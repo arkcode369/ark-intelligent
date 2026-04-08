@@ -547,6 +547,77 @@ func (f *Formatter) FormatSentiment(data *sentiment.SentimentData, macroRegime s
 		}
 	}
 
+	// --- 💡 Penjelasan Sederhana (Non-Finance Friendly) ---
+	b.WriteString("\n<b>💡 Penjelasan Sederhana</b>\n")
+	b.WriteString("<i>Untuk yang baru belajar trading:</i>\n\n")
+
+	// Explain CNN Fear & Greed
+	if data.CNNAvailable {
+		score := data.CNNFearGreed
+		b.WriteString("<b>CNN Fear & Greed:</b> Ukuran ketakutan vs keserakahan pasar (0-100)\n")
+		if score <= 25 {
+			b.WriteString("→ <i>Ekstrem: Pasar sangat takut. Ini biasanya saat yang bagus untuk beli (orang panik jual murah).</i>\n")
+		} else if score <= 45 {
+			b.WriteString("→ <i>Fear: Pasar agak takut. Masih ada peluang beli.</i>\n")
+		} else if score <= 55 {
+			b.WriteString("→ <i>Netral: Pasar tenang, tidak terlalu takut atau serakah.</i>\n")
+		} else if score <= 75 {
+			b.WriteString("→ <i>Greed: Pasar mulai terlalu optimis. Hati-hati.</i>\n")
+		} else {
+			b.WriteString("→ <i>Ekstrem: Pasar sangat serakah. Ini biasanya saat yang berbahaya (orang beli di pucuk).</i>\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Explain VIX simply
+	if data.VIXAvailable {
+		b.WriteString("<b>VIX (Indeks Ketakutan):</b> Seberapa panik pasar dalam 30 hari ke depan\n")
+		if data.VIXSpot < 15 {
+			b.WriteString("→ <i>Rendah (<15): Pasar tenang, orang tidak khawatir. Bisa jadi terlalu nyaman.</i>\n")
+		} else if data.VIXSpot < 25 {
+			b.WriteString("→ <i>Normal (15-25): Pasar wajar, ada sedikit kekhawatiran.</i>\n")
+		} else if data.VIXSpot < 35 {
+			b.WriteString("→ <i>Tinggi (25-35): Pasar mulai panik. Waspada!</i>\n")
+		} else {
+			b.WriteString("→ <i>Ekstrem (>35): Pasar sangat panik. Biasanya ini saat bottom (dasar).</i>\n")
+		}
+		
+		if data.VIXContango {
+			b.WriteString("→ <i>Struktur normal: Orang tidak khawatir untuk jangka panjang.</i>\n")
+		} else {
+			b.WriteString("→ <i>Struktur terbalik: Orang sangat khawatir untuk jangka pendek. Waspada!</i>\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Explain Put/Call Ratio
+	if data.PutCallAvailable {
+		b.WriteString("<b>Put/Call Ratio:</b> Berapa banyak orang yang beli proteksi (put) vs taruhan naik (call)\n")
+		if data.PutCallTotal > 1.0 {
+			b.WriteString("→ <i>Tinggi (>1.0): Banyak orang beli proteksi. Ini bisa jadi sinyal bagus (orang terlalu takut).</i>\n")
+		} else if data.PutCallTotal < 0.7 {
+			b.WriteString("→ <i>Rendah (<0.7): Orang terlalu percaya diri, tidak beli proteksi. Waspada koreksi!</i>\n")
+		} else {
+			b.WriteString("→ <i>Normal (0.7-1.0): Pasar seimbang.</i>\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Explain AAII
+	if data.AAIIAvailable {
+		b.WriteString("<b>AAII Survey:</b> Apa yang dipikirkan retail trader\n")
+		if data.AAIIBearish >= 50 {
+			b.WriteString("→ <i>Banyak yang pesimis. Secara historis, ini saat yang bagus untuk beli (contrarian).</i>\n")
+		} else if data.AAIIBullish >= 50 {
+			b.WriteString("→ <i>Banyak yang optimis. Hati-hati, biasanya ini saat yang buruk untuk beli (sudah terlambat).</i>\n")
+		} else {
+			b.WriteString("→ <i>Seimbang: Tidak ada yang ekstrem.</i>\n")
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("<i>💡 <b>Rule of Thumb:</b> Ketika semua orang takut → beli. Ketika semua orang serakah → jual.</i>\n")
+
 	return b.String()
 }
 
