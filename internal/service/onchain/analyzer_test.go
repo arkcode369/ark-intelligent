@@ -5,13 +5,13 @@ import (
 )
 
 func TestAnalyzeAsset_BasicFlow(t *testing.T) {
-	// 5 days of data, newest first (descending as from API).
+	// 5 days of data, oldest first (ascending as from API).
 	points := []coinMetricsDataPoint{
-		{Asset: "btc", Time: "2026-04-01T00:00:00.000000000Z", FlowInExNtv: "100", FlowOutExNtv: "200", AdrActCnt: "900000", TxCnt: "300000"},
-		{Asset: "btc", Time: "2026-03-31T00:00:00.000000000Z", FlowInExNtv: "150", FlowOutExNtv: "250", AdrActCnt: "880000", TxCnt: "290000"},
-		{Asset: "btc", Time: "2026-03-30T00:00:00.000000000Z", FlowInExNtv: "120", FlowOutExNtv: "220", AdrActCnt: "870000", TxCnt: "280000"},
-		{Asset: "btc", Time: "2026-03-29T00:00:00.000000000Z", FlowInExNtv: "130", FlowOutExNtv: "230", AdrActCnt: "860000", TxCnt: "270000"},
 		{Asset: "btc", Time: "2026-03-28T00:00:00.000000000Z", FlowInExNtv: "140", FlowOutExNtv: "240", AdrActCnt: "850000", TxCnt: "260000"},
+		{Asset: "btc", Time: "2026-03-29T00:00:00.000000000Z", FlowInExNtv: "130", FlowOutExNtv: "230", AdrActCnt: "860000", TxCnt: "270000"},
+		{Asset: "btc", Time: "2026-03-30T00:00:00.000000000Z", FlowInExNtv: "120", FlowOutExNtv: "220", AdrActCnt: "870000", TxCnt: "280000"},
+		{Asset: "btc", Time: "2026-03-31T00:00:00.000000000Z", FlowInExNtv: "150", FlowOutExNtv: "250", AdrActCnt: "880000", TxCnt: "290000"},
+		{Asset: "btc", Time: "2026-04-01T00:00:00.000000000Z", FlowInExNtv: "100", FlowOutExNtv: "200", AdrActCnt: "900000", TxCnt: "300000"},
 	}
 
 	s := analyzeAsset("btc", points)
@@ -42,11 +42,11 @@ func TestAnalyzeAsset_BasicFlow(t *testing.T) {
 }
 
 func TestAnalyzeAsset_LargeInflowSpike(t *testing.T) {
-	// Most recent day has huge inflow spike.
+	// Most recent day has huge inflow spike (ascending order).
 	points := []coinMetricsDataPoint{
-		{Asset: "eth", Time: "2026-04-01T00:00:00.000000000Z", FlowInExNtv: "5000", FlowOutExNtv: "100", AdrActCnt: "500000", TxCnt: "100000"},
-		{Asset: "eth", Time: "2026-03-31T00:00:00.000000000Z", FlowInExNtv: "200", FlowOutExNtv: "300", AdrActCnt: "490000", TxCnt: "99000"},
 		{Asset: "eth", Time: "2026-03-30T00:00:00.000000000Z", FlowInExNtv: "180", FlowOutExNtv: "280", AdrActCnt: "480000", TxCnt: "98000"},
+		{Asset: "eth", Time: "2026-03-31T00:00:00.000000000Z", FlowInExNtv: "200", FlowOutExNtv: "300", AdrActCnt: "490000", TxCnt: "99000"},
+		{Asset: "eth", Time: "2026-04-01T00:00:00.000000000Z", FlowInExNtv: "5000", FlowOutExNtv: "100", AdrActCnt: "500000", TxCnt: "100000"},
 	}
 
 	s := analyzeAsset("eth", points)

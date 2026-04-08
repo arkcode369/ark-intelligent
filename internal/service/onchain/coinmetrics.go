@@ -81,7 +81,7 @@ func fetchAllAssets(ctx context.Context) *OnChainReport {
 
 	assets := strings.Join(trackedAssets, ",")
 	metrics := strings.Join(metricsToFetch, ",")
-	url := fmt.Sprintf("%s?assets=%s&metrics=%s&frequency=1d&page_size=60&sort=time&sort_direction=desc",
+	url := fmt.Sprintf("%s?assets=%s&metrics=%s&frequency=1d&page_size=60",
 		baseURL, assets, metrics)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

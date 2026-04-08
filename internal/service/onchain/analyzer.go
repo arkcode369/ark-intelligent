@@ -9,7 +9,7 @@ import (
 )
 
 // analyzeAsset processes raw CoinMetrics data points into a summary.
-// Points are expected in descending time order (most recent first).
+// Points are expected in ascending time order (oldest first) from the CoinMetrics API.
 func analyzeAsset(asset string, points []coinMetricsDataPoint) *AssetOnChainSummary {
 	summary := &AssetOnChainSummary{
 		Asset:     asset,
@@ -17,12 +17,11 @@ func analyzeAsset(asset string, points []coinMetricsDataPoint) *AssetOnChainSumm
 		Available: true,
 	}
 
-	// Parse flows — points come newest-first; we reverse for chronological order.
+	// Parse flows — points come oldest-first (ascending), which is chronological order.
 	var flows []ExchangeFlow
 	var activeAddrs []ActiveAddressMetric
 
-	for i := len(points) - 1; i >= 0; i-- {
-		dp := points[i]
+	for _, dp := range points {
 
 		t, err := time.Parse("2006-01-02T15:04:05.000000000Z", dp.Time)
 		if err != nil {
