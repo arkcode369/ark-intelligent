@@ -97,17 +97,11 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 		kb.Rows = [][]ports.InlineButton{refreshRow}
 	}
 
-	if msgID > 0 && len(kb.Rows) > 0 {
-		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
-	}
-	if len(kb.Rows) > 0 {
-		_, sErr := h.bot.SendWithKeyboard(ctx, chatID, htmlMsg, kb)
-		return sErr
-	}
 	if msgID > 0 {
-		return h.bot.EditMessage(ctx, chatID, msgID, htmlMsg)
+		// Delete placeholder before sending chunked response
+		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
 	}
-	_, sErr := h.bot.SendMessage(ctx, chatID, htmlMsg)
+	_, sErr := h.bot.SendWithKeyboardChunked(ctx, chatID, htmlMsg, kb)
 	return sErr
 }
 
@@ -179,8 +173,9 @@ func (h *Handler) cbSentimentRefresh(ctx context.Context, chatID string, msgID i
 	}
 
 	if loadingMsgID > 0 {
-		return h.bot.EditWithKeyboard(ctx, chatID, loadingMsgID, htmlMsg, kb)
+		// Delete placeholder before sending chunked response
+		_ = h.bot.DeleteMessage(ctx, chatID, loadingMsgID)
 	}
-	_, sErr := h.bot.SendWithKeyboard(ctx, chatID, htmlMsg, kb)
+	_, sErr := h.bot.SendWithKeyboardChunked(ctx, chatID, htmlMsg, kb)
 	return sErr
 }
