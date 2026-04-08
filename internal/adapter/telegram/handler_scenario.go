@@ -71,11 +71,10 @@ func (h *Handler) cmdScenario(ctx context.Context, chatID string, _ int64, args 
 
 	result, err := pricesvc.GenerateScenario(priceRecords, mapping.Currency, cfg)
 	if err != nil {
-		_, sendErr := h.bot.SendHTML(ctx, chatID, fmt.Sprintf(
+		log.Error().Err(err).Str("symbol", mapping.Currency).Msg("scenario simulation failed")
+		_, sendErr := h.bot.SendHTML(ctx, chatID,
 			"📊 <b>Scenario Generator</b>\n\n"+
-				"<i>Simulation failed: %s</i>",
-			html.EscapeString(err.Error()),
-		))
+				"<i>Simulation failed. Insufficient data or internal error — please try again later.</i>")
 		return sendErr
 	}
 

@@ -14,10 +14,10 @@ func (h *Handler) cmdCarry(ctx context.Context, chatID string, _ int64, _ string
 	monitor := fred.GetCarryMonitor()
 	result, err := monitor.FetchCarryDashboard(ctx)
 	if err != nil {
+		log.Error().Err(err).Msg("carry monitor fetch failed")
 		_, sendErr := h.bot.SendHTML(ctx, chatID,
 			"❌ <b>Carry monitor error</b>\n\n"+
-				"<code>"+err.Error()+"</code>\n\n"+
-				"<i>FRED API may be temporarily unavailable.</i>")
+				"<i>FRED API may be temporarily unavailable. Please try again later.</i>")
 		return sendErr
 	}
 

@@ -167,7 +167,8 @@ func (h *Handler) handleGEXCallback(ctx context.Context, chatID string, msgID in
 	case "sym", "refresh":
 		result, err := h.gex.Engine.Analyze(ctx, sym)
 		if err != nil {
-			errHTML := fmt.Sprintf("\u26a0\ufe0f <b>GEX analysis failed for %s</b>\n\n<i>%s</i>\n\nThis may be temporary \u2014 try again in a few minutes.", sym, err.Error())
+			log.Error().Err(err).Str("symbol", sym).Msg("GEX analysis failed")
+		errHTML := fmt.Sprintf("⚠️ <b>GEX analysis failed for %s</b>\n\n<i>Data source may be temporarily unavailable. Try again in a few minutes.</i>", sym)
 			kb := gexKeyboard(sym)
 			_ = h.bot.EditWithKeyboard(ctx, chatID, msgID, errHTML, kb)
 			return nil
@@ -274,7 +275,8 @@ func (h *Handler) handleIVolCallback(ctx context.Context, chatID string, msgID i
 	}
 	result, err := h.gex.Engine.AnalyzeIVSurface(ctx, sym)
 	if err != nil {
-		errHTML := fmt.Sprintf("⚠️ <b>IV Surface failed for %s</b>\n\n<i>%s</i>", sym, err.Error())
+		log.Error().Err(err).Str("symbol", sym).Msg("IV Surface analysis failed")
+		errHTML := fmt.Sprintf("⚠️ <b>IV Surface failed for %s</b>\n\n<i>Data source may be temporarily unavailable. Try again later.</i>", sym)
 		kb := ivolKeyboard(sym)
 		_ = h.bot.EditWithKeyboard(ctx, chatID, msgID, errHTML, kb)
 		return nil
@@ -378,7 +380,8 @@ func (h *Handler) handleSkewCallback(ctx context.Context, chatID string, msgID i
 	}
 	result, err := h.gex.Engine.AnalyzeSkew(ctx, sym)
 	if err != nil {
-		errHTML := fmt.Sprintf("⚠️ <b>Skew analysis failed for %s</b>\n\n<i>%s</i>", sym, err.Error())
+		log.Error().Err(err).Str("symbol", sym).Msg("Skew analysis failed")
+		errHTML := fmt.Sprintf("⚠️ <b>Skew analysis failed for %s</b>\n\n<i>Data source may be temporarily unavailable. Try again later.</i>", sym)
 		kb := skewKeyboard(sym)
 		_ = h.bot.EditWithKeyboard(ctx, chatID, msgID, errHTML, kb)
 		return nil

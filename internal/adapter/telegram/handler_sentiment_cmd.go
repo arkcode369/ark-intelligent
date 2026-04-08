@@ -61,7 +61,8 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 			if msgID > 0 {
 				return h.bot.EditMessage(ctx, chatID, msgID, text)
 			}
-			return h.bot.SendMessage(ctx, chatID, text)
+			_, sErr := h.bot.SendMessage(ctx, chatID, text)
+			return sErr
 		}
 
 		text := fmt.Sprintf("❌ <b>Gagal mengambil data sentiment</b>\n\n"+
@@ -70,7 +71,8 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 		if msgID > 0 {
 			return h.bot.EditMessage(ctx, chatID, msgID, text)
 		}
-		return h.bot.SendMessage(ctx, chatID, text)
+		_, sErr := h.bot.SendMessage(ctx, chatID, text)
+		return sErr
 	}
 
 	if !data.CNNAvailable && !data.AAIIAvailable && !data.VIXAvailable {
@@ -78,7 +80,8 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 		if msgID > 0 {
 			return h.bot.EditMessage(ctx, chatID, msgID, text)
 		}
-		return h.bot.SendMessage(ctx, chatID, text)
+		_, sErr := h.bot.SendMessage(ctx, chatID, text)
+		return sErr
 	}
 
 	htmlMsg := h.fmt.FormatSentiment(data, h.currentMacroRegimeName(ctx))
@@ -98,12 +101,14 @@ func (h *Handler) cmdSentiment(ctx context.Context, chatID string, userID int64,
 		return h.bot.EditWithKeyboard(ctx, chatID, msgID, htmlMsg, kb)
 	}
 	if len(kb.Rows) > 0 {
-		return h.bot.SendWithKeyboard(ctx, chatID, htmlMsg, kb)
+		_, sErr := h.bot.SendWithKeyboard(ctx, chatID, htmlMsg, kb)
+		return sErr
 	}
 	if msgID > 0 {
 		return h.bot.EditMessage(ctx, chatID, msgID, htmlMsg)
 	}
-	return h.bot.SendMessage(ctx, chatID, htmlMsg)
+	_, sErr := h.bot.SendMessage(ctx, chatID, htmlMsg)
+	return sErr
 }
 
 // cbSentimentRefresh handles the refresh button callback for sentiment data.
@@ -150,14 +155,16 @@ func (h *Handler) cbSentimentRefresh(ctx context.Context, chatID string, msgID i
 			if loadingMsgID > 0 {
 				return h.bot.EditWithKeyboard(ctx, chatID, loadingMsgID, text, kb)
 			}
-			return h.bot.SendWithKeyboard(ctx, chatID, text, kb)
+			_, sErr := h.bot.SendWithKeyboard(ctx, chatID, text, kb)
+			return sErr
 		}
 
 		text := "❌ <b>Gagal refresh data sentiment</b>\n\nSilakan coba lagi dalam beberapa menit."
 		if loadingMsgID > 0 {
 			return h.bot.EditMessage(ctx, chatID, loadingMsgID, text)
 		}
-		return h.bot.SendMessage(ctx, chatID, text)
+		_, sErr := h.bot.SendMessage(ctx, chatID, text)
+		return sErr
 	}
 
 	htmlMsg := h.fmt.FormatSentiment(freshData, h.currentMacroRegimeName(ctx))
@@ -174,5 +181,6 @@ func (h *Handler) cbSentimentRefresh(ctx context.Context, chatID string, msgID i
 	if loadingMsgID > 0 {
 		return h.bot.EditWithKeyboard(ctx, chatID, loadingMsgID, htmlMsg, kb)
 	}
-	return h.bot.SendWithKeyboard(ctx, chatID, htmlMsg, kb)
+	_, sErr := h.bot.SendWithKeyboard(ctx, chatID, htmlMsg, kb)
+	return sErr
 }

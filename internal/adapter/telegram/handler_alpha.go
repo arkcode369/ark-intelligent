@@ -289,10 +289,12 @@ func (h *Handler) handleAlphaCallback(ctx context.Context, chatID string, msgID 
 		} else {
 			// Fallback: compute directly
 			macroRegime := ""
+			var tProb float64
+			var tFrom, tTo string
 			if h.alpha.ProfileBuilder != nil {
 				macroRegime = h.alpha.ProfileBuilder.GetMacroRegime(ctx)
+				tProb, tFrom, tTo = h.alpha.ProfileBuilder.GetTransitionProb(ctx)
 			}
-			tProb, tFrom, tTo := h.alpha.ProfileBuilder.GetTransitionProb(ctx)
 			tw := strategy.TransitionWarning{
 				IsActive:    tProb > 0.50,
 				FromRegime:  tFrom,
