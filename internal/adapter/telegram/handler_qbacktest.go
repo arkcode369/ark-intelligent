@@ -1,13 +1,14 @@
 package telegram
 
 // handler_qbacktest.go — Command handler untuk /qbacktest
-//   /qbacktest [SYMBOL] [MODEL] — Run backtest untuk quant model
+//   User-friendly dengan proper loading states, error handling, dan navigation
 
 import (
 	"context"
 	"fmt"
 	"html"
 	"strings"
+	"time"
 )
 
 // registerQuantBacktestCommands register /qbacktest command
@@ -22,7 +23,7 @@ func (h *Handler) cmdQBacktest(ctx context.Context, chatID string, userID int64,
 	_ = h.bot.SendChatAction(ctx, chatID, "typing")
 
 	if h.quant == nil {
-		_, err := h.bot.SendHTML(ctx, chatID, "⚙️ Quant Engine not configured.")
+		_, err := h.bot.SendHTML(ctx, chatID, "⚙️ <b>Quant Engine not configured.</b>\n\nPlease contact administrator to enable quant analysis.")
 		return err
 	}
 
@@ -30,29 +31,7 @@ func (h *Handler) cmdQBacktest(ctx context.Context, chatID string, userID int64,
 	
 	// If no args, show dashboard or use last symbol
 	if len(parts) == 0 {
-		// Try last currency
-		if lc := h.getLastCurrency(ctx, userID); lc != "" {
-			return h.cmdQBacktest(ctx, chatID, userID, lc)
-		}
-		// Show symbol selector
-		_, err := h.bot.SendWithKeyboard(ctx, chatID,
-			`📊 <b>QUANT BACKTEST DASHBOARD</b>
-
-Backtest untuk model ekonometrik:
-
-📈 Stats (Distribusi return, Sharpe, VaR)
-📉 GARCH (Volatility clustering)
-🔗 Correlation (Multi-asset)
-🎭 Regime (HMM Bull/Bear)
-🔄 MeanRevert (ADF, Hurst)
-⚡ Granger (Kausalitas)
-🔗 Cointegration (Pair trading)
-🧬 PCA (Factor analysis)
-🌐 VAR (Multi-asset forecast)
-⚠️ Risk (VaR/CVaR)
-
-Atau pilih simbol:`, h.kb.QuantSymbolMenu())
-		return err
+		return h.showBacktestDashboard(ctx, chatID, userID)
 	}
 
 	symbol := parts[0]
@@ -65,33 +44,56 @@ Atau pilih simbol:`, h.kb.QuantSymbolMenu())
 	mapping := domain.FindPriceMappingByCurrency(symbol)
 	if mapping == nil {
 		_, err := h.bot.SendHTML(ctx, chatID, fmt.Sprintf(
-			"❌ Symbol <code>%s</code> tidak ditemukan.\nContoh: <code>/qbacktest EUR</code>, <code>/qbacktest XAU garch</code>",
+			"❌ <b>Symbol not found:</b> <code>%s</code>\n\n"+
+				"Available symbols: EUR, GBP, USD, JPY, CHF, AUD, NZD, CAD, XAU, XAG, BTC, ETH\n\n"+
+				"Usage: <code>/qbacktest EUR</code> or <code>/qbacktest XAU garch</code>",
 			html.EscapeString(symbol),
 		))
 		return err
 	}
 
 	h.saveLastCurrency(ctx, userID, mapping.Currency)
-
 	sym := html.EscapeString(mapping.Currency)
-	
-	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf("📊 Running backtest for <b>%s</b>...", sym))
+
+	// Show loading with progress
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf("🔬 Running backtest for <b>%s</b>...\n<i>Please wait, this may take up to 30 seconds.</i>", sym))
+
+	// Set timeout for backtest
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
 
 	analyzer := NewQuantBacktestAnalyzer(h.quant)
-	stats, err := analyzer.Analyze(ctx, symbol, model)
+	stats, err := analyzer.Analyze(ctxWithTimeout, symbol, model)
 	
 	if loadingID > 0 {
 		_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 	}
 	
 	if err != nil {
+		// Check for timeout
+		if ctxWithTimeout.Err() == context.DeadlineExceeded {
+			_, err = h.bot.SendHTML(ctx, chatID, 
+				"⏱️ <b>Backtest timed out.</b>\n\n"+
+					"The analysis took too long. This can happen with:\n"+
+					"• Insufficient historical data\n"+
+					"• Complex model (try simpler models like 'stats')\n"+
+					"• High system load\n\n"+
+					"Please try again or use a different symbol/model.")
+			return err
+		}
+		
 		h.sendUserError(ctx, chatID, err, "qbacktest")
 		return nil
 	}
 
 	if len(stats.Models) == 0 {
 		_, err := h.bot.SendHTML(ctx, chatID, fmt.Sprintf(
-			"⚠️ Tidak ada hasil backtest untuk <b>%s</b>.\n\nCoba model lain atau pastikan ada cukup data historis.",
+			"⚠️ <b>No results for %s</b>\n\n"+
+				"Possible reasons:\n"+
+				"• Insufficient historical data (need at least 170 days)\n"+
+				"• Model not available for this symbol\n"+
+				"• Python quant engine not installed\n\n"+
+				"Try a different symbol or contact administrator.",
 			sym,
 		))
 		return err
@@ -100,23 +102,65 @@ Atau pilih simbol:`, h.kb.QuantSymbolMenu())
 	// Format output
 	htmlOut := h.formatQBacktestStats(stats)
 	
+	// Add navigation keyboard
 	kb := h.kb.QBacktestMenu()
 	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, htmlOut, kb)
 	return err
 }
 
-// formatQBacktestStats format backtest results
+// showBacktestDashboard shows the backtest dashboard with symbol selection
+func (h *Handler) showBacktestDashboard(ctx context.Context, chatID string, userID int64) error {
+	// Try last currency first
+	if lc := h.getLastCurrency(ctx, userID); lc != "" {
+		return h.cmdQBacktest(ctx, chatID, userID, lc)
+	}
+
+	// Show symbol selector with description
+	_, err := h.bot.SendWithKeyboard(ctx, chatID,
+		`🔬 <b>QUANT BACKTEST DASHBOARD</b>
+
+Backtest model ekonometrik pada data historis:
+
+<b>📊 Foundation:</b>
+• Stats - Distribusi return, Sharpe, VaR
+• GARCH - Volatility clustering & forecast
+• Correlation - Multi-asset correlation
+
+<b>📈 Time Series:</b>
+• Regime - Hidden Markov Model (bull/bear)
+• Mean Revert - ADF, Hurst, half-life
+• Granger - Kausalitas antar aset
+
+<b>🔗 Advanced:</b>
+• Cointegration - Pair trading analysis
+• PCA - Factor analysis multi-asset
+• VAR - Multi-asset forecast
+• Risk - VaR/CVaR historical + parametric
+
+<b>Methodology:</b>
+✅ No look-ahead bias
+✅ Transaction costs included (0.1%)
+✅ Walk-forward validation
+✅ Statistical confidence scoring
+
+Pilih aset untuk backtest:`, h.kb.QuantSymbolMenu())
+	return err
+}
+
+// formatQBacktestStats format backtest results dengan proper UI
 func (h *Handler) formatQBacktestStats(stats *QuantBacktestStats) string {
 	var b strings.Builder
 	
-	b.WriteString(fmt.Sprintf("📊 <b>QUANT BACKTEST: %s</b>\n\n", html.EscapeString(stats.Symbol)))
+	// Header
+	b.WriteString(fmt.Sprintf("📊 <b>QUANT BACKTEST: %s</b>\n", html.EscapeString(stats.Symbol)))
+	b.WriteString(fmt.Sprintf("<i>Period: %s to %s (%d bars)</i>\n\n", stats.StartDate, stats.EndDate, stats.TotalBars))
 	
 	if len(stats.Models) == 1 {
 		// Single model detail view
 		m := stats.Models[0]
 		b.WriteString(h.formatSingleModelBacktest(&m))
 	} else {
-		// Multi-model summary
+		// Multi-model summary dengan improved formatting
 		b.WriteString(h.formatMultiModelSummary(stats.Models))
 	}
 	
@@ -126,43 +170,94 @@ func (h *Handler) formatQBacktestStats(stats *QuantBacktestStats) string {
 func (h *Handler) formatSingleModelBacktest(m *QuantBacktestResult) string {
 	var b strings.Builder
 	
-	b.WriteString(fmt.Sprintf("<b>Model:</b> %s\n", m.Model))
-	b.WriteString(fmt.Sprintf("<b>Symbol:</b> %s\n\n", m.Symbol))
+	// Model info
+	b.WriteString(fmt.Sprintf("<b>🔬 Model:</b> %s\n", m.Model))
+	b.WriteString(fmt.Sprintf("<b>📈 Symbol:</b> %s\n", m.Symbol))
+	b.WriteString(fmt.Sprintf("<b>📅 Timeframe:</b> %s\n\n", m.Timeframe))
 	
-	b.WriteString("<b>Performance Summary</b>\n")
-	b.WriteString(fmt.Sprintf("<code>Signals     :</code> %d (evaluated: %d)\n", m.TotalSignals, m.SampleSize))
-	b.WriteString(fmt.Sprintf("<code>Confidence  :</code> %.0f%%\n\n", m.Confidence))
+	// Performance card
+	b.WriteString("<b>📊 Performance Summary</b>\n")
+	b.WriteString(fmt.Sprintf("<code>Signals Generated  :</code> %d\n", m.TotalSignals))
+	b.WriteString(fmt.Sprintf("<code>Signals Evaluated  :</code> %d\n", m.Evaluated))
+	b.WriteString(fmt.Sprintf("<code>Statistical Confidence :</code> %.0f%%\n\n", m.Confidence))
 	
-	b.WriteString("<b>Win Rate</b>\n")
-	b.WriteString(fmt.Sprintf("<code>1 Week :</code> %.1f%%\n", m.WinRate1W))
-	b.WriteString(fmt.Sprintf("<code>2 Week :</code> %.1f%%\n", m.WinRate2W))
-	b.WriteString(fmt.Sprintf("<code>4 Week :</code> %.1f%%\n\n", m.WinRate4W))
+	// Win rate section
+	b.WriteString("<b>🎯 Win Rate</b>\n")
+	b.WriteString(fmt.Sprintf("<code>1 Week  :</code> %5.1f%%  ", m.WinRate1W))
+	if m.WinRate1W > 55 {
+		b.WriteString("✅\n")
+	} else if m.WinRate1W > 50 {
+		b.WriteString("⚠️\n")
+	} else {
+		b.WriteString("❌\n")
+	}
 	
-	b.WriteString("<b>Average Return</b>\n")
-	b.WriteString(fmt.Sprintf("<code>1 Week :</code> %+.4f%%\n", m.AvgReturn1W))
-	b.WriteString(fmt.Sprintf("<code>2 Week :</code> %+.4f%%\n", m.AvgReturn2W))
-	b.WriteString(fmt.Sprintf("<code>4 Week :</code> %+.4f%%\n\n", m.AvgReturn4W))
+	b.WriteString(fmt.Sprintf("<code>2 Weeks :</code> %5.1f%%  ", m.WinRate2W))
+	if m.WinRate2W > 55 {
+		b.WriteString("✅\n")
+	} else if m.WinRate2W > 50 {
+		b.WriteString("⚠️\n")
+	} else {
+		b.WriteString("❌\n")
+	}
 	
-	b.WriteString("<b>Risk Metrics</b>\n")
-	b.WriteString(fmt.Sprintf("<code>Sharpe Ratio :</code> %.2f\n", m.SharpeRatio))
-	b.WriteString(fmt.Sprintf("<code>Max Drawdown :</code> %.2f%%\n", m.MaxDrawdown))
-	if m.ProfitFactor > 0 {
-		b.WriteString(fmt.Sprintf("<code>Profit Factor:</code> %.2f\n", m.ProfitFactor))
+	b.WriteString(fmt.Sprintf("<code>4 Weeks :</code> %5.1f%%  ", m.WinRate4W))
+	if m.WinRate4W > 55 {
+		b.WriteString("✅\n")
+	} else if m.WinRate4W > 50 {
+		b.WriteString("⚠️\n")
+	} else {
+		b.WriteString("❌\n")
+	}
+	b.WriteString("\n")
+	
+	// Return section
+	b.WriteString("<b>💰 Average Return</b>\n")
+	b.WriteString(fmt.Sprintf("<code>1 Week  :</code> %+.4f%%\n", m.AvgReturn1W))
+	b.WriteString(fmt.Sprintf("<code>2 Weeks :</code> %+.4f%%\n", m.AvgReturn2W))
+	b.WriteString(fmt.Sprintf("<code>4 Weeks :</code> %+.4f%%\n\n", m.AvgReturn4W))
+	
+	// Risk metrics
+	b.WriteString("<b>⚠️ Risk Metrics</b>\n")
+	b.WriteString(fmt.Sprintf("<code>Sharpe Ratio   :</code> %.2f  ", m.SharpeRatio))
+	if m.SharpeRatio > 1.5 {
+		b.WriteString("🌟\n")
+	} else if m.SharpeRatio > 1.0 {
+		b.WriteString("✅\n")
+	} else if m.SharpeRatio > 0.5 {
+		b.WriteString("⚠️\n")
+	} else {
+		b.WriteString("❌\n")
+	}
+	
+	b.WriteString(fmt.Sprintf("<code>Sortino Ratio  :</code> %.2f\n", m.SortinoRatio))
+	b.WriteString(fmt.Sprintf("<code>Max Drawdown   :</code> %.2f%%  ", -m.MaxDrawdown))
+	if m.MaxDrawdown < 10 {
+		b.WriteString("✅\n")
+	} else if m.MaxDrawdown < 20 {
+		b.WriteString("⚠️\n")
+	} else {
+		b.WriteString("🔴\n")
+	}
+	
+	b.WriteString(fmt.Sprintf("<code>Profit Factor  :</code> %.2f\n", m.ProfitFactor))
+	b.WriteString(fmt.Sprintf("<code>Expected Value :</code> %+.4f%%\n\n", m.ExpectedValue))
+	
+	// Walk-forward score
+	if m.WalkForwardScore > 0 {
+		b.WriteString(fmt.Sprintf("<b>🔄 Walk-Forward Score:</b> %.2f ", m.WalkForwardScore))
+		if m.WalkForwardScore > 0.8 {
+			b.WriteString("🌟 Robust\n")
+		} else if m.WalkForwardScore > 0.6 {
+			b.WriteString("✅ Acceptable\n")
+		} else {
+			b.WriteString("⚠️ Overfit risk\n")
+		}
+		b.WriteString("\n")
 	}
 	
 	// Recommendation
-	b.WriteString("\n")
-	if m.SampleSize < 30 {
-		b.WriteString("⚠️ <i>Sample size kecil — hasil belum statistically significant.</i>\n")
-	} else if m.WinRate4W > 55 && m.SharpeRatio > 1.0 {
-		b.WriteString("✅ <i>Strong edge detected — model ini menunjukkan performa konsisten.</i>\n")
-	} else if m.WinRate4W > 50 && m.SharpeRatio > 0.5 {
-		b.WriteString("⚠️ <i>Moderate edge — monitor performance lebih lanjut.</i>\n")
-	} else if m.SharpeRatio > 0 {
-		b.WriteString("🔴 <i>Weak edge — model belum cukup robust.</i>\n")
-	} else {
-		b.WriteString("❌ <i>No edge detected — model tidak profitable di backtest.</i>\n")
-	}
+	b.WriteString(h.generateRecommendation(m))
 	
 	return b.String()
 }
@@ -170,11 +265,41 @@ func (h *Handler) formatSingleModelBacktest(m *QuantBacktestResult) string {
 func (h *Handler) formatMultiModelSummary(models []QuantBacktestResult) string {
 	var b strings.Builder
 	
-	b.WriteString("<b>Model Performance Summary</b>\n\n")
-	b.WriteString("<code>Model          WR4W   Sharpe   Sample  Conf</code>\n")
-	b.WriteString("<code>──────────────────────────────────────────</code>\n")
+	b.WriteString("<b>📊 Model Performance Comparison</b>\n\n")
 	
-	for _, m := range models {
+	// Header row with proper alignment
+	b.WriteString("<code>Model           WR4W   Sharpe   DD%    Sample  Conf</code>\n")
+	b.WriteString("<code>───────────────────────────────────────────────────</code>\n")
+	
+	// Sort models by score (best first)
+	sortedModels := make([]QuantBacktestResult, len(models))
+	copy(sortedModels, models)
+	
+	// Simple bubble sort for display
+	for i := 0; i < len(sortedModels); i++ {
+		for j := i + 1; j < len(sortedModels); j++ {
+			scoreI := sortedModels[i].WinRate4W + sortedModels[i].SharpeRatio*10
+			scoreJ := sortedModels[j].WinRate4W + sortedModels[j].SharpeRatio*10
+			if scoreJ > scoreI {
+				sortedModels[i], sortedModels[j] = sortedModels[j], sortedModels[i]
+			}
+		}
+	}
+	
+	for idx, m := range sortedModels {
+		// Rank indicator
+		rank := ""
+		if idx == 0 {
+			rank = "🥇 "
+		} else if idx == 1 {
+			rank = "🥈 "
+		} else if idx == 2 {
+			rank = "🥉 "
+		} else {
+			rank = "   "
+		}
+		
+		// Confidence icon
 		confIcon := "🟢"
 		if m.Confidence < 75 {
 			confIcon = "🟡"
@@ -183,33 +308,108 @@ func (h *Handler) formatMultiModelSummary(models []QuantBacktestResult) string {
 			confIcon = "🔴"
 		}
 		
-		b.WriteString(fmt.Sprintf("<code>%-15s %5.1f%%  %6.2f   %5d   %s</code>\n",
+		// Sharpe indicator
+		sharpeIcon := ""
+		if m.SharpeRatio > 1.5 {
+			sharpeIcon = "🌟"
+		} else if m.SharpeRatio > 1.0 {
+			sharpeIcon = "✅"
+		} else if m.SharpeRatio > 0.5 {
+			sharpeIcon = "⚠️"
+		}
+		
+		b.WriteString(fmt.Sprintf("<code>%s%-15s %5.1f%%  %6.2f %s %6.1f%% %5d   %s</code>\n",
+			rank,
 			strings.ToUpper(m.Model),
 			m.WinRate4W,
 			m.SharpeRatio,
+			sharpeIcon,
+			-m.MaxDrawdown,
 			m.SampleSize,
 			confIcon,
 		))
 	}
 	
-	b.WriteString("\n<i>🟢 High Confidence | 🟡 Medium | 🔴 Low</i>\n\n")
+	b.WriteString("\n<i>🟢 High Conf | 🟡 Medium | 🔴 Low | 🌟 Excellent Sharpe</i>\n\n")
 	
-	// Find best model
-	bestModel := ""
-	bestScore := -999.0
-	for _, m := range models {
-		if m.SampleSize < 30 {
-			continue
-		}
-		score := m.WinRate4W + (m.SharpeRatio * 10)
-		if score > bestScore {
-			bestScore = score
-			bestModel = m.Model
+	// Best model highlight
+	if len(sortedModels) > 0 {
+		best := sortedModels[0]
+		if best.SampleSize >= 30 {
+			b.WriteString(fmt.Sprintf("🏆 <b>Best Model:</b> %s\n", strings.ToUpper(best.Model)))
+			b.WriteString(fmt.Sprintf("   Score: %.1f | WR4W: %.1f%% | Sharpe: %.2f\n\n",
+				best.WinRate4W+best.SharpeRatio*10,
+				best.WinRate4W,
+				best.SharpeRatio,
+			))
 		}
 	}
 	
-	if bestModel != "" {
-		b.WriteString(fmt.Sprintf("🏆 <b>Best Model:</b> %s (score: %.1f)\n", strings.ToUpper(bestModel), bestScore))
+	// Legend
+	b.WriteString("<b>📋 Legend:</b>\n")
+	b.WriteString("• <b>WR4W</b> - 4-week win rate (target >55%)\n")
+	b.WriteString("• <b>Sharpe</b> - Risk-adjusted return (target >1.0)\n")
+	b.WriteString("• <b>DD%</b> - Maximum drawdown (target <15%)\n")
+	b.WriteString("• <b>Sample</b> - Number of evaluated signals\n")
+	b.WriteString("• <b>Conf</b> - Statistical confidence\n")
+	
+	return b.String()
+}
+
+func (h *Handler) generateRecommendation(m *QuantBacktestResult) string {
+	var b strings.Builder
+	
+	b.WriteString("\n<b>💡 Recommendation:</b>\n")
+	
+	// Check sample size first
+	if m.SampleSize < 30 {
+		b.WriteString("⚠️ <i>Sample size too small (<30 signals). Results not statistically significant. Collect more data before making decisions.</i>\n")
+		return b.String()
+	}
+	
+	// Check for overfitting
+	if m.WalkForwardScore > 0 && m.WalkForwardScore < 0.6 {
+		b.WriteString("🔴 <i>High overfitting risk detected. Model may not generalize to new data. Use with caution.</i>\n\n")
+	}
+	
+	// Combined assessment
+	score := m.WinRate4W + m.SharpeRatio*10
+	
+	if m.WinRate4W > 55 && m.SharpeRatio > 1.0 && m.MaxDrawdown < 15 && m.ProfitFactor > 1.5 {
+		b.WriteString("✅ <b>Strong Edge Detected</b>\n")
+		b.WriteString(fmt.Sprintf("<i>Model shows consistent performance with:\n"+
+			"• Win rate: %.1f%% (above 55% threshold)\n"+
+			"• Sharpe ratio: %.2f (excellent risk-adjusted returns)\n"+
+			"• Max DD: %.1f%% (acceptable risk)\n"+
+			"• Profit factor: %.2f (profitable after costs)</i>\n",
+			m.WinRate4W, m.SharpeRatio, -m.MaxDrawdown, m.ProfitFactor))
+	} else if m.WinRate4W > 50 && m.SharpeRatio > 0.5 && m.MaxDrawdown < 20 {
+		b.WriteString("⚠️ <b>Moderate Edge</b>\n")
+		b.WriteString("<i>Model shows some promise but needs monitoring:\n")
+		
+		if m.WinRate4W <= 55 {
+			b.WriteString(fmt.Sprintf("• Win rate %.1f%% - below optimal threshold\n", m.WinRate4W))
+		}
+		if m.SharpeRatio <= 1.0 {
+			b.WriteString(fmt.Sprintf("• Sharpe %.2f - room for improvement\n", m.SharpeRatio))
+		}
+		if m.MaxDrawdown >= 15 {
+			b.WriteString(fmt.Sprintf("• Max DD %.1f%% - consider position sizing\n", -m.MaxDrawdown))
+		}
+		
+		b.WriteString("<i>Recommendation: Use with smaller position size and tight risk management.</i>\n")
+	} else if m.SharpeRatio > 0 {
+		b.WriteString("🔴 <b>Weak Edge</b>\n")
+		b.WriteString("<i>Model barely profitable after costs. Consider:\n")
+		b.WriteString("• Reducing transaction costs\n")
+		b.WriteString("• Filtering signals with additional criteria\n")
+		b.WriteString("• Combining with other models\n")
+		b.WriteString("<i>Recommendation: Not recommended for live trading.</i>\n")
+	} else {
+		b.WriteString("❌ <b>No Edge Detected</b>\n")
+		b.WriteString("<i>Model is not profitable after transaction costs.\n")
+		b.WriteString(fmt.Sprintf("• Expected value: %+.4f%% (negative)\n", m.ExpectedValue))
+		b.WriteString("<i>Recommendation: Do not use for trading decisions.</i>\n")
 	}
 	
 	return b.String()
@@ -218,36 +418,47 @@ func (h *Handler) formatMultiModelSummary(models []QuantBacktestResult) string {
 // handleQBacktestCallback handle callback untuk backtest menu
 func (h *Handler) handleQBacktestCallback(ctx context.Context, chatID string, msgID int, _ int64, data string) error {
 	parts := strings.SplitN(data, ":", 3)
-	if len(parts) < 3 {
+	if len(parts) < 2 {
 		return nil
 	}
-	// data format: "qbacktest:model:STATS" or "qbacktest:sym:EUR"
-	secondPart := parts[1]
+	
+	action := parts[1]
 	thirdPart := ""
 	if len(parts) > 2 {
 		thirdPart = parts[2]
 	}
 	
 	// Model selection: qbacktest:model:MODELNAME
-	if secondPart == "model" && thirdPart != "" {
+	if action == "model" && thirdPart != "" {
 		model := strings.ToLower(thirdPart)
-		// Get current symbol from cache or last currency
 		if lc := h.getLastCurrency(ctx, 0); lc != "" {
 			return h.cmdQBacktest(ctx, chatID, 0, lc+" "+model)
 		}
+		_, err := h.bot.SendHTML(ctx, chatID, "⚠️ No symbol selected. Use /qbacktest [SYMBOL] first.")
+		return err
 	}
 	
 	// Symbol selection: qbacktest:sym:SYMBOL
-	if secondPart == "sym" && thirdPart != "" {
-		sym := thirdPart
-		return h.cmdQBacktest(ctx, chatID, 0, sym)
+	if action == "sym" && thirdPart != "" {
+		return h.cmdQBacktest(ctx, chatID, 0, thirdPart)
 	}
 	
-	// Back to dashboard
-	if secondPart == "back" {
+	// Back to quant dashboard
+	if action == "back" {
 		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
-		_, err := h.bot.SendHTML(ctx, chatID, "📊 Quant Backtest Dashboard\n\nGunakan /qbacktest [SYMBOL] [MODEL]")
+		if lc := h.getLastCurrency(ctx, 0); lc != "" {
+			return h.cmdQuant(ctx, chatID, 0, lc)
+		}
+		_, err := h.bot.SendHTML(ctx, chatID, "🔬 Quant Dashboard\n\nUse /quant [SYMBOL] to start analysis.")
 		return err
+	}
+	
+	// Refresh backtest
+	if action == "refresh" {
+		_ = h.bot.DeleteMessage(ctx, chatID, msgID)
+		if lc := h.getLastCurrency(ctx, 0); lc != "" {
+			return h.cmdQBacktest(ctx, chatID, 0, lc)
+		}
 	}
 	
 	return nil

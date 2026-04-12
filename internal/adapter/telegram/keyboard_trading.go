@@ -655,7 +655,10 @@ func (kb *KeyboardBuilder) QBacktestMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
-				{Text: "🔬 Quant Dashboard", CallbackData: "quant:"},
+				{Text: "🔄 Refresh", CallbackData: "qbacktest:refresh"},
+				{Text: "🔬 Quant Dashboard", CallbackData: "qbacktest:back"},
+			},
+			{
 				{Text: "🏠 Home", CallbackData: "nav:home"},
 			},
 		},
