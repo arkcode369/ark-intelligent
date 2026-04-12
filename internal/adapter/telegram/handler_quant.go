@@ -644,32 +644,3 @@ func findQuantScript() (string, error) {
 	}
 	return "", fmt.Errorf("quant_engine.py not found (searched: %v)", candidates)
 }
-
-// showBacktestDashboard is a wrapper to call the backtest dashboard from handler_qbacktest
-func (h *Handler) showBacktestDashboard(ctx context.Context, chatID string, userID int64) error {
-	// Delegate to handler_qbacktest's showBacktestDashboard
-	// We need to import it or duplicate the logic. For now, show a simple message.
-	_, err := h.bot.SendWithKeyboard(ctx, chatID,
-		`🔬 <b>QUANT BACKTEST DASHBOARD</b>
-
-Backtest model ekonometrik pada data historis:
-
-<b>📊 Foundation:</b>
-• Stats - Distribusi return, Sharpe, VaR
-• GARCH - Volatility clustering & forecast
-• Correlation - Multi-asset correlation
-
-<b>📈 Time Series:</b>
-• Regime - Hidden Markov Model (bull/bear)
-• Mean Revert - ADF, Hurst, half-life
-• Granger - Kausalitas antar aset
-
-<b>🔗 Advanced:</b>
-• Cointegration - Pair trading analysis
-• PCA - Factor analysis multi-asset
-• VAR - Multi-asset forecast
-• Risk - VaR/CVaR historical + parametric
-
-Pilih aset untuk backtest:`, h.kb.QuantSymbolMenu())
-	return err
-}
