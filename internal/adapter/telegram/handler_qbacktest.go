@@ -58,10 +58,10 @@ func (h *Handler) cmdQBacktest(ctx context.Context, chatID string, userID int64,
 	sym := html.EscapeString(mapping.Currency)
 
 	// Show loading with progress
-	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf("🔬 Running backtest for <b>%s</b>...\n<i>Please wait, this may take up to 30 seconds.</i>", sym))
+	loadingID, _ := h.bot.SendLoading(ctx, chatID, fmt.Sprintf("🔬 Running backtest for <b>%s</b>...\n<i>This may take 1-2 minutes. Running all models...</i>", sym))
 
-	// Set timeout for backtest
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// Set longer timeout for backtest (2 minutes)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
 	analyzer := NewQuantBacktestAnalyzer(h.quant)
@@ -75,12 +75,14 @@ func (h *Handler) cmdQBacktest(ctx context.Context, chatID string, userID int64,
 		// Check for timeout
 		if ctxWithTimeout.Err() == context.DeadlineExceeded {
 			_, err = h.bot.SendHTML(ctx, chatID, 
-				"⏱️ <b>Backtest timed out.</b>\n\n"+
-					"The analysis took too long. This can happen with:\n"+
-					"• Insufficient historical data\n"+
-					"• Complex model (try simpler models like 'stats')\n"+
+				"⏱️ <b>Backtest timed out after 2 minutes.</b>\n\n"+
+					"This can happen with:\n"+
+					"• Running all models at once\n"+
 					"• High system load\n\n"+
-					"Please try again or use a different symbol/model.")
+					"<b>Solution:</b> Try testing one model at a time:\n"+
+					"<code>/qbacktest EUR stats</code>\n"+
+					"<code>/qbacktest EUR garch</code>\n"+
+					"etc.")
 			return err
 		}
 		
