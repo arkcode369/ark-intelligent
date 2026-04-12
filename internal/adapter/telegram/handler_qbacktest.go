@@ -9,6 +9,8 @@ import (
 	"html"
 	"strings"
 	"time"
+
+	"github.com/arkcode369/ark-intelligent/internal/domain"
 )
 
 // registerQuantBacktestCommands register /qbacktest command
@@ -372,8 +374,7 @@ func (h *Handler) generateRecommendation(m *QuantBacktestResult) string {
 		b.WriteString("🔴 <i>High overfitting risk detected. Model may not generalize to new data. Use with caution.</i>\n\n")
 	}
 	
-	// Combined assessment
-	score := m.WinRate4W + m.SharpeRatio*10
+	// Combined assessment (score calculated inline where needed)
 	
 	if m.WinRate4W > 55 && m.SharpeRatio > 1.0 && m.MaxDrawdown < 15 && m.ProfitFactor > 1.5 {
 		b.WriteString("✅ <b>Strong Edge Detected</b>\n")

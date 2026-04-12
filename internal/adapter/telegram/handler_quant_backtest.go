@@ -8,19 +8,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/arkcode369/ark-intelligent/internal/domain"
-	"github.com/arkcode369/ark-intelligent/internal/service/price"
-	"github.com/arkcode369/ark-intelligent/internal/service/ta"
-	"html"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/arkcode369/ark-intelligent/internal/config"
+	"github.com/arkcode369/ark-intelligent/internal/domain"
+	"github.com/arkcode369/ark-intelligent/internal/service/price"
+	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
 // QuantBacktestConfig konfigurasi backtest yang customizable
@@ -558,7 +555,7 @@ func calculateStatisticalConfidence(winRate float64, sampleSize float64) float64
 	p := winRate / 100.0
 	
 	denominator := 1 + z*z/sampleSize
-	center := (p + z*z/(2*sampleSize)) / denominator
+	_ = (p + z*z/(2*sampleSize)) / denominator // center - calculated for Wilson interval but not needed for width
 	margin := z * math.Sqrt((p*(1-p) + z*z/(4*sampleSize))/sampleSize) / denominator
 	
 	// Confidence based on how tight the interval is
