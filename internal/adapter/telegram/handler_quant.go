@@ -311,7 +311,7 @@ Klik tombol untuk mulai analisis.`,
 // handleQuantCallback — inline button handler
 // ---------------------------------------------------------------------------
 
-func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID int, _ int64, data string) error {
+func (h *Handler) handleQuantCallback(ctx context.Context, chatID string, msgID int, userID int64, data string) error {
 	// Format: quant:{action}
 	parts := strings.SplitN(data, ":", 2)
 	if len(parts) < 2 {
