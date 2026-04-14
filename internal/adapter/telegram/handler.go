@@ -124,6 +124,9 @@ type Handler struct {
 	// vpCache stores per-chat VP state with TTL.
 	vpCache *vpStateCache
 
+	// qbacktestCache stores per-chat Quant Backtest state with TTL.
+	qbacktestCache *qbacktestStateCache
+
 	// ctabt holds optional CTA Backtest engine services.
 	// May be nil — /ctabt command disabled if not configured.
 	ctabt *CTABTServices

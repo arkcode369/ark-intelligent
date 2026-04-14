@@ -654,13 +654,13 @@ func (kb *KeyboardBuilder) BacktestBackRow() ports.InlineKeyboard {
 // Quant Backtest Keyboards
 // ---------------------------------------------------------------------------
 
-// QBacktestMenu builds the quant backtest result navigation keyboard.
+// QBacktestMenu builds the quant backtest result navigation keyboard (legacy).
 func (kb *KeyboardBuilder) QBacktestMenu() ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
 			{
 				{Text: "🔄 Refresh", CallbackData: "qbacktest:refresh"},
-				{Text: "🔬 Quant Dashboard", CallbackData: "qbacktest:back"},
+				{Text: "🔙 Back", CallbackData: "qbacktest:back"},
 			},
 			{
 				{Text: "🏠 Home", CallbackData: "nav:home"},
@@ -669,32 +669,105 @@ func (kb *KeyboardBuilder) QBacktestMenu() ports.InlineKeyboard {
 	}
 }
 
-// QuantBacktestModelMenu builds model selection for quant backtest.
-func (kb *KeyboardBuilder) QuantBacktestModelMenu(symbol string) ports.InlineKeyboard {
+// QBacktestMenuWithTF builds the model selection + timeframe keyboard for /qbacktest.
+func (kb *KeyboardBuilder) QBacktestMenuWithTF(symbol, tf string) ports.InlineKeyboard {
 	return ports.InlineKeyboard{
 		Rows: [][]ports.InlineButton{
+			// Model row 1
 			{
 				{Text: "📊 Stats", CallbackData: "qbacktest:model:stats"},
 				{Text: "📉 GARCH", CallbackData: "qbacktest:model:garch"},
-				{Text: "🔗 Correlation", CallbackData: "qbacktest:model:correlation"},
+				{Text: "🔗 Corr", CallbackData: "qbacktest:model:correlation"},
 			},
+			// Model row 2
 			{
 				{Text: "🎭 Regime", CallbackData: "qbacktest:model:regime"},
-				{Text: "🔄 Mean Revert", CallbackData: "qbacktest:model:meanrevert"},
+				{Text: "🔄 MeanRev", CallbackData: "qbacktest:model:meanrevert"},
 				{Text: "⚡ Granger", CallbackData: "qbacktest:model:granger"},
 			},
+			// Model row 3
 			{
-				{Text: "🔗 Cointegration", CallbackData: "qbacktest:model:cointegration"},
+				{Text: "🔗 Coint", CallbackData: "qbacktest:model:cointegration"},
 				{Text: "🧬 PCA", CallbackData: "qbacktest:model:pca"},
-				{Text: "🌐 VAR", CallbackData: "qbacktest:model:var"},
+				{Text: "🌐 VaR", CallbackData: "qbacktest:model:var"},
 			},
+			// Model row 4
 			{
 				{Text: "⚠️ Risk", CallbackData: "qbacktest:model:risk"},
-				{Text: "📋 All Models", CallbackData: "qbacktest:model:"},
+				{Text: "📅 Seasonal", CallbackData: "qbacktest:model:seasonal"},
+				{Text: "ℹ️ Models", CallbackData: "qbacktest:model:"},
 			},
+			// Timeframe row 1
 			{
-				{Text: "🔙 Back", CallbackData: "qbacktest:back"},
+				{Text: "15m", CallbackData: "qbacktest:tf:15m"},
+				{Text: "30m", CallbackData: "qbacktest:tf:30m"},
+				{Text: "1H", CallbackData: "qbacktest:tf:1h"},
+				{Text: "4H", CallbackData: "qbacktest:tf:4h"},
+			},
+			// Timeframe row 2
+			{
+				{Text: "6H", CallbackData: "qbacktest:tf:6h"},
+				{Text: "12H", CallbackData: "qbacktest:tf:12h"},
+				{Text: "📊 Daily", CallbackData: "qbacktest:tf:daily"},
+			},
+			// Navigation
+			{
+				{Text: "🏠 Home", CallbackData: "nav:home"},
 			},
 		},
 	}
+}
+
+// QBacktestResultMenu builds the keyboard shown after a backtest result.
+func (kb *KeyboardBuilder) QBacktestResultMenu(symbol, tf, currentModel string) ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			// Model row 1
+			{
+				{Text: "📊 Stats", CallbackData: "qbacktest:model:stats"},
+				{Text: "📉 GARCH", CallbackData: "qbacktest:model:garch"},
+				{Text: "🔗 Corr", CallbackData: "qbacktest:model:correlation"},
+			},
+			// Model row 2
+			{
+				{Text: "🎭 Regime", CallbackData: "qbacktest:model:regime"},
+				{Text: "🔄 MeanRev", CallbackData: "qbacktest:model:meanrevert"},
+				{Text: "⚡ Granger", CallbackData: "qbacktest:model:granger"},
+			},
+			// Model row 3
+			{
+				{Text: "🔗 Coint", CallbackData: "qbacktest:model:cointegration"},
+				{Text: "🧬 PCA", CallbackData: "qbacktest:model:pca"},
+				{Text: "🌐 VaR", CallbackData: "qbacktest:model:var"},
+			},
+			// Model row 4
+			{
+				{Text: "⚠️ Risk", CallbackData: "qbacktest:model:risk"},
+				{Text: "📅 Seasonal", CallbackData: "qbacktest:model:seasonal"},
+				{Text: "🔄 Refresh", CallbackData: "qbacktest:refresh"},
+			},
+			// Timeframe
+			{
+				{Text: "15m", CallbackData: "qbacktest:tf:15m"},
+				{Text: "30m", CallbackData: "qbacktest:tf:30m"},
+				{Text: "1H", CallbackData: "qbacktest:tf:1h"},
+				{Text: "4H", CallbackData: "qbacktest:tf:4h"},
+			},
+			{
+				{Text: "6H", CallbackData: "qbacktest:tf:6h"},
+				{Text: "12H", CallbackData: "qbacktest:tf:12h"},
+				{Text: "Daily", CallbackData: "qbacktest:tf:daily"},
+			},
+			// Navigation
+			{
+				{Text: "🔙 Back", CallbackData: "qbacktest:back"},
+				{Text: "🏠 Home", CallbackData: "nav:home"},
+			},
+		},
+	}
+}
+
+// QuantBacktestModelMenu builds legacy model selection (kept for compatibility).
+func (kb *KeyboardBuilder) QuantBacktestModelMenu(symbol string) ports.InlineKeyboard {
+	return kb.QBacktestMenuWithTF(symbol, "daily")
 }
