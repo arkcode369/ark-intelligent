@@ -68,8 +68,11 @@ func (h *Handler) cmdQBacktest(ctx context.Context, chatID string, userID int64,
 	analyzer := NewSimpleQuantBacktestAnalyzer(h.quant)
 	
 	// For single model, use simple analyzer
-	var stats *QuantBacktestStats
-	
+	var (
+		stats *QuantBacktestStats
+		err   error
+	)
+
 	if model != "" {
 		// Single model - use simple analyzer
 		simpleResult, err := analyzer.Analyze(ctxWithTimeout, symbol, model)
@@ -112,7 +115,7 @@ func (h *Handler) cmdQBacktest(ctx context.Context, chatID string, userID int64,
 		if loadingID > 0 {
 			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 		}
-		_, err := h.bot.SendHTML(ctx, chatID, 
+		_, _ = h.bot.SendHTML(ctx, chatID,
 			"⚡ <b>Quick Backtest Available</b>\n\n"+
 				"Due to complexity, full multi-model backtest requires Python engine.\n\n"+
 				"<b>Try single model for instant results:</b>\n"+
