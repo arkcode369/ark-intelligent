@@ -88,6 +88,25 @@ def annualization_factor(timeframe: str) -> float:
     return mapping.get(tf, 252)
 
 
+def scale_lookback(timeframe: str, default_daily: int = 252, cap: int = 2000) -> int:
+    """Scale lookback bars so intraday gets equivalent calendar coverage as daily.
+
+    Examples (default_daily=252 = ~1 year daily):
+        daily → 252  |  4h → 252×6=1512 capped at 2000  |  15m → 2000 (capped)
+    """
+    bars_per_day = {
+        "15m": 96, "30m": 48, "1h": 24,
+        "4h": 6, "6h": 4, "12h": 2, "daily": 1, "d": 1,
+    }
+    bpd = bars_per_day.get(timeframe.lower(), 1)
+    return min(default_daily * bpd, cap)
+
+
+def is_intraday(timeframe: str) -> bool:
+    """True for sub-daily timeframes."""
+    return timeframe.lower() in ("15m", "30m", "1h", "4h", "6h")
+
+
 def save_chart(fig, path):
     fig.savefig(path, dpi=100, bbox_inches="tight", facecolor=BG_COLOR)
     plt.close(fig)
@@ -368,7 +387,7 @@ def compute_garch(df, symbol, timeframe, params, chart_path=None):
 # ===========================================================================
 
 def compute_correlation(df, symbol, timeframe, params, multi_asset, chart_path=None):
-    lookback = params.get("lookback", 120)
+    lookback = params.get("lookback", scale_lookback(timeframe, 120))
 
     # Build multi-asset return matrix
     all_closes = {}
@@ -933,7 +952,8 @@ def compute_granger(df, symbol, timeframe, params, multi_asset, chart_path=None)
 # ===========================================================================
 
 def compute_seasonal(df, symbol, timeframe, params, chart_path=None):
-    """Analyze historical returns by day-of-week and month-of-year."""
+    """Analyze seasonal patterns. For intraday: hour-of-day + day-of-week.
+    For daily: day-of-week + month-of-year."""
 
     returns = compute_returns(df)
     n = len(returns)
@@ -942,10 +962,31 @@ def compute_seasonal(df, symbol, timeframe, params, chart_path=None):
 
     from scipy import stats as sp_stats
 
+    intraday = is_intraday(timeframe)
+    returns_with_idx = returns.copy()
+    returns_with_idx.index = pd.to_datetime(returns_with_idx.index)
+
+    # --- Hour of Day Analysis (intraday only) ---
+    hour_stats = {}
+    if intraday:
+        hour_groups = returns_with_idx.groupby(returns_with_idx.index.hour)
+        for hour, group in hour_groups:
+            if len(group) < 5:
+                continue
+            t_stat, p_val = sp_stats.ttest_1samp(group, 0)
+            hour_stats[f"{hour:02d}:00"] = {
+                "mean_return": safe_float(float(group.mean())),
+                "std_dev": safe_float(float(group.std())),
+                "win_rate": safe_float(float((group > 0).mean())),
+                "count": len(group),
+                "t_stat": safe_float(t_stat),
+                "p_value": safe_float(p_val),
+                "significant": p_val < 0.05,
+            }
+
     # --- Day of Week Analysis ---
     dow_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    returns_with_dow = returns.copy()
-    returns_with_dow.index = pd.to_datetime(returns_with_dow.index)
+    returns_with_dow = returns_with_idx
     dow_groups = returns_with_dow.groupby(returns_with_dow.index.dayofweek)
 
     dow_stats = {}
@@ -997,11 +1038,18 @@ def compute_seasonal(df, symbol, timeframe, params, chart_path=None):
     current_dow = dow_names[today.dayofweek] if hasattr(today, 'dayofweek') else "N/A"
     current_month = month_names[today.month - 1] if hasattr(today, 'month') else "N/A"
 
+    # Current hour for intraday context
+    current_hour = f"{today.hour:02d}:00" if hasattr(today, 'hour') and intraday else "N/A"
+
     result = {
         "day_of_week": dow_stats,
         "month_of_year": month_stats,
+        "hour_of_day": hour_stats,
         "current_day": current_dow,
         "current_month": current_month,
+        "current_hour": current_hour,
+        "timeframe": timeframe,
+        "is_intraday": intraday,
         "n_observations": n,
     }
 
@@ -1277,7 +1325,7 @@ def compute_pca(df, symbol, timeframe, params, multi_asset, chart_path=None):
         return output("pca", symbol, False, {}, "", error="Minimal 3 aset untuk PCA")
 
     ret_df = pd.DataFrame(all_returns).dropna()
-    lookback = min(params.get("lookback", 252), len(ret_df))
+    lookback = min(params.get("lookback", scale_lookback(timeframe, 252)), len(ret_df))
     ret_df = ret_df.iloc[-lookback:]
 
     if len(ret_df) < 30:
@@ -1419,7 +1467,7 @@ def compute_var(df, symbol, timeframe, params, multi_asset, chart_path=None):
             top_syms = [symbol] + top_syms[:7]
         ret_df = ret_df[top_syms]
 
-    lookback = min(params.get("lookback", 252), len(ret_df))
+    lookback = min(params.get("lookback", scale_lookback(timeframe, 252)), len(ret_df))
     ret_df = ret_df.iloc[-lookback:]
 
     if len(ret_df) < 50:

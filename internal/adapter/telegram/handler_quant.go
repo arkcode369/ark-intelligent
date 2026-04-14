@@ -504,14 +504,32 @@ func (h *Handler) runQuantEngine(ctx context.Context, state *quantState, mode st
 		}
 	}
 
+	// Scale lookback based on timeframe: same calendar coverage for all TFs
+	lookback := 120
+	forecastHorizon := 5
+	switch {
+	case tf == "15m" || tf == "30m":
+		lookback = min(n, 2000)
+		forecastHorizon = 16 // ~4 hours
+	case tf == "1h" || tf == "4h":
+		lookback = min(n, 1000)
+		forecastHorizon = 8
+	case tf == "6h" || tf == "12h":
+		lookback = min(n, 500)
+		forecastHorizon = 5
+	default: // daily
+		lookback = min(n, 252)
+		forecastHorizon = 5
+	}
+
 	input := quantEngineInput{
 		Mode:      mode,
 		Symbol:    state.symbol,
 		Timeframe: tf,
 		Bars:      chartBars,
 		Params: map[string]any{
-			"lookback":         120,
-			"forecast_horizon": 5,
+			"lookback":         lookback,
+			"forecast_horizon": forecastHorizon,
 			"confidence_level": 0.95,
 		},
 	}
