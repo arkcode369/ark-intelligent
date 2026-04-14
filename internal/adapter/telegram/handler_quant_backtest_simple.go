@@ -181,8 +181,6 @@ func (a *SimpleQuantBacktestAnalyzer) runModelAnalysis(bars []ta.OHLCV, model, t
 		result, err = backtestVaR(bars, timeframe)
 	case "risk":
 		result, err = backtestRisk(bars, timeframe)
-	case "wyckoff":
-		result, err = backtestWyckoff(bars, timeframe)
 	default:
 		return nil, fmt.Errorf("unknown model: %s", model)
 	}
@@ -231,9 +229,6 @@ func modelDescription(model string) (logic, criteria string) {
 	case "risk":
 		return "Sortino Ratio Regime",
 			"Hitung rasio upside (mean positive return) / downside deviation dari 25-bar. Sortino > 1.2 → LONG (favorable risk env). Sortino < 0.5 dan downside vol tinggi → SHORT. Hold 5 bar."
-	case "wyckoff":
-		return "Wyckoff Accumulation/Distribution Breakout",
-			"Deteksi compression zone (ATR di bottom 30th percentile selama 10 bar). Breakout di atas compression high → LONG (markup). Breakdown di bawah compression low → SHORT (markdown). Scale hold per timeframe."
 	}
 	return "Custom Model", "Signal logic tidak tersedia."
 }
@@ -1081,90 +1076,4 @@ func calculateMaxDrawdown(equity []float64) float64 {
 }
 
 // ---------------------------------------------------------------------------
-// Model 12: WYCKOFF — Accumulation/Distribution breakout (price-action proxy)
-// Detect compression zones (low ATR) then signal on breakout.
-// ---------------------------------------------------------------------------
 
-func backtestWyckoff(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
-	n := len(bars)
-	atrPeriod := 14
-	compressPeriod := 10 // bars to check for compression
-	holdBars := 8
-
-	switch {
-	case timeframe == "15m" || timeframe == "30m":
-		holdBars = 20
-	case timeframe == "1h" || timeframe == "4h":
-		holdBars = 10
-	}
-
-	if n < atrPeriod+compressPeriod+holdBars+10 {
-		return nil, fmt.Errorf("tidak cukup data untuk Wyckoff model")
-	}
-
-	// Compute ATR for each bar
-	atr := make([]float64, n)
-	for i := 1; i < n; i++ {
-		hl := bars[i].High - bars[i].Low
-		hc := math.Abs(bars[i].High - bars[i-1].Close)
-		lc := math.Abs(bars[i].Low - bars[i-1].Close)
-		tr := hl
-		if hc > tr { tr = hc }
-		if lc > tr { tr = lc }
-		atr[i] = tr
-	}
-	// Smooth ATR (simple MA)
-	smoothATR := make([]float64, n)
-	for i := atrPeriod; i < n; i++ {
-		smoothATR[i] = qbtMean(atr[i-atrPeriod : i])
-	}
-
-	var signals []signalPoint
-	for i := atrPeriod + compressPeriod + 1; i < n-holdBars; i++ {
-		// Rolling ATR percentile over last 50 bars
-		window := smoothATR[i-50 : i]
-		curATR := smoothATR[i]
-		atrRank := percentileRank(window, curATR)
-
-		// Compression = ATR in bottom 30th percentile
-		if atrRank > 30 {
-			continue
-		}
-
-		// Find range high/low during compression period
-		compHigh := bars[i-compressPeriod].High
-		compLow := bars[i-compressPeriod].Low
-		for j := i - compressPeriod + 1; j <= i; j++ {
-			if bars[j].High > compHigh { compHigh = bars[j].High }
-			if bars[j].Low < compLow  { compLow = bars[j].Low }
-		}
-		compRange := compHigh - compLow
-
-		// Breakout threshold: 0.3% of price OR 50% of compression range
-		breakThreshold := bars[i].Close * 0.003
-		if compRange*0.5 > breakThreshold {
-			breakThreshold = compRange * 0.5
-		}
-
-		direction := ""
-		// Breakout above compression → LONG (Wyckoff spring / markup)
-		if bars[i].Close > compHigh+breakThreshold {
-			direction = "LONG"
-		}
-		// Breakdown below compression → SHORT (Wyckoff distribution / markdown)
-		if bars[i].Close < compLow-breakThreshold {
-			direction = "SHORT"
-		}
-		if direction == "" {
-			continue
-		}
-
-		if i+holdBars >= n {
-			break
-		}
-		ret := returnPct(bars[i].Close, bars[i+holdBars].Close, direction)
-		signals = append(signals, signalPoint{direction, ret})
-	}
-
-	return computeBacktestStats(signals, 71.0), nil
-}

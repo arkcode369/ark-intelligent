@@ -695,7 +695,6 @@ func (kb *KeyboardBuilder) QBacktestMenuWithTF(symbol, tf string) ports.InlineKe
 			{
 				{Text: "⚠️ Risk", CallbackData: "qbacktest:model:risk"},
 				{Text: "📅 Seasonal", CallbackData: "qbacktest:model:seasonal"},
-				{Text: "🌊 Wyckoff", CallbackData: "qbacktest:model:wyckoff"},
 			},
 			// Model info row
 			{
@@ -748,7 +747,6 @@ func (kb *KeyboardBuilder) QBacktestResultMenu(symbol, tf, currentModel string) 
 			{
 				{Text: "⚠️ Risk", CallbackData: "qbacktest:model:risk"},
 				{Text: "📅 Seasonal", CallbackData: "qbacktest:model:seasonal"},
-				{Text: "🌊 Wyckoff", CallbackData: "qbacktest:model:wyckoff"},
 			},
 			// Actions
 			{
