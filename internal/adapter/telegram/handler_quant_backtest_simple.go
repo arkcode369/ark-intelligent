@@ -160,27 +160,29 @@ func (a *SimpleQuantBacktestAnalyzer) runModelAnalysis(bars []ta.OHLCV, model, t
 
 	switch strings.ToLower(model) {
 	case "stats":
-		result, err = backtestStats(bars)
+		result, err = backtestStats(bars, timeframe)
 	case "garch":
-		result, err = backtestGARCH(bars)
+		result, err = backtestGARCH(bars, timeframe)
 	case "corr", "correlation":
-		result, err = backtestCorrelation(bars)
+		result, err = backtestCorrelation(bars, timeframe)
 	case "regime":
-		result, err = backtestRegime(bars)
+		result, err = backtestRegime(bars, timeframe)
 	case "seasonal":
-		result, err = backtestSeasonal(bars)
+		result, err = backtestSeasonal(bars, timeframe)
 	case "meanrevert":
-		result, err = backtestMeanRevert(bars)
+		result, err = backtestMeanRevert(bars, timeframe)
 	case "granger":
-		result, err = backtestGranger(bars)
+		result, err = backtestGranger(bars, timeframe)
 	case "coint", "cointegration":
-		result, err = backtestCointegration(bars)
+		result, err = backtestCointegration(bars, timeframe)
 	case "pca":
-		result, err = backtestPCA(bars)
+		result, err = backtestPCA(bars, timeframe)
 	case "var":
-		result, err = backtestVaR(bars)
+		result, err = backtestVaR(bars, timeframe)
 	case "risk":
-		result, err = backtestRisk(bars)
+		result, err = backtestRisk(bars, timeframe)
+	case "wyckoff":
+		result, err = backtestWyckoff(bars, timeframe)
 	default:
 		return nil, fmt.Errorf("unknown model: %s", model)
 	}
@@ -209,8 +211,8 @@ func modelDescription(model string) (logic, criteria string) {
 		return "SMA 50/200 Golden/Death Cross",
 			"Classic trend following. LONG ketika SMA-50 menyebrangi SMA-200 dari bawah (golden cross). SHORT ketika SMA-50 turun melewati SMA-200 (death cross). Hold 10 bar."
 	case "seasonal":
-		return "Day-of-Week Pattern",
-			"Analisis return historis per hari-dalam-seminggu (senin-jumat). Training di 50% data pertama. Signal di 50% data kedua: LONG di hari dengan avg return >0.05%, SHORT di hari <-0.05%. Hold 5 bar."
+		return "Seasonal Pattern (Timeframe-Aware)",
+			"Intraday (15m-6h): pattern per JAM-DALAM-HARI (hour-of-day). Daily/12h: pattern per HARI-DALAM-MINGGU. Training di 50% data pertama. Signal di 50% kedua berdasarkan historical avg return per period. Hold disesuaikan timeframe."
 	case "meanrevert":
 		return "Bollinger Band Z-Score Fade",
 			"Hitung z-score: (close - 20MA) / 20-bar std. Z > 2 → SHORT (overbought). Z < -2 → LONG (oversold). Mean reversion strategy, berlawanan dengan trend. Hold 5 bar."
@@ -229,6 +231,9 @@ func modelDescription(model string) (logic, criteria string) {
 	case "risk":
 		return "Sortino Ratio Regime",
 			"Hitung rasio upside (mean positive return) / downside deviation dari 25-bar. Sortino > 1.2 → LONG (favorable risk env). Sortino < 0.5 dan downside vol tinggi → SHORT. Hold 5 bar."
+	case "wyckoff":
+		return "Wyckoff Accumulation/Distribution Breakout",
+			"Deteksi compression zone (ATR di bottom 30th percentile selama 10 bar). Breakout di atas compression high → LONG (markup). Breakdown di bawah compression low → SHORT (markdown). Scale hold per timeframe."
 	}
 	return "Custom Model", "Signal logic tidak tersedia."
 }
@@ -238,7 +243,7 @@ func modelDescription(model string) (logic, criteria string) {
 // Signal when 5-bar return rank breaks into top/bottom quartile.
 // ---------------------------------------------------------------------------
 
-func backtestStats(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestStats(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	window := 20
 	holdBars := 5
@@ -289,7 +294,7 @@ func backtestStats(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Buy breakouts when fast vol expands above slow vol; fade when compressing.
 // ---------------------------------------------------------------------------
 
-func backtestGARCH(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestGARCH(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	fastPeriod := 5
 	slowPeriod := 20
@@ -346,7 +351,7 @@ func backtestGARCH(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Signal when 10-bar and 20-bar momentum agree in direction.
 // ---------------------------------------------------------------------------
 
-func backtestCorrelation(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestCorrelation(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	shortPeriod := 10
 	longPeriod := 20
@@ -386,30 +391,37 @@ func backtestCorrelation(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Classic golden/death cross with trend confirmation.
 // ---------------------------------------------------------------------------
 
-func backtestRegime(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestRegime(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
-	fastMA := 50
-	slowMA := 200
-	holdBars := 10
+
+	// Scale MA periods and hold based on timeframe
+	var fastMA, slowMA, holdBars int
+	switch {
+	case timeframe == "15m" || timeframe == "30m":
+		fastMA, slowMA, holdBars = 20, 60, 15 // ~5h fast, 15h slow, 3.75h hold
+	case timeframe == "1h" || timeframe == "4h":
+		fastMA, slowMA, holdBars = 30, 100, 10
+	default: // 6h, 12h, daily
+		fastMA, slowMA, holdBars = 50, 200, 10
+	}
+
 	if n < slowMA+holdBars+5 {
-		return nil, fmt.Errorf("not enough bars for regime model (need 200+)")
+		return nil, fmt.Errorf("tidak cukup data untuk regime model (butuh %d+ bars, punya %d)", slowMA, n)
 	}
 
 	var signals []signalPoint
 	for i := slowMA; i < n-holdBars; i++ {
-		sma50 := sma(bars, i, fastMA)
-		sma200 := sma(bars, i, slowMA)
-		prevSMA50 := sma(bars, i-1, fastMA)
-		prevSMA200 := sma(bars, i-1, slowMA)
+		smaFast := sma(bars, i, fastMA)
+		smaSlow := sma(bars, i, slowMA)
+		prevFast := sma(bars, i-1, fastMA)
+		prevSlow := sma(bars, i-1, slowMA)
 
 		direction := ""
-		// Golden cross: SMA50 crosses above SMA200
-		if prevSMA50 <= prevSMA200 && sma50 > sma200 {
-			direction = "LONG"
+		if prevFast <= prevSlow && smaFast > smaSlow {
+			direction = "LONG" // golden cross
 		}
-		// Death cross: SMA50 crosses below SMA200
-		if prevSMA50 >= prevSMA200 && sma50 < sma200 {
-			direction = "SHORT"
+		if prevFast >= prevSlow && smaFast < smaSlow {
+			direction = "SHORT" // death cross
 		}
 		if direction == "" {
 			continue
@@ -430,43 +442,74 @@ func backtestRegime(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Signal based on historically best-performing weekdays.
 // ---------------------------------------------------------------------------
 
-func backtestSeasonal(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+// backtestSeasonal detects time-of-period patterns:
+//   - intraday (15m..6h): hour-of-day pattern — which hours have best/worst avg returns
+//   - 12h/daily: day-of-week pattern
+func backtestSeasonal(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
-	holdBars := 5
-	if n < 60 {
-		return nil, fmt.Errorf("not enough bars for seasonal model")
+	if n < 80 {
+		return nil, fmt.Errorf("tidak cukup data untuk seasonal model (butuh 80+ bars)")
 	}
 
-	// Compute average return by weekday using first half of data
+	// True for sub-daily timeframes where hours matter
+	isIntraday := timeframe == "15m" || timeframe == "30m" ||
+		timeframe == "1h" || timeframe == "4h" || timeframe == "6h"
+
+	// Hold: scale with timeframe
+	holdBars := 5
+	if timeframe == "15m" {
+		holdBars = 16 // ~4 hours
+	} else if timeframe == "30m" {
+		holdBars = 8 // ~4 hours
+	} else if timeframe == "1h" {
+		holdBars = 4
+	}
+
+	// Threshold for signal: if intraday use tighter threshold (smaller bars, bigger noise)
+	threshold := 0.05
+	if isIntraday {
+		threshold = 0.02 // 0.02% per 15m bar is meaningful
+	}
+
 	midpoint := n / 2
-	dayReturns := make(map[int][]float64) // weekday → returns
+	periodReturns := make(map[int][]float64)
+
 	for i := 1; i < midpoint; i++ {
 		if bars[i-1].Close > 0 {
 			ret := (bars[i].Close - bars[i-1].Close) / bars[i-1].Close * 100
-			wd := int(bars[i].Date.Weekday())
-			dayReturns[wd] = append(dayReturns[wd], ret)
+			var key int
+			if isIntraday {
+				key = bars[i].Date.Hour() // 0-23
+			} else {
+				key = int(bars[i].Date.Weekday()) // 0=Sun..6=Sat
+			}
+			periodReturns[key] = append(periodReturns[key], ret)
 		}
 	}
 
-	// Compute mean per weekday
-	dayAvg := make(map[int]float64)
-	for wd, rets := range dayReturns {
-		dayAvg[wd] = qbtMean(rets)
+	// Compute mean per period
+	periodAvg := make(map[int]float64)
+	for k, rets := range periodReturns {
+		periodAvg[k] = qbtMean(rets)
 	}
 
-	// Signal on second half: buy on best day of week, sell on worst
 	var signals []signalPoint
 	for i := midpoint; i < n-holdBars; i++ {
-		wd := int(bars[i].Date.Weekday())
-		avg, ok := dayAvg[wd]
+		var key int
+		if isIntraday {
+			key = bars[i].Date.Hour()
+		} else {
+			key = int(bars[i].Date.Weekday())
+		}
+		avg, ok := periodAvg[key]
 		if !ok {
 			continue
 		}
 
 		direction := ""
-		if avg > 0.05 { // historically positive day → LONG
+		if avg > threshold {
 			direction = "LONG"
-		} else if avg < -0.05 { // historically negative day → SHORT
+		} else if avg < -threshold {
 			direction = "SHORT"
 		}
 		if direction == "" {
@@ -488,7 +531,7 @@ func backtestSeasonal(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Fade extremes: z > 2 → SHORT; z < -2 → LONG.
 // ---------------------------------------------------------------------------
 
-func backtestMeanRevert(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestMeanRevert(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	period := 20
 	holdBars := 5
@@ -532,7 +575,7 @@ func backtestMeanRevert(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Signal when 5-bar ROC is in top/bottom quartile of recent distribution.
 // ---------------------------------------------------------------------------
 
-func backtestGranger(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestGranger(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	rocPeriod := 5
 	windowSize := 30
@@ -580,7 +623,7 @@ func backtestGranger(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Fade price when it deviates 2.5+ std from 60-bar mean.
 // ---------------------------------------------------------------------------
 
-func backtestCointegration(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestCointegration(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	period := 60
 	holdBars := 10
@@ -624,7 +667,7 @@ func backtestCointegration(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) 
 // Combines momentum (ROC), trend (vs 50MA), and mean-reversion (z-score).
 // ---------------------------------------------------------------------------
 
-func backtestPCA(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestPCA(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	maPeriod := 50
 	zPeriod := 20
@@ -688,7 +731,7 @@ func backtestPCA(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Signal when historical tail-risk environment is favourable.
 // ---------------------------------------------------------------------------
 
-func backtestVaR(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestVaR(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	window := 30
 	holdBars := 5
@@ -743,7 +786,7 @@ func backtestVaR(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
 // Signal when downside risk is low relative to recent history.
 // ---------------------------------------------------------------------------
 
-func backtestRisk(bars []ta.OHLCV) (*SimpleQuantBacktestResult, error) {
+func backtestRisk(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
 	n := len(bars)
 	window := 25
 	holdBars := 5
@@ -1035,4 +1078,93 @@ func calculateMaxDrawdown(equity []float64) float64 {
 		}
 	}
 	return -maxDD
+}
+
+// ---------------------------------------------------------------------------
+// Model 12: WYCKOFF — Accumulation/Distribution breakout (price-action proxy)
+// Detect compression zones (low ATR) then signal on breakout.
+// ---------------------------------------------------------------------------
+
+func backtestWyckoff(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult, error) {
+	n := len(bars)
+	atrPeriod := 14
+	compressPeriod := 10 // bars to check for compression
+	holdBars := 8
+
+	switch {
+	case timeframe == "15m" || timeframe == "30m":
+		holdBars = 20
+	case timeframe == "1h" || timeframe == "4h":
+		holdBars = 10
+	}
+
+	if n < atrPeriod+compressPeriod+holdBars+10 {
+		return nil, fmt.Errorf("tidak cukup data untuk Wyckoff model")
+	}
+
+	// Compute ATR for each bar
+	atr := make([]float64, n)
+	for i := 1; i < n; i++ {
+		hl := bars[i].High - bars[i].Low
+		hc := math.Abs(bars[i].High - bars[i-1].Close)
+		lc := math.Abs(bars[i].Low - bars[i-1].Close)
+		tr := hl
+		if hc > tr { tr = hc }
+		if lc > tr { tr = lc }
+		atr[i] = tr
+	}
+	// Smooth ATR (simple MA)
+	smoothATR := make([]float64, n)
+	for i := atrPeriod; i < n; i++ {
+		smoothATR[i] = qbtMean(atr[i-atrPeriod : i])
+	}
+
+	var signals []signalPoint
+	for i := atrPeriod + compressPeriod + 1; i < n-holdBars; i++ {
+		// Rolling ATR percentile over last 50 bars
+		window := smoothATR[i-50 : i]
+		curATR := smoothATR[i]
+		atrRank := percentileRank(window, curATR)
+
+		// Compression = ATR in bottom 30th percentile
+		if atrRank > 30 {
+			continue
+		}
+
+		// Find range high/low during compression period
+		compHigh := bars[i-compressPeriod].High
+		compLow := bars[i-compressPeriod].Low
+		for j := i - compressPeriod + 1; j <= i; j++ {
+			if bars[j].High > compHigh { compHigh = bars[j].High }
+			if bars[j].Low < compLow  { compLow = bars[j].Low }
+		}
+		compRange := compHigh - compLow
+
+		// Breakout threshold: 0.3% of price OR 50% of compression range
+		breakThreshold := bars[i].Close * 0.003
+		if compRange*0.5 > breakThreshold {
+			breakThreshold = compRange * 0.5
+		}
+
+		direction := ""
+		// Breakout above compression → LONG (Wyckoff spring / markup)
+		if bars[i].Close > compHigh+breakThreshold {
+			direction = "LONG"
+		}
+		// Breakdown below compression → SHORT (Wyckoff distribution / markdown)
+		if bars[i].Close < compLow-breakThreshold {
+			direction = "SHORT"
+		}
+		if direction == "" {
+			continue
+		}
+
+		if i+holdBars >= n {
+			break
+		}
+		ret := returnPct(bars[i].Close, bars[i+holdBars].Close, direction)
+		signals = append(signals, signalPoint{direction, ret})
+	}
+
+	return computeBacktestStats(signals, 71.0), nil
 }
