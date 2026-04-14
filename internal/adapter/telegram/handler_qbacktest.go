@@ -447,8 +447,8 @@ func (h *Handler) generateRecommendation(m *QuantBacktestResult) string {
 			m.WinRate4W, m.SharpeRatio, -m.MaxDrawdown, m.ProfitFactor))
 	} else if m.WinRate4W > 50 && m.SharpeRatio > 0.5 && m.MaxDrawdown < 20 {
 		b.WriteString("⚠️ <b>Moderate Edge</b>\n")
-		b.WriteString("<i>Model shows some promise but needs monitoring:\n")
-		
+		b.WriteString("<i>Model shows some promise but needs monitoring:</i>\n")
+
 		if m.WinRate4W <= 55 {
 			b.WriteString(fmt.Sprintf("• Win rate %.1f%% - below optimal threshold\n", m.WinRate4W))
 		}
@@ -458,18 +458,18 @@ func (h *Handler) generateRecommendation(m *QuantBacktestResult) string {
 		if m.MaxDrawdown >= 15 {
 			b.WriteString(fmt.Sprintf("• Max DD %.1f%% - consider position sizing\n", -m.MaxDrawdown))
 		}
-		
+
 		b.WriteString("<i>Recommendation: Use with smaller position size and tight risk management.</i>\n")
 	} else if m.SharpeRatio > 0 {
 		b.WriteString("🔴 <b>Weak Edge</b>\n")
-		b.WriteString("<i>Model barely profitable after costs. Consider:\n")
+		b.WriteString("<i>Model barely profitable after costs. Consider:</i>\n")
 		b.WriteString("• Reducing transaction costs\n")
 		b.WriteString("• Filtering signals with additional criteria\n")
 		b.WriteString("• Combining with other models\n")
 		b.WriteString("<i>Recommendation: Not recommended for live trading.</i>\n")
 	} else {
 		b.WriteString("❌ <b>No Edge Detected</b>\n")
-		b.WriteString("<i>Model is not profitable after transaction costs.\n")
+		b.WriteString("<i>Model is not profitable after transaction costs.</i>\n")
 		b.WriteString(fmt.Sprintf("• Expected value: %+.4f%% (negative)\n", m.ExpectedValue))
 		b.WriteString("<i>Recommendation: Do not use for trading decisions.</i>\n")
 	}
