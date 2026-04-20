@@ -136,6 +136,27 @@ var helpTopics = map[string]HelpTopic{
 		},
 		Related: []string{"ctabt", "cta", "backtest", "quant"},
 	},
+	"vpbt": {
+		Title:       "Volume Profile Backtest",
+		Description: "Backtest Volume Profile strategies dengan 10 mode analisis volume-at-price.\n\n" +
+			"• <b>Profile</b> = POC, VAH/VAL, HVN/LVN zones\n" +
+			"• <b>Session</b> = Asian/London/NY split + Naked POC\n" +
+			"• <b>Shape</b> = P/b/D/B classification\n" +
+			"• <b>Composite</b> = Multi-window merged VP\n" +
+			"• <b>VWAP</b> = VWAP + σ bands + anchored VWAP\n" +
+			"• <b>TPO</b> = Time vs Volume POC divergence\n" +
+			"• <b>Delta</b> = Simulated buy/sell pressure\n" +
+			"• <b>Auction</b> = Initiative/Responsive state\n" +
+			"• <b>Confluence</b> = Multi-TF level overlap (★★★★★)\n" +
+			"• <b>Full Report</b> = Decision signal synthesis",
+		Examples: []string{
+			"/vpbt — Menu symbol selection",
+			"/vpbt EUR — Volume Profile backtest Euro",
+			"/vpbt XAU 4h — Volume Profile Gold 4H",
+			"/vpbt EUR profile — Mode Profile untuk Euro",
+		},
+		Related: []string{"ctabt", "quantbt", "vp", "backtest"},
+	},
 	"vix": {
 		Title:       "Volatility Index (VIX) & Volatility Suite",
 		Description: "Dashboard untuk mengukur fear & greed market.\n\n" +

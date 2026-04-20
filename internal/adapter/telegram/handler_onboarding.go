@@ -178,6 +178,8 @@ func (h *Handler) executeDeepLinkCommand(ctx context.Context, chatID string, use
 		return h.cmdQuant(ctx, chatID, userID, args)
 	case "vp":
 		return h.cmdVP(ctx, chatID, userID, args)
+	case "vpbt":
+		return h.cmdVPBT(ctx, chatID, userID, args)
 	case "alpha", "radar":
 		return h.cmdAlpha(ctx, chatID, userID, args)
 	case "gex":
@@ -465,6 +467,7 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /ctabt — Backtest Classical TA · <code>/ctabt EUR</code> · <code>/ctabt EUR 4h</code>
 /quant — Econometric analysis · <code>/quant EUR</code> · <code>/quant XAU 4h</code>
 /quantbt — Quantitative ML backtest · <code>/quantbt EUR</code> · <code>/quantbt XAU 4h</code>
+/vpbt — Volume Profile backtest · <code>/vpbt EUR</code> · <code>/vpbt XAU 4h</code>
 /vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
 /ict — ICT/SMC Smart Money Concepts · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
 /gex — Gamma Exposure (crypto options) · <code>/gex BTC</code> · <code>/gex ETH</code>

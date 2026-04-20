@@ -123,6 +123,7 @@ var relatedCommands = map[string][]struct {
 	"impact":      {{Label: "📅 Calendar", Callback: "calendar"}, {Label: "🌐 Macro", Callback: "macro"}},
 	"seasonal":    {{Label: "📉 COT", Callback: "cot"}, {Label: "📊 Backtest", Callback: "backtest"}, {Label: "📈 Bias", Callback: "bias"}},
 	"backtest":    {{Label: "📊 Quant", Callback: "quant"}, {Label: "🎯 CTA", Callback: "cta"}, {Label: "📈 Seasonal", Callback: "seasonal"}},
+	"vpbt":        {{Label: "📊 VP", Callback: "vp"}, {Label: "📈 CTA", Callback: "cta"}, {Label: "📊 Backtest", Callback: "backtest"}},
 	"intermarket": {{Label: "🌐 Macro", Callback: "macro"}, {Label: "📈 Price", Callback: "price"}, {Label: "📊 Sentiment", Callback: "sentiment"}},
 	"briefing":    {{Label: "📅 Calendar", Callback: "calendar"}, {Label: "🎯 COT Bias", Callback: "bias"}, {Label: "🌐 Macro", Callback: "macro"}},
 	"elliott":     {{Label: "📈 CTA", Callback: "cta"}, {Label: "📊 Quant", Callback: "quant"}, {Label: "🔑 Levels", Callback: "levels"}},

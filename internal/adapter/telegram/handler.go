@@ -132,6 +132,10 @@ type Handler struct {
 	// vpCache stores per-chat VP state with TTL.
 	vpCache *vpStateCache
 
+	// vpbt holds optional Volume Profile Backtest engine services.
+	// May be nil — /vpbt command disabled if not configured.
+	vpbt *VPBTServices
+
 	// qbacktestCache stores per-chat Quant Backtest state with TTL.
 	qbacktestCache *qbacktestStateCache
 

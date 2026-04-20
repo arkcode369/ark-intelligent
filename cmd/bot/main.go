@@ -432,6 +432,14 @@ func main() {
 		handler.WithVP(vpServices)
 		log.Info().Msg("Volume Profile commands registered (/vp)")
 
+		// Wire Volume Profile Backtest services
+		vpbtServices := &tgbot.VPBTServices{
+			DailyPriceRepo: storageDeps.DailyPriceRepo,
+			IntradayRepo:   storageDeps.IntradayRepo,
+		}
+		handler.WithVPBT(vpbtServices)
+		log.Info().Msg("Volume Profile Backtest commands registered (/vpbt)")
+
 		// Wire ICT/SMC services (Smart Money Concepts analysis engine)
 		ictServices := &tgbot.ICTServices{
 			Engine:         ictsvc.NewEngine(),

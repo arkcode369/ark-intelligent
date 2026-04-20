@@ -67,7 +67,7 @@ var RoleConfigs = map[string]RoleConfig{
 	"pro": {
 		Name:        "🎯 Trader Pro",
 		Description: "Saya butuh data institusional dan analisis kuantitatif",
-		StarterKit:  []string{"/cot", "/macro", "/quant", "/impact", "/accuracy", "/backtest"},
+		StarterKit:  []string{"/cot", "/macro", "/quant", "/vpbt", "/impact", "/accuracy", "/backtest"},
 		TutorialSteps: []TutorialStep{
 			{
 				Title:   "🔬 Langkah 1: Quant Analysis",
@@ -212,13 +212,14 @@ func (kb *KeyboardBuilder) StarterKitMenu(level string) ports.InlineKeyboard {
 				},
 				{
 					{Text: "📊 Volume Profile", CallbackData: "cmd:vp"},
+					{Text: "📊 VP Backtest", CallbackData: "cmd:vpbt"},
+				},
+				{
 					{Text: "🔬 Quant", CallbackData: "cmd:quant"},
-				},
-				{
 					{Text: "📉 CTA + Backtest", CallbackData: "cmd:cta"},
-					{Text: "🏦 Macro", CallbackData: "cmd:macro"},
 				},
 				{
+					{Text: "🏦 Macro", CallbackData: "cmd:macro"},
 					{Text: "📖 Lihat Semua Command", CallbackData: "onboard:showhelp"},
 				},
 			},

@@ -243,6 +243,53 @@ func (kb *KeyboardBuilder) CTABTMenu() ports.InlineKeyboard {
 	}
 }
 
+// VPBTMenu builds the inline keyboard for the /vpbt Volume Profile Backtest dashboard.
+func (kb *KeyboardBuilder) VPBTMenu() ports.InlineKeyboard {
+	return ports.InlineKeyboard{
+		Rows: [][]ports.InlineButton{
+			// Analysis modes
+			{
+				{Text: "📊 Profile", CallbackData: "vpbt:modeProfile"},
+				{Text: "🕐 Session", CallbackData: "vpbt:modeSession"},
+				{Text: "📐 Shape", CallbackData: "vpbt:modeShape"},
+			},
+			{
+				{Text: "🔀 Composite", CallbackData: "vpbt:modeComposite"},
+				{Text: "📏 VWAP", CallbackData: "vpbt:modeVwap"},
+				{Text: "⏱ TPO", CallbackData: "vpbt:modeTpo"},
+			},
+			{
+				{Text: "📈 Delta", CallbackData: "vpbt:modeDelta"},
+				{Text: "🏛 Auction", CallbackData: "vpbt:modeAuction"},
+				{Text: "🎯 Confluence", CallbackData: "vpbt:modeConfluence"},
+			},
+			{
+				{Text: "📋 Full Report", CallbackData: "vpbt:modeFull"},
+			},
+			// Timeframe selector
+			{
+				{Text: "📊 Daily", CallbackData: "vpbt:daily"},
+				{Text: "📊 12H", CallbackData: "vpbt:12h"},
+				{Text: "📊 6H", CallbackData: "vpbt:6h"},
+			},
+			{
+				{Text: "📊 4H", CallbackData: "vpbt:4h"},
+				{Text: "📊 1H", CallbackData: "vpbt:1h"},
+				{Text: "📊 30M", CallbackData: "vpbt:30m"},
+				{Text: "📊 15M", CallbackData: "vpbt:15m"},
+			},
+			{
+				{Text: "🔄 Refresh", CallbackData: "vpbt:refresh"},
+			},
+		},
+	}
+}
+
+// VPBTSymbolMenu builds a symbol selector for /vpbt.
+func (kb *KeyboardBuilder) VPBTSymbolMenu() ports.InlineKeyboard {
+	return kb.buildSymbolMenu("vpbt")
+}
+
 // ---------------------------------------------------------------------------
 // Price Menu
 // ---------------------------------------------------------------------------
