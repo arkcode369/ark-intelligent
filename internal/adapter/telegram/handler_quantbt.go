@@ -19,6 +19,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
+	quantbt "github.com/arkcode369/ark-intelligent/internal/service/quantbt"
 )
 
 // ---------------------------------------------------------------------------
@@ -250,26 +251,36 @@ func (h *Handler) runQuantBacktest(ctx context.Context, chatID string, symbol, t
 		bars = ta.DailyPricesToOHLCV(dailyRecords)
 	}
 
-	// Build params
-	params := ta.DefaultBacktestParams()
-	params.Symbol = mapping.Currency
-	params.Timeframe = timeframe
-	params.MinGrade = grade
-
-	// Run backtest
-	result := ta.RunBacktest(bars, params)
-	if result == nil {
+	// Run quant backtest using Python engine with ML/statistical models
+	quantResult, err := quantbt.RunQuantBacktest(ctx, mapping.Currency, timeframe, grade, bars)
+	if err != nil {
 		if loadingID > 0 {
 			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 		}
-		_, err := h.bot.SendHTML(ctx, chatID,
-			fmt.Sprintf("❌ Data tidak cukup untuk backtest %s (%s). Minimal %d bars diperlukan.",
-				mapping.Currency, timeframe, params.WarmupBars+10))
-		return err
+		log.Error().Err(err).Str("symbol", mapping.Currency).Str("timeframe", timeframe).Msg("quant backtest failed")
+		
+		// User-friendly error messages
+		errMsg := err.Error()
+		userMsg := "❌ Quant backtest gagal. "
+		if strings.Contains(errMsg, "timeout") {
+			userMsg += "Data terlalu besar atau model terlalu kompleks. Coba timeframe yang lebih longgar atau data yang lebih sedikit."
+		} else if strings.Contains(errMsg, "not enough data") || strings.Contains(errMsg, "Minimal") {
+			userMsg += "Data tidak cukup untuk quant backtest. Minimal 100 bars diperlukan."
+		} else if strings.Contains(errMsg, "ModuleNotFoundError") {
+			userMsg += "Quant library tidak tersedia di server. Hubungi administrator."
+		} else {
+			userMsg += fmt.Sprintf("Error: %v", err)
+		}
+		
+		_, err2 := h.bot.SendHTML(ctx, chatID, userMsg)
+		return err2
 	}
 
-	// Generate chart
-	chartPNG, chartErr := h.generateQuantChart(ctx, result, mapping.Currency, timeframe)
+	// Convert quant result to backtest result format for chart generation
+	chartResult := convertQuantResultToBacktestResult(quantResult, mapping.Currency, timeframe)
+	
+	// Generate chart from quant result
+	chartPNG, chartErr := h.generateQuantChartFromQuantResult(ctx, quantResult, mapping.Currency, timeframe)
 	if chartErr != nil {
 		log.Error().Err(chartErr).Str("symbol", symbol).Str("timeframe", timeframe).Msg("quant chart generation failed, falling back to text")
 	}
@@ -350,15 +361,16 @@ func (h *Handler) showQuantBTTrades(ctx context.Context, chatID string, msgID in
 		return h.bot.EditMessage(ctx, chatID, msgID, "❌ Invalid timeframe.")
 	}
 
-	params := ta.DefaultBacktestParams()
-	params.Symbol = mapping.Currency
-	params.Timeframe = timeframe
-	params.MinGrade = grade
-
-	result := ta.RunBacktest(bars, params)
-	if result == nil || len(result.Trades) == 0 {
+	// Run quant backtest
+	quantResult, err := quantbt.RunQuantBacktest(ctx, mapping.Currency, timeframe, grade, bars)
+	if err != nil || quantResult == nil || len(quantResult.Result.Trades) == 0 {
+		if err != nil {
+			return h.bot.EditMessage(ctx, chatID, msgID, "❌ Error: "+err.Error())
+		}
 		return h.bot.EditMessage(ctx, chatID, msgID, "❌ Tidak ada trade yang dihasilkan.")
 	}
+	
+	result := convertQuantResultToBacktestResult(quantResult, mapping.Currency, timeframe)
 
 	// Format last 10 trades
 	txt := formatTradeList(result, mapping.Currency, timeframe)
@@ -625,4 +637,53 @@ func (h *Handler) quantBTMenu() ports.InlineKeyboard {
 			},
 		},
 	}
+}
+
+// convertQuantResultToBacktestResult converts QuantBTResult to ta.BacktestResult
+func convertQuantResultToBacktestResult(quantResult *quantbt.QuantBTResult, symbol, timeframe string) *ta.BacktestResult {
+	result := &ta.BacktestResult{
+		Params: ta.BacktestParams{
+			Symbol:    symbol,
+			Timeframe: timeframe,
+		},
+		Trades:          make([]ta.TradeRecord, len(quantResult.Result.Trades)),
+		TotalTrades:     quantResult.Result.TotalTrades,
+		WinRate:         quantResult.Result.WinRate * 100,
+		TotalPnLPercent: quantResult.Result.TotalPnL,
+		MaxDrawdown:     quantResult.Result.MaxDrawdown,
+		SharpeRatio:     quantResult.Result.SharpeRatio,
+		ProfitFactor:    quantResult.Result.ProfitFactor,
+		AvgWin:          quantResult.Result.AvgWin,
+		AvgLoss:         quantResult.Result.AvgLoss,
+		ExpectedValue:   quantResult.Result.ExpectedValue,
+		EquityCurve:     quantResult.Result.EquityCurve,
+	}
+	
+	for i, t := range quantResult.Result.Trades {
+		result.Trades[i] = ta.TradeRecord{
+			EntryPrice: t.EntryPrice,
+			ExitPrice:  t.ExitPrice,
+			Direction:  strings.ToUpper(t.Direction),
+			PnLPercent: t.PnL,
+			ExitReason: t.Reason,
+			Grade:      t.Grade,
+		}
+	}
+	
+	return result
+}
+
+// generateQuantChartFromQuantResult generates chart from QuantBTResult
+func (h *Handler) generateQuantChartFromQuantResult(ctx context.Context, quantResult *quantbt.QuantBTResult, symbol, timeframe string) (pngData []byte, err error) {
+	if quantResult == nil || len(quantResult.Result.EquityCurve) == 0 {
+		return nil, fmt.Errorf("no data for chart")
+	}
+
+	// Use Python chart generation via quant_engine.py
+	// The chart is already generated by compute_backtest if chart_path was provided
+	// Here we just read the generated chart
+	
+	// For now, return nil and let the text output be shown
+	// In production, we could call a separate chart generation function
+	return nil, fmt.Errorf("chart generation not yet implemented for quant backtest")
 }
