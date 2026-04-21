@@ -110,15 +110,49 @@ def create_volume_profile_chart(data, output_path):
     trade_dates = data.get('trade_dates', [])
     trade_pnl = clean_list(data.get('trade_pnl', []))
     
-    # VP levels
-    vp_levels = data.get('vp_levels', {})
-    vp_prices = clean_list(vp_levels.get('prices', []))
-    volumes = clean_list(vp_levels.get('volumes', []))
-    poc = clean_value(vp_levels.get('poc'))
-    vah = clean_value(vp_levels.get('vah'))
-    val = clean_value(vp_levels.get('val'))
-    hvn_zones = vp_levels.get('hvn_zones', [])
-    lvn_zones = vp_levels.get('lvn_zones', [])
+    # VP levels - support both old format (dict) and new format (list of objects)
+    vp_levels_data = data.get('vp_levels', {})
+    
+    # Check if vp_levels is a list (new format) or dict (old format)
+    if isinstance(vp_levels_data, list) and len(vp_levels_data) > 0:
+        # New format: [{"price": 1.0850, "volume": 12500, "type": "poc"}, ...]
+        vp_prices = []
+        volumes = []
+        poc = None
+        vah = None
+        val = None
+        hvn_zones = []
+        lvn_zones = []
+        
+        for level in vp_levels_data:
+            if isinstance(level, dict):
+                price = clean_value(level.get('price'))
+                vol = clean_value(level.get('volume'))
+                level_type = level.get('type', '').lower()
+                
+                if not np.isnan(price) and not np.isnan(vol):
+                    vp_prices.append(price)
+                    volumes.append(vol)
+                    
+                    if level_type == 'poc' and poc is None:
+                        poc = price
+                    elif level_type == 'vah' and vah is None:
+                        vah = price
+                    elif level_type == 'val' and val is None:
+                        val = price
+                    elif level_type == 'hvn':
+                        hvn_zones.append((price, price + 0.0020))
+                    elif level_type == 'lvn':
+                        lvn_zones.append((price, price + 0.0015))
+    else:
+        # Old format: {"prices": [...], "volumes": [...], "poc": ..., ...}
+        vp_prices = clean_list(vp_levels_data.get('prices', []))
+        volumes = clean_list(vp_levels_data.get('volumes', []))
+        poc = clean_value(vp_levels_data.get('poc'))
+        vah = clean_value(vp_levels_data.get('vah'))
+        val = clean_value(vp_levels_data.get('val'))
+        hvn_zones = vp_levels_data.get('hvn_zones', [])
+        lvn_zones = vp_levels_data.get('lvn_zones', [])
     
     # Validate and clean HVN/LVN zones
     hvn_zones = [(clean_value(z[0]), clean_value(z[1])) for z in hvn_zones 
@@ -142,6 +176,17 @@ def create_volume_profile_chart(data, output_path):
     # Ensure numeric arrays
     vp_prices = np.array(vp_prices)
     volumes = np.array([max(0, v) for v in volumes])
+    
+    # Build vp_levels dict for generate_price_from_vp
+    vp_levels = {
+        'prices': vp_prices.tolist() if len(vp_prices) > 0 else [],
+        'volumes': volumes.tolist() if len(volumes) > 0 else [],
+        'poc': poc,
+        'vah': vah,
+        'val': val,
+        'hvn_zones': hvn_zones,
+        'lvn_zones': lvn_zones
+    }
     
     # Generate price curve
     num_points = len(equity_curve)

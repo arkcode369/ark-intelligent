@@ -95,6 +95,9 @@ class VolumeProfileCalculator:
     def calculate_value_area(self, poc: float, confidence: float = 0.7) -> Tuple[float, float]:
         """Calculate Value Area High/Low (70% of volume around POC)."""
         total_volume = np.sum(self.volumes)
+        if total_volume == 0:
+            return float(np.min(self.prices)), float(np.max(self.prices))
+        
         target_volume = total_volume * confidence
         
         # Sort prices by distance from POC
@@ -102,19 +105,27 @@ class VolumeProfileCalculator:
         sorted_indices = np.argsort(distances)
         
         cumulative_volume = 0
-        va_low_idx = 0
-        va_high_idx = len(self.prices) - 1
+        selected_mask = np.zeros(len(self.prices), dtype=bool)
         
         for idx in sorted_indices:
             cumulative_volume += self.volumes[idx]
+            selected_mask[idx] = True
             if cumulative_volume >= target_volume:
-                # Find the boundaries
-                selected_indices = sorted_indices[:sorted_indices.tolist().index(idx) + 1]
-                va_low_idx = np.min(selected_indices)
-                va_high_idx = np.max(selected_indices)
                 break
         
-        return float(self.prices[va_low_idx]), float(self.prices[va_high_idx])
+        # Get actual price boundaries from selected prices
+        selected_prices = self.prices[selected_mask]
+        if len(selected_prices) == 0:
+            return float(poc - 0.0050), float(poc + 0.0050)
+        
+        val_bound = float(selected_prices.min())
+        vah_bound = float(selected_prices.max())
+        
+        # Ensure VAL < POC < VAH
+        if val_bound > vah_bound:
+            val_bound, vah_bound = vah_bound, val_bound
+        
+        return val_bound, vah_bound
     
     def calculate_hvn_zones(self, threshold: float = 1.2) -> List[Tuple[float, float]]:
         """Identify High Volume Node zones (volumes > threshold * mean)."""
@@ -167,14 +178,14 @@ class VolumeProfileCalculator:
     def get_all_levels(self) -> VPLevels:
         """Calculate all VP levels."""
         poc = self.calculate_poc()
-        vah, val = self.calculate_value_area(poc)
+        val_bound, vah_bound = self.calculate_value_area(poc)  # Fixed: correct order
         hvn_zones = self.calculate_hvn_zones()
         lvn_zones = self.calculate_lvn_zones()
         
         return VPLevels(
             poc=poc,
-            vah=vah,
-            val=val,
+            vah=vah_bound,
+            val=val_bound,
             hvn_zones=hvn_zones,
             lvn_zones=lvn_zones,
             prices=self.prices.tolist(),
@@ -201,8 +212,31 @@ class BacktestEngine:
         self.take_profit_pips = self.params.get('take_profit_pips', 30)
         self.pip_value = self.params.get('pip_value', 10)  # USD per pip for standard lot
         
-        # Generate synthetic price data
-        self.price_data = self._generate_price_data()
+        # Use REAL price data from Go handler if provided, otherwise generate synthetic
+        raw_bars = config.get('bars_data', [])
+        if raw_bars and len(raw_bars) > 0:
+            # Parse real OHLCV data from Go handler
+            self.price_data = np.array([bar['close'] for bar in raw_bars])
+            self.bar_times = [bar.get('time', '') for bar in raw_bars]
+            self.bars = len(raw_bars)
+            
+            # Handle volume data: use actual volume or create proxy from price range
+            raw_volumes = [bar.get('volume', 0) for bar in raw_bars]
+            if all(v == 0 or v is None for v in raw_volumes):
+                # Create volume proxy from price range (range-based volume)
+                # Higher range = higher "volume" proxy
+                ranges = np.abs(np.diff(np.concatenate([[self.price_data[0]], self.price_data])))
+                self.volume_data = ranges * 100000  # Scale to reasonable volume numbers
+                self.volume_data = np.insert(self.volume_data, 0, self.volume_data[0])  # Match length
+            else:
+                self.volume_data = np.array([v if v else 1000 for v in raw_volumes])
+        else:
+            # Fallback to synthetic data
+            self.price_data = self._generate_price_data()
+            self.volume_data = np.ones(len(self.price_data)) * 1000
+            self.bar_times = []
+        
+        # Calculate VP levels from real or synthetic data
         self.vp_levels = self._calculate_vp_levels()
         
     def _generate_price_data(self) -> np.ndarray:
@@ -240,22 +274,147 @@ class BacktestEngine:
         return np.array(prices)
     
     def _calculate_vp_levels(self) -> VPLevels:
-        """Calculate Volume Profile levels from price data."""
-        # Create synthetic volume profile based on price distribution
-        price_range = (self.price_data.max() - self.price_data.min()) / 2
-        mid_price = (self.price_data.max() + self.price_data.min()) / 2
+        """Calculate Volume Profile levels from real price data with proper anchoring."""
+        if len(self.price_data) == 0:
+            # Fallback if no data
+            return VPLevels(
+                poc=1.0850, vah=1.0900, val=1.0800,
+                hvn_zones=[], lvn_zones=[], prices=[], volumes=[]
+            )
         
-        # Create bell curve volume distribution
-        n_bins = 100
+        # Determine anchor window based on timeframe
+        anchor_window = self._get_anchor_window()
+        
+        # Group bars by anchor periods and calculate VP
+        if anchor_window > 1 and len(self.bar_times) > 0:
+            # Use anchored VP (session/day/week based)
+            return self._calculate_anchored_vp(anchor_window)
+        else:
+            # Use full dataset VP
+            return self._calculate_full_vp()
+    
+    def _get_anchor_window(self) -> int:
+        """Determine anchor window size based on timeframe."""
+        tf = self.timeframe.lower()
+        if tf == 'daily':
+            return 1  # Daily anchor
+        elif tf in ['12h', '6h', '4h']:
+            return 2 if tf == '12h' else (3 if tf == '6h' else 6)  # 12h = 2x 6h, etc
+        elif tf == '1h':
+            return 24  # Daily anchor for hourly data
+        elif tf in ['30m', '15m']:
+            return 48  # Daily anchor for intraday
+        return 1
+    
+    def _calculate_full_vp(self) -> VPLevels:
+        """Calculate VP over entire dataset with proper binning."""
+        if len(self.price_data) == 0:
+            return VPLevels(
+                poc=1.0850, vah=1.0900, val=1.0800,
+                hvn_zones=[], lvn_zones=[], prices=[], volumes=[]
+            )
+        
+        # Create adaptive price bins based on symbol characteristics
+        price_range = self.price_data.max() - self.price_data.min()
+        
+        # Adaptive bin size: more bins for larger ranges, fewer for smaller
+        # Target ~100-200 bins for good resolution
+        if 'JPY' in self.symbol.upper():
+            # JPY pairs: smaller price values
+            bin_size = price_range / 150
+        elif 'XAU' in self.symbol.upper() or 'XAG' in self.symbol.upper():
+            # Commodities: larger price values
+            bin_size = price_range / 150
+        else:
+            # Forex: standard binning
+            bin_size = price_range / 150
+        
+        n_bins = max(50, min(200, int(price_range / bin_size) if bin_size > 0 else 100))
         prices = np.linspace(self.price_data.min(), self.price_data.max(), n_bins)
         
-        # Volume follows normal distribution around mid price
-        volumes = np.exp(-0.5 * ((prices - mid_price) / (price_range / 2)) ** 2)
-        volumes = volumes * 1000 + np.random.normal(0, 50, n_bins)
-        volumes = np.maximum(volumes, 10)  # Minimum volume
+        # Calculate volume at each price level using histogram with weights
+        valid_volumes = self.volume_data if len(self.volume_data) == len(self.price_data) else np.ones(len(self.price_data))
+        volumes, _ = np.histogram(self.price_data, bins=prices, weights=valid_volumes)
         
-        calc = VolumeProfileCalculator(prices.tolist(), volumes.tolist())
+        # Ensure we have valid volumes
+        if len(volumes) == 0 or np.sum(volumes) == 0:
+            volumes = np.ones(n_bins - 1) * 1000
+        
+        # Use bin centers as price levels
+        bin_centers = (prices[:-1] + prices[1:]) / 2
+        
+        calc = VolumeProfileCalculator(bin_centers.tolist(), volumes.tolist())
         return calc.get_all_levels()
+    
+    def _calculate_anchored_vp(self, anchor_window: int) -> VPLevels:
+        """Calculate anchored VP based on time periods (session/day/week)."""
+        from datetime import datetime
+        
+        if not self.bar_times or len(self.bar_times) == 0:
+            # Fallback to full VP if no time data
+            return self._calculate_full_vp()
+        
+        # Group bars by actual time periods
+        periods = {}
+        
+        for i, (price, time_str) in enumerate(zip(self.price_data, self.bar_times)):
+            try:
+                # Parse ISO format time
+                if isinstance(time_str, str):
+                    dt = datetime.fromisoformat(time_str.replace('Z', '+00:00').split('+')[0])
+                else:
+                    continue
+                
+                # Create time-based key based on timeframe
+                if self.timeframe.lower() == 'daily':
+                    key = dt.date()
+                elif self.timeframe.lower() in ['12h', '6h', '4h']:
+                    # Group by 12h/6h/4h sessions
+                    hour_bucket = (dt.hour // anchor_window) * anchor_window
+                    key = (dt.date(), hour_bucket)
+                elif self.timeframe.lower() == '1h':
+                    # Daily anchor for hourly
+                    key = dt.date()
+                elif self.timeframe.lower() in ['30m', '15m']:
+                    # Daily anchor for intraday
+                    key = dt.date()
+                else:
+                    key = dt.date()
+                
+                if key not in periods:
+                    periods[key] = {'prices': [], 'volumes': []}
+                
+                vol = self.volume_data[i] if i < len(self.volume_data) else 1000
+                periods[key]['prices'].append(price)
+                periods[key]['volumes'].append(vol)
+            except Exception as e:
+                # Skip invalid time entries
+                continue
+        
+        # Use the most recent complete period for anchored VP
+        if periods:
+            # Sort keys to get the latest period
+            sorted_keys = sorted(periods.keys())
+            last_period_key = sorted_keys[-1]
+            period_data = periods[last_period_key]
+            
+            if len(period_data['prices']) > 10:  # Minimum bars required
+                prices = np.array(period_data['prices'])
+                volumes = np.array(period_data['volumes'])
+                
+                # Calculate VP for this period
+                price_range = prices.max() - prices.min()
+                if price_range > 0:
+                    n_bins = min(200, max(50, int(price_range * 10000)))
+                    bins = np.linspace(prices.min(), prices.max(), n_bins)
+                    vols, _ = np.histogram(prices, bins=bins, weights=volumes)
+                    
+                    if len(vols) > 0 and np.sum(vols) > 0:
+                        calc = VolumeProfileCalculator(bins[:-1].tolist(), vols.tolist())
+                        return calc.get_all_levels()
+        
+        # Fallback to full dataset VP
+        return self._calculate_full_vp()
     
     def _generate_signal_grade(self, confidence: float) -> str:
         """Generate signal grade based on confidence."""
@@ -284,6 +443,39 @@ class BacktestEngine:
             diff = (entry - exit_price) * pip_factor
         
         return diff
+    
+    def _calculate_atr(self, period: int = 14) -> float:
+        """Calculate Average True Range for dynamic stop loss/take profit."""
+        if len(self.price_data) < period + 1:
+            # Fallback to fixed value if not enough data
+            return 0.0020 if 'JPY' not in self.symbol.upper() else 0.20
+        
+        # Calculate true range
+        high_low = np.zeros(len(self.price_data))
+        # Since we only have close data, estimate high/low from close
+        # In production, use actual OHLC data
+        range_estimate = np.abs(np.diff(self.price_data))
+        range_estimate = np.insert(range_estimate, 0, range_estimate[0])
+        
+        # Simple ATR calculation
+        atr = np.mean(range_estimate[-period:])
+        return atr
+    
+    def _get_dynamic_distance(self, base_pips: float = 15) -> float:
+        """Get dynamic distance based on ATR and symbol characteristics."""
+        atr = self._calculate_atr()
+        
+        # Convert ATR to pips
+        if 'JPY' in self.symbol.upper():
+            atr_pips = atr * 100
+        else:
+            atr_pips = atr * 10000
+        
+        # Use ATR-based distance (0.5x ATR as threshold)
+        dynamic_distance = atr_pips * 0.5
+        
+        # Ensure minimum distance
+        return max(base_pips, dynamic_distance)
     
     def _execute_trade(self, entry_price: float, direction: str, 
                        sl: float, tp: float, entry_idx: int) -> Optional[Trade]:
@@ -340,26 +532,38 @@ class BacktestEngine:
         trades = []
         poc = self.vp_levels.poc
         
+        # Get dynamic distance based on ATR
+        dynamic_pips = self._get_dynamic_distance(base_pips=10)
+        
         for i in range(100, len(self.price_data) - 50):
             price = self.price_data[i]
             
-            # Check if price is near POC (within 15 pips)
+            # Check if price is near POC (within dynamic distance)
             distance_pips = abs(self._calculate_pips(price, poc, 'long'))
             
-            if distance_pips < 15:
+            if distance_pips < dynamic_pips:
                 # Determine direction based on price action
                 if i > 0:
                     prev_price = self.price_data[i-1]
                     
+                    # Dynamic SL/TP based on ATR
+                    atr = self._calculate_atr()
+                    if 'JPY' in self.symbol.upper():
+                        sl_offset = atr * 2  # 2x ATR for SL
+                        tp_offset = atr * 3  # 3x ATR for TP
+                    else:
+                        sl_offset = atr * 2
+                        tp_offset = atr * 3
+                    
                     if prev_price > price:  # Price coming down to POC
                         direction = 'long'
-                        sl = poc - 0.0002
-                        tp = poc + 0.0003
+                        sl = poc - sl_offset
+                        tp = poc + tp_offset
                         confidence = 0.75
                     else:  # Price coming up to POC
                         direction = 'short'
-                        sl = poc + 0.0002
-                        tp = poc - 0.0003
+                        sl = poc + sl_offset
+                        tp = poc - tp_offset
                         confidence = 0.75
                     
                     grade = self._generate_signal_grade(confidence)
@@ -379,6 +583,19 @@ class BacktestEngine:
         vah = self.vp_levels.vah
         val = self.vp_levels.val
         
+        # Get dynamic offset based on ATR
+        atr = self._calculate_atr()
+        if 'JPY' in self.symbol.upper():
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+            rejection_threshold = atr * 0.3
+        else:
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+            rejection_threshold = atr * 0.3
+        
+        va_width = abs(vah - val)
+        
         for i in range(100, len(self.price_data) - 50):
             price = self.price_data[i]
             
@@ -389,32 +606,32 @@ class BacktestEngine:
                 # Breakout above VAH
                 if prev_price < vah and price >= vah:
                     direction = 'long'
-                    sl = vah - 0.0002
-                    tp = vah + 0.0004
+                    sl = vah - sl_offset
+                    tp = vah + tp_offset
                     confidence = 0.70
                     reason = f"VAH breakout at {vah:.5f}"
                 
                 # Rejection at VAH
-                elif prev_price > vah and price < vah and abs(price - vah) < 0.0001:
+                elif prev_price > vah and price < vah and abs(price - vah) < rejection_threshold:
                     direction = 'short'
-                    sl = vah + 0.0002
-                    tp = val
+                    sl = vah + sl_offset
+                    tp = val - sl_offset
                     confidence = 0.75
                     reason = f"VAH rejection at {vah:.5f}"
                 
                 # Breakout below VAL
                 elif prev_price > val and price <= val:
                     direction = 'short'
-                    sl = val + 0.0002
-                    tp = val - 0.0004
+                    sl = val + sl_offset
+                    tp = val - tp_offset
                     confidence = 0.70
                     reason = f"VAL breakdown at {val:.5f}"
                 
                 # Rejection at VAL
-                elif prev_price < val and price > val and abs(price - val) < 0.0001:
+                elif prev_price < val and price > val and abs(price - val) < rejection_threshold:
                     direction = 'long'
-                    sl = val - 0.0002
-                    tp = vah
+                    sl = val - sl_offset
+                    tp = vah + sl_offset
                     confidence = 0.75
                     reason = f"VAL bounce at {val:.5f}"
                 
@@ -491,6 +708,15 @@ class BacktestEngine:
         trades = []
         lvn_zones = self.vp_levels.lvn_zones
         
+        # Get dynamic offset based on ATR
+        atr = self._calculate_atr()
+        if 'JPY' in self.symbol.upper():
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+        else:
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+        
         for i in range(100, len(self.price_data) - 50):
             price = self.price_data[i]
             
@@ -501,8 +727,8 @@ class BacktestEngine:
                     # Breakout above LVN zone
                     if prev_price < zone_low and price >= zone_high:
                         direction = 'long'
-                        sl = zone_low - 0.0002
-                        tp = zone_high + 0.0004
+                        sl = zone_low - sl_offset
+                        tp = zone_high + tp_offset
                         confidence = 0.65
                         reason = f"LVN breakout above {zone_high:.5f}"
                         
@@ -520,8 +746,8 @@ class BacktestEngine:
                     # Breakout below LVN zone
                     elif prev_price > zone_high and price <= zone_low:
                         direction = 'short'
-                        sl = zone_high + 0.0002
-                        tp = zone_low - 0.0004
+                        sl = zone_high + sl_offset
+                        tp = zone_low - tp_offset
                         confidence = 0.65
                         reason = f"LVN breakdown below {zone_low:.5f}"
                         
@@ -542,65 +768,91 @@ class BacktestEngine:
         """Asian/London/NY session split strategy."""
         trades = []
         
-        # Session hours (UTC)
-        sessions = {
-            'asian': (0, 8),
-            'london': (7, 16),
-            'ny': (13, 22)
-        }
-        
         # Use POC as reference for session strategy
         poc = self.vp_levels.poc
         
+        # Get dynamic offset based on ATR
+        atr = self._calculate_atr()
+        if 'JPY' in self.symbol.upper():
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+        else:
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+        
         for i in range(100, len(self.price_data) - 50):
-            # Simulate hour of day (cycling through 24 hours)
-            hour = (i % 24)
+            # Get actual hour from bar_times
+            hour = 0
+            if self.bar_times and i < len(self.bar_times):
+                try:
+                    time_str = self.bar_times[i]
+                    if isinstance(time_str, str):
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(time_str.replace('Z', '+00:00').split('+')[0])
+                        hour = dt.hour
+                except:
+                    hour = i % 24  # Fallback
+            else:
+                hour = i % 24  # Fallback if no time data
             
-            # Check session transitions
-            if hour in [7, 13, 0]:  # Session starts
-                price = self.price_data[i]
-                
-                # Mean reversion to POC during Asian session
-                if 0 <= hour <= 8:
-                    if price > poc:
-                        direction = 'short'
-                        sl = price + 0.0002
-                        tp = poc
-                        confidence = 0.60
-                        reason = f"Asian session mean reversion to POC"
-                    else:
-                        direction = 'long'
-                        sl = price - 0.0002
-                        tp = poc
-                        confidence = 0.60
-                        reason = f"Asian session mean reversion to POC"
-                
-                # Breakout strategy during London/NY overlap
-                elif 13 <= hour <= 16:
-                    if price > poc:
-                        direction = 'long'
-                        sl = poc - 0.0002
-                        tp = price + 0.0003
-                        confidence = 0.65
-                        reason = f"London/NY overlap breakout"
-                    else:
-                        direction = 'short'
-                        sl = poc + 0.0002
-                        tp = price - 0.0003
-                        confidence = 0.65
-                        reason = f"London/NY overlap breakdown"
-                
+            price = self.price_data[i]
+            
+            # Mean reversion to POC during Asian session (0-8 UTC)
+            if 0 <= hour <= 8:
+                if price > poc:
+                    direction = 'short'
+                    sl = price + sl_offset
+                    tp = poc
+                    confidence = 0.60
+                    reason = f"Asian session mean reversion to POC"
                 else:
-                    continue
-                
-                grade = self._generate_signal_grade(confidence)
-                
-                if self._passes_grade_filter(grade):
-                    trade = self._execute_trade(price, direction, sl, tp, i)
-                    if trade:
-                        trade.reason = reason
-                        trade.grade = grade
-                        trades.append(trade)
+                    direction = 'long'
+                    sl = price - sl_offset
+                    tp = poc
+                    confidence = 0.60
+                    reason = f"Asian session mean reversion to POC"
+            
+            # Breakout strategy during London/NY overlap (13-16 UTC)
+            elif 13 <= hour <= 16:
+                if price > poc:
+                    direction = 'long'
+                    sl = poc - sl_offset
+                    tp = price + tp_offset
+                    confidence = 0.65
+                    reason = f"London/NY overlap breakout"
+                else:
+                    direction = 'short'
+                    sl = poc + sl_offset
+                    tp = price - tp_offset
+                    confidence = 0.65
+                    reason = f"London/NY overlap breakdown"
+            
+            # Mean reversion during NY session (16-22 UTC)
+            elif 16 < hour <= 22:
+                if price > poc:
+                    direction = 'short'
+                    sl = price + sl_offset
+                    tp = poc
+                    confidence = 0.60
+                    reason = f"NY session mean reversion"
+                else:
+                    direction = 'long'
+                    sl = price - sl_offset
+                    tp = poc
+                    confidence = 0.60
+                    reason = f"NY session mean reversion"
+            
+            else:
+                continue  # Skip other hours
+            
+            grade = self._generate_signal_grade(confidence)
+            
+            if self._passes_grade_filter(grade):
+                trade = self._execute_trade(price, direction, sl, tp, i)
+                if trade:
+                    trade.reason = reason
+                    trade.grade = grade
+                    trades.append(trade)
         
         return trades
     
@@ -608,8 +860,19 @@ class BacktestEngine:
         """P/b/D/B profile classification strategy."""
         trades = []
         
+        # Get dynamic offset based on ATR
+        atr = self._calculate_atr()
+        if 'JPY' in self.symbol.upper():
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+        else:
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+        
         # Analyze price distribution shape
         price_range = self.price_data.max() - self.price_data.min()
+        if price_range == 0:
+            return trades
         median_price = np.median(self.price_data)
         mean_price = np.mean(self.price_data)
         
@@ -632,13 +895,13 @@ class BacktestEngine:
                 # Balanced profile - mean reversion
                 if price > poc:
                     direction = 'short'
-                    sl = price + 0.0002
+                    sl = price + sl_offset
                     tp = poc
                     confidence = 0.70
                     reason = "Balanced profile mean reversion"
                 else:
                     direction = 'long'
-                    sl = price - 0.0002
+                    sl = price - sl_offset
                     tp = poc
                     confidence = 0.70
                     reason = "Balanced profile mean reversion"
@@ -647,14 +910,14 @@ class BacktestEngine:
                 # P-shaped - trend following
                 if price > poc:
                     direction = 'long'
-                    sl = poc - 0.0002
-                    tp = price + 0.0003
+                    sl = poc - sl_offset
+                    tp = price + tp_offset
                     confidence = 0.65
                     reason = "P-shaped profile continuation"
                 else:
                     direction = 'short'
-                    sl = poc + 0.0002
-                    tp = poc - 0.0002
+                    sl = poc + sl_offset
+                    tp = poc - tp_offset
                     confidence = 0.60
                     reason = "P-shaped profile pullback"
             
@@ -662,14 +925,14 @@ class BacktestEngine:
                 # b-shaped - opposite
                 if price > poc:
                     direction = 'short'
-                    sl = poc + 0.0002
-                    tp = poc - 0.0002
+                    sl = poc + sl_offset
+                    tp = poc - tp_offset
                     confidence = 0.60
                     reason = "b-shaped profile pullback"
                 else:
                     direction = 'long'
-                    sl = poc - 0.0002
-                    tp = poc + 0.0003
+                    sl = poc - sl_offset
+                    tp = price + tp_offset
                     confidence = 0.65
                     reason = "b-shaped profile continuation"
             
@@ -688,6 +951,17 @@ class BacktestEngine:
         """Multi-window merged VP strategy."""
         trades = []
         
+        # Get dynamic offset based on ATR
+        atr = self._calculate_atr()
+        if 'JPY' in self.symbol.upper():
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+            confluence_threshold = atr * 0.5
+        else:
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+            confluence_threshold = atr * 0.5
+        
         # Simulate multiple timeframes
         timeframes = [
             (self.bars // 4, 'M15'),
@@ -703,8 +977,11 @@ class BacktestEngine:
             tf_mid = np.median(tf_prices)
             confluence_zones.append(tf_mid)
         
-        # Find overlapping zones
-        confluence_zones.sort()
+        # Find overlapping zones (within threshold)
+        unique_zones = []
+        for zone in sorted(confluence_zones):
+            if not unique_zones or abs(zone - unique_zones[-1]) > confluence_threshold:
+                unique_zones.append(zone)
         
         poc = self.vp_levels.poc
         
@@ -712,17 +989,17 @@ class BacktestEngine:
             price = self.price_data[i]
             
             # Check if price is near confluence zone
-            for zone in confluence_zones:
-                if abs(price - zone) < 0.0002:
+            for zone in unique_zones:
+                if abs(price - zone) < confluence_threshold:
                     # High confidence at confluence
                     if price > poc:
                         direction = 'short'
-                        sl = zone + 0.0002
-                        tp = zone - 0.0003
+                        sl = zone + sl_offset
+                        tp = zone - tp_offset
                     else:
                         direction = 'long'
-                        sl = zone - 0.0002
-                        tp = zone + 0.0003
+                        sl = zone - sl_offset
+                        tp = zone + tp_offset
                     
                     confidence = 0.85  # Higher confidence at confluence
                     reason = f"Multi-TF confluence at {zone:.5f}"
@@ -744,6 +1021,13 @@ class BacktestEngine:
         """VWAP + sigma bands strategy."""
         trades = []
         
+        # Get dynamic offset based on ATR
+        atr = self._calculate_atr()
+        if 'JPY' in self.symbol.upper():
+            sl_offset = atr * 1.5
+        else:
+            sl_offset = atr * 1.5
+        
         # Calculate VWAP (simplified - using cumulative average)
         vwap = np.cumsum(self.price_data * np.arange(1, len(self.price_data) + 1)) / np.cumsum(np.arange(1, len(self.price_data) + 1))
         
@@ -763,14 +1047,14 @@ class BacktestEngine:
             # Mean reversion at sigma bands
             if price >= current_upper:
                 direction = 'short'
-                sl = current_upper + 0.0002
+                sl = current_upper + sl_offset
                 tp = current_vwap
                 confidence = 0.75
                 reason = f"VWAP +2σ rejection at {current_upper:.5f}"
             
             elif price <= current_lower:
                 direction = 'long'
-                sl = current_lower - 0.0002
+                sl = current_lower - sl_offset
                 tp = current_vwap
                 confidence = 0.75
                 reason = f"VWAP -2σ bounce at {current_lower:.5f}"
@@ -793,6 +1077,17 @@ class BacktestEngine:
         """Multi-TF level overlap strategy."""
         trades = []
         
+        # Get dynamic offset based on ATR
+        atr = self._calculate_atr()
+        if 'JPY' in self.symbol.upper():
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+            confluence_threshold = atr * 0.3
+        else:
+            sl_offset = atr * 1.5
+            tp_offset = atr * 3
+            confluence_threshold = atr * 0.3
+        
         # Get levels from multiple sources
         poc = self.vp_levels.poc
         vah = self.vp_levels.vah
@@ -805,12 +1100,12 @@ class BacktestEngine:
         
         all_levels = [poc, vah, val, tf1_level, tf2_level, tf3_level]
         
-        # Find confluence (levels within 10 pips of each other)
+        # Find confluence (levels within threshold of each other)
         confluence_points = []
         for i, level1 in enumerate(all_levels):
             count = 1
             for j, level2 in enumerate(all_levels):
-                if i != j and abs(level1 - level2) < 0.0001:
+                if i != j and abs(level1 - level2) < confluence_threshold:
                     count += 1
             if count >= 3:
                 confluence_points.append(level1)
@@ -822,15 +1117,15 @@ class BacktestEngine:
             price = self.price_data[i]
             
             for confluence in confluence_points:
-                if abs(price - confluence) < 0.00015:
+                if abs(price - confluence) < confluence_threshold:
                     if price > poc:
                         direction = 'short'
-                        sl = confluence + 0.0002
-                        tp = confluence - 0.0003
+                        sl = confluence + sl_offset
+                        tp = confluence - tp_offset
                     else:
                         direction = 'long'
-                        sl = confluence - 0.0002
-                        tp = confluence + 0.0003
+                        sl = confluence - sl_offset
+                        tp = confluence + tp_offset
                     
                     confidence = 0.90  # Highest confidence at confluence
                     reason = f"Multi-level confluence at {confluence:.5f}"

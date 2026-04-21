@@ -20,6 +20,7 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
+	vpbt "github.com/arkcode369/ark-intelligent/internal/service/vpbt"
 )
 
 // ---------------------------------------------------------------------------
@@ -338,26 +339,36 @@ func (h *Handler) runVPBacktest(ctx context.Context, chatID string, symbol, time
 		bars = ta.DailyPricesToOHLCV(dailyRecords)
 	}
 
-	// Build params
-	params := ta.DefaultBacktestParams()
-	params.Symbol = mapping.Currency
-	params.Timeframe = timeframe
-	params.MinGrade = grade
-
-	// Run backtest
-	result := ta.RunBacktest(bars, params)
-	if result == nil {
+	// Run VP backtest using Python engine with real data
+	vpResult, err := vpbt.RunVPBacktest(ctx, mapping.Currency, timeframe, mode, grade, bars)
+	if err != nil {
 		if loadingID > 0 {
 			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 		}
-		_, err := h.bot.SendHTML(ctx, chatID,
-			fmt.Sprintf("❌ Data tidak cukup untuk backtest %s (%s, %s). Minimal %d bars diperlukan.",
-				mapping.Currency, timeframe, mode, params.WarmupBars+10))
-		return err
+		log.Error().Err(err).Str("symbol", mapping.Currency).Str("timeframe", timeframe).Str("mode", mode).Msg("vp backtest failed")
+		
+		// User-friendly error messages
+		errMsg := err.Error()
+		userMsg := "❌ Backtest gagal. "
+		if strings.Contains(errMsg, "timeout") {
+			userMsg += "Data terlalu besar untuk timeframe ini. Coba timeframe yang lebih longgar (daily/4h) atau mode yang lebih sederhana."
+		} else if strings.Contains(errMsg, "not enough data") || strings.Contains(errMsg, "Insufficient") {
+			userMsg += "Data tidak cukup untuk backtest. Minimal 100 bars diperlukan."
+		} else if strings.Contains(errMsg, "volume") {
+			userMsg += "Volume data tidak tersedia, menggunakan proxy range-based."
+		} else {
+			userMsg += fmt.Sprintf("Error: %v", err)
+		}
+		
+		_, err2 := h.bot.SendHTML(ctx, chatID, userMsg)
+		return err2
 	}
 
-	// Generate chart
-	chartPNG, chartErr := h.generateVPChart(ctx, result, mapping.Currency, timeframe, mode)
+	// Convert VPResult to ta.BacktestResult for chart generation
+	chartResult := convertVPResultToBacktestResult(vpResult, mapping.Currency, timeframe)
+	
+	// Generate chart from Python result
+	chartPNG, chartErr := h.generateVPChartFromVPResult(ctx, vpResult, mapping.Currency, timeframe, mode)
 	if chartErr != nil {
 		log.Error().Err(chartErr).Str("symbol", symbol).Str("timeframe", timeframe).Str("mode", mode).Msg("vp chart generation failed, falling back to text")
 	}
@@ -443,10 +454,11 @@ func (h *Handler) showVPBTTrades(ctx context.Context, chatID string, msgID int, 
 	params.Timeframe = timeframe
 	params.MinGrade = grade
 
-	result := ta.RunBacktest(bars, params)
-	if result == nil || len(result.Trades) == 0 {
-		return h.bot.EditMessage(ctx, chatID, msgID, "❌ Tidak ada trade yang dihasilkan.")
+	vpResult, err := vpbt.RunVPBacktest(ctx, mapping.Currency, timeframe, mode, grade, bars)
+	if err != nil || vpResult == nil || len(vpResult.Result.Trades) == 0 {
+		return h.bot.EditMessage(ctx, chatID, msgID, "❌ Tidak ada trade yang dihasilkan atau error: "+err.Error())
 	}
+	result := convertVPResultToBacktestResult(vpResult, mapping.Currency, timeframe)
 
 	// Format last 10 trades
 	txt := formatTradeList(result, mapping.Currency, timeframe)
@@ -600,6 +612,141 @@ func (h *Handler) generateVPChart(ctx context.Context, result *ta.BacktestResult
 	}
 	defer os.Remove(inputPath)
 	defer os.Remove(outputPath) // ensure PNG is cleaned up on all return paths
+
+	scriptPath, findErr := findVPChartScript()
+	if findErr != nil {
+		return nil, findErr
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, "python3", scriptPath, inputPath, outputPath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		log.Error().Err(err).Str("stderr", stderr.String()).Msg("vp chart renderer failed")
+		return nil, fmt.Errorf("vp chart renderer failed: %w", err)
+	}
+
+	pngData, readErr := os.ReadFile(outputPath)
+	if readErr != nil {
+		return nil, fmt.Errorf("read chart output: %w", readErr)
+	}
+
+	return pngData, nil
+}
+
+// convertVPResultToBacktestResult converts VPBacktestResult to ta.BacktestResult
+func convertVPResultToBacktestResult(vpResult *vpbt.VPBacktestResult, symbol, timeframe string) *ta.BacktestResult {
+	result := &ta.BacktestResult{
+		Params: ta.BacktestParams{
+			Symbol:    symbol,
+			Timeframe: timeframe,
+		},
+		Trades:          make([]ta.TradeRecord, len(vpResult.Result.Trades)),
+		TotalTrades:     vpResult.Result.TotalTrades,
+		WinRate:         vpResult.Result.WinRate * 100,
+		TotalPnLPercent: vpResult.Result.TotalPnL,
+		MaxDrawdown:     vpResult.Result.MaxDrawdown,
+		SharpeRatio:     vpResult.Result.SharpeRatio,
+		ProfitFactor:    vpResult.Result.ProfitFactor,
+		AvgWin:          vpResult.Result.AvgWin,
+		AvgLoss:         vpResult.Result.AvgLoss,
+		ExpectedValue:   vpResult.Result.ExpectedValue,
+		EquityCurve:     vpResult.Result.EquityCurve,
+	}
+	
+	for i, t := range vpResult.Result.Trades {
+		result.Trades[i] = ta.TradeRecord{
+			EntryPrice: t.EntryPrice,
+			ExitPrice:  t.ExitPrice,
+			Direction:  strings.ToUpper(t.Direction),
+			PnLPercent: t.PnL,
+			ExitReason: t.Reason,
+			Grade:      t.Grade,
+		}
+	}
+	
+	return result
+}
+
+// generateVPChartFromVPResult generates chart directly from VPBacktestResult
+func (h *Handler) generateVPChartFromVPResult(ctx context.Context, vpResult *vpbt.VPBacktestResult, symbol, timeframe, mode string) (pngData []byte, err error) {
+	if vpResult == nil || len(vpResult.Result.EquityCurve) == 0 {
+		return nil, fmt.Errorf("no data for chart")
+	}
+
+	// Build chart input from VP result
+	input := vpChartInput{
+		EquityCurve: vpResult.Result.EquityCurve,
+		TradeDates:  make([]string, len(vpResult.Result.Trades)),
+		TradePnL:    make([]float64, len(vpResult.Result.Trades)),
+		Drawdown:    vpResult.Result.Drawdown,
+		Symbol:      symbol,
+		Timeframe:   timeframe,
+		Mode:        mode,
+		Params: vpChartParams{
+			StartEquity: 10000,
+			TotalTrades: vpResult.Result.TotalTrades,
+			WinRate:     vpResult.Result.WinRate * 100,
+			TotalReturn: vpResult.Result.TotalPnL,
+			MaxDD:       vpResult.Result.MaxDrawdown,
+			Sharpe:      vpResult.Result.SharpeRatio,
+			PF:          vpResult.Result.ProfitFactor,
+			Mode:        mode,
+		},
+		VPLevels: make([]vpLevel, 0),
+	}
+
+	// Convert trades to chart format
+	for i, t := range vpResult.Result.Trades {
+		if i < len(input.TradeDates) {
+			input.TradeDates[i] = t.EntryTime
+		}
+		if i < len(input.TradePnL) {
+			input.TradePnL[i] = t.PnL
+		}
+	}
+
+	// Add VP levels
+	if vpResult.Result.VPLLevels.Prices != nil {
+		for i, price := range vpResult.Result.VPLLevels.Prices {
+			if i < len(vpResult.Result.VPLLevels.Volumes) {
+				input.VPLevels = append(input.VPLevels, vpLevel{
+					Price:  price,
+					Volume: vpResult.Result.VPLLevels.Volumes[i],
+					Type:   "hvn", // Default, could be more sophisticated
+				})
+			}
+		}
+	}
+	
+	// Add POC, VAH, VAL as special levels
+	if vpResult.Result.VPLLevels.POC > 0 {
+		input.VPLevels = append(input.VPLevels, vpLevel{Price: vpResult.Result.VPLLevels.POC, Volume: 0, Type: "poc"})
+	}
+	if vpResult.Result.VPLLevels.VAH > 0 {
+		input.VPLevels = append(input.VPLevels, vpLevel{Price: vpResult.Result.VPLLevels.VAH, Volume: 0, Type: "vah"})
+	}
+	if vpResult.Result.VPLLevels.VAL > 0 {
+		input.VPLevels = append(input.VPLevels, vpLevel{Price: vpResult.Result.VPLLevels.VAL, Volume: 0, Type: "val"})
+	}
+
+	jsonData, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("marshal chart input: %w", err)
+	}
+
+	// Write temp files
+	tmpDir := os.TempDir()
+	inputPath := filepath.Join(tmpDir, fmt.Sprintf("vpbt_chart_input_%d.json", time.Now().UnixNano()))
+	outputPath := filepath.Join(tmpDir, fmt.Sprintf("vpbt_chart_output_%d.png", time.Now().UnixNano()))
+
+	if err := os.WriteFile(inputPath, jsonData, 0644); err != nil {
+		return nil, fmt.Errorf("write chart input: %w", err)
+	}
+	defer os.Remove(inputPath)
+	defer os.Remove(outputPath)
 
 	scriptPath, findErr := findVPChartScript()
 	if findErr != nil {
