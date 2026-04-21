@@ -16,7 +16,7 @@ func FormatICTResult(r *ictsvc.ICTResult) string {
 	var sb strings.Builder
 
 	// Header — uses fmtutil.AnalysisHeader for consistency.
-	sb.WriteString(fmtutil.AnalysisHeader("🔷", "ICT/SMC ANALYSIS", r.Symbol, r.Timeframe))
+	sb.WriteString(fmtutil.AnalysisHeader("🔷", "ICT ANALYSIS", r.Symbol, r.Timeframe))
 	sb.WriteString(fmt.Sprintf("📅 %s", r.AnalyzedAt.Format("2006-01-02 15:04 UTC")))
 	if r.Killzone != "" {
 		sb.WriteString(fmt.Sprintf("\n⏰ <b>Killzone:</b> %s", r.Killzone))

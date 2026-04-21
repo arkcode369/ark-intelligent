@@ -190,7 +190,7 @@ func TestCallbackFriendlyError_AllUnder200Chars(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSessionExpiredMessage_ContainsCommand(t *testing.T) {
-	commands := []string{"cta", "ict", "quant", "smc", "vp", "radar", "wyckoff"}
+	commands := []string{"cta", "ict", "quant", "vp", "radar", "wyckoff"}
 	for _, cmd := range commands {
 		msg := sessionExpiredMessage(cmd)
 		if !strings.Contains(msg, "/"+cmd) {

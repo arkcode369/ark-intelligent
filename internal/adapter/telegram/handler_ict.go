@@ -286,7 +286,23 @@ func (h *Handler) handleICTCallback(ctx context.Context, chatID string, msgID in
 // ---------------------------------------------------------------------------
 
 func ictSymbolKeyboard() ports.InlineKeyboard {
-	pairs := []string{"EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD", "XAU"}
+	// Include ALL available pairs from database
+	pairs := []string{
+		// Forex Majors
+		"EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "USD",
+		// Commodities
+		"XAU", "XAG", "COPPER", "OIL", "ULSD", "RBOB",
+		// Bonds
+		"BOND", "BOND30", "BOND5", "BOND2",
+		// Indices
+		"SPX500", "NDX", "DJI", "RUT",
+		// Crypto
+		"BTC", "ETH",
+		// Cross pairs
+		"XAUEUR", "XAUGBP", "XAGEUR", "XAGGBP",
+		// Risk
+		"VIX",
+	}
 	var rows [][]ports.InlineButton
 	row := make([]ports.InlineButton, 0, 4)
 	for i, p := range pairs {
@@ -303,16 +319,23 @@ func ictSymbolKeyboard() ports.InlineKeyboard {
 }
 
 func ictNavKeyboard(symbol, currentTF string) ports.InlineKeyboard {
+	// Include ALL available timeframes from database
 	tfRow := []ports.InlineButton{
+		{Text: tfLabel("15M", currentTF), CallbackData: "ict:tf:" + symbol + ":15m"},
+		{Text: tfLabel("30M", currentTF), CallbackData: "ict:tf:" + symbol + ":30m"},
 		{Text: tfLabel("H1", currentTF), CallbackData: "ict:tf:" + symbol + ":1h"},
 		{Text: tfLabel("H4", currentTF), CallbackData: "ict:tf:" + symbol + ":4h"},
+	}
+	tfRow2 := []ports.InlineButton{
+		{Text: tfLabel("H6", currentTF), CallbackData: "ict:tf:" + symbol + ":6h"},
+		{Text: tfLabel("H12", currentTF), CallbackData: "ict:tf:" + symbol + ":12h"},
 		{Text: tfLabel("D1", currentTF), CallbackData: "ict:tf:" + symbol + ":daily"},
 	}
 	actionRow := []ports.InlineButton{
 		{Text: "🔄 Refresh", CallbackData: "ict:refresh:"},
 		{Text: "◀ Kembali", CallbackData: "ict:sym:"},
 	}
-	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{tfRow, actionRow}}
+	return ports.InlineKeyboard{Rows: [][]ports.InlineButton{tfRow, tfRow2, actionRow}}
 }
 
 // tfLabel adds a checkmark to the active timeframe button label.
