@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arkcode369/ark-intelligent/internal/ports"
@@ -35,10 +36,48 @@ type VPBTServices struct {
 // Handler wiring
 // ---------------------------------------------------------------------------
 
+// VPBTState holds the current backtest state for a chat.
+type VPBTState struct {
+	Symbol    string
+	Timeframe string
+	Mode      string
+	Grade     string
+	UpdatedAt time.Time
+}
+
+// vpbtStateCache caches VPBT state per chat.
+type vpbtStateCache struct {
+	mu    sync.Mutex
+	store map[string]*VPBTState
+}
+
+func newVPBTStateCache() *vpbtStateCache {
+	return &vpbtStateCache{store: make(map[string]*VPBTState)}
+}
+
+var vpbtStateTTL = 60 * time.Minute
+
+func (c *vpbtStateCache) get(chatID string) *VPBTState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s, ok := c.store[chatID]
+	if !ok || time.Since(s.UpdatedAt) > vpbtStateTTL {
+		return nil
+	}
+	return s
+}
+
+func (c *vpbtStateCache) set(chatID string, s *VPBTState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.store[chatID] = s
+}
+
 // WithVPBT injects VPBTServices into the handler and registers VPBT commands.
 func (h *Handler) WithVPBT(v *VPBTServices) *Handler {
 	h.vpbt = v
 	if v != nil {
+		h.vpbtCache = newVPBTStateCache()
 		h.registerVPBTCommands()
 	}
 	return h
@@ -96,6 +135,15 @@ Pilih aset:`, h.vpbtSymbolMenu())
 		}
 	}
 
+	// Save state
+	h.vpbtCache.set(chatID, &VPBTState{
+		Symbol:    symbol,
+		Timeframe: timeframe,
+		Mode:      mode,
+		Grade:     grade,
+		UpdatedAt: time.Now(),
+	})
+
 	return h.runVPBacktest(ctx, chatID, symbol, timeframe, mode, grade, 0)
 }
 
@@ -113,11 +161,18 @@ func (h *Handler) handleVPBTCallback(ctx context.Context, chatID string, msgID i
 		return h.cmdVPBT(ctx, chatID, 0, sym)
 	}
 
-	// Default params (symbol from last run isn't cached, use EUR)
+	// Get current state (or use defaults)
+	state := h.vpbtCache.get(chatID)
 	symbol := "EUR"
 	timeframe := "daily"
 	mode := "profile"
 	grade := "C"
+	if state != nil {
+		symbol = state.Symbol
+		timeframe = state.Timeframe
+		mode = state.Mode
+		grade = state.Grade
+	}
 
 	switch {
 	case action == "daily":
@@ -161,12 +216,21 @@ func (h *Handler) handleVPBTCallback(ctx context.Context, chatID string, msgID i
 	case action == "gradeC":
 		grade = "C"
 	case action == "refresh":
-		// refresh uses defaults
+		// refresh uses current state
 	case action == "trades":
 		return h.showVPBTTrades(ctx, chatID, msgID, symbol, timeframe, mode, grade)
 	default:
 		return nil
 	}
+
+	// Update state
+	h.vpbtCache.set(chatID, &VPBTState{
+		Symbol:    symbol,
+		Timeframe: timeframe,
+		Mode:      mode,
+		Grade:     grade,
+		UpdatedAt: time.Now(),
+	})
 
 	// Delete old message and send new one
 	_ = h.bot.DeleteMessage(ctx, chatID, msgID)
@@ -641,11 +705,21 @@ func (h *Handler) vpbtSymbolMenu() ports.InlineKeyboard {
 		// Cross pairs (synthetic)
 		"XAUEUR", "XAUGBP", "XAGEUR", "XAGGBP",
 	}
-	rows := make([][]ports.InlineButton, 0, len(symbols))
-	for _, sym := range symbols {
-		rows = append(rows, []ports.InlineButton{
-			{Text: fmt.Sprintf("📈 %s", sym), CallbackData: fmt.Sprintf("vpbt:sym:%s", sym)},
-		})
+	// Grid layout: 4 columns for better UX
+	rows := make([][]ports.InlineButton, 0)
+	for i := 0; i < len(symbols); i += 4 {
+		end := i + 4
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		row := make([]ports.InlineButton, 0, 4)
+		for j := i; j < end; j++ {
+			row = append(row, ports.InlineButton{
+				Text: fmt.Sprintf("📈 %s", symbols[j]),
+				CallbackData: fmt.Sprintf("vpbt:sym:%s", symbols[j]),
+			})
+		}
+		rows = append(rows, row)
 	}
 	return ports.InlineKeyboard{Rows: rows}
 }
