@@ -22,65 +22,65 @@ import (
 
 // QuantBacktestConfig konfigurasi backtest yang customizable
 type QuantBacktestConfig struct {
-	LookbackWindow    int     // Bars untuk model training
-	StepSize          int     // Bars antara setiap signal (avoid overlap)
-	HorizonDays       int     // Holding period dalam days
-	TransactionCost   float64 // Cost per trade (percentage)
-	MinSampleSize     int     // Minimum signals untuk valid results
-	MaxDrawdownLimit  float64 // Stop jika DD exceed (risk management)
-	UseWalkForward    bool    // Enable walk-forward validation
-	TrainWindow       int     // Walk-forward train window
-	TestWindow        int     // Walk-forward test window
+	LookbackWindow   int     // Bars untuk model training
+	StepSize         int     // Bars antara setiap signal (avoid overlap)
+	HorizonDays      int     // Holding period dalam days
+	TransactionCost  float64 // Cost per trade (percentage)
+	MinSampleSize    int     // Minimum signals untuk valid results
+	MaxDrawdownLimit float64 // Stop jika DD exceed (risk management)
+	UseWalkForward   bool    // Enable walk-forward validation
+	TrainWindow      int     // Walk-forward train window
+	TestWindow       int     // Walk-forward test window
 }
 
 // DefaultBacktestConfig returns sensible defaults
 func DefaultBacktestConfig() QuantBacktestConfig {
 	return QuantBacktestConfig{
-		LookbackWindow:  120,     // 6 months daily bars
-		StepSize:        5,       // Signal setiap 5 days (avoid too frequent)
-		HorizonDays:     20,      // 4 weeks holding period
-		TransactionCost: 0.001,   // 0.1% per trade (realistic for FX)
-		MinSampleSize:   30,      // Minimum 30 signals untuk statistical significance
-		MaxDrawdownLimit: 0.20,   // Stop at 20% max drawdown
-		UseWalkForward:  true,    // Enable walk-forward by default
-		TrainWindow:     100,     // 5 months train
-		TestWindow:      20,      // 1 month test
+		LookbackWindow:   120,   // 6 months daily bars
+		StepSize:         5,     // Signal setiap 5 days (avoid too frequent)
+		HorizonDays:      20,    // 4 weeks holding period
+		TransactionCost:  0.001, // 0.1% per trade (realistic for FX)
+		MinSampleSize:    30,    // Minimum 30 signals untuk statistical significance
+		MaxDrawdownLimit: 0.20,  // Stop at 20% max drawdown
+		UseWalkForward:   true,  // Enable walk-forward by default
+		TrainWindow:      100,   // 5 months train
+		TestWindow:       20,    // 1 month test
 	}
 }
 
 // QuantBacktestResult menyimpan hasil backtest untuk satu model
 type QuantBacktestResult struct {
-	Model         string
-	Symbol        string
-	Timeframe     string
-	TotalSignals  int
-	Evaluated     int
-	WinRate1W     float64
-	WinRate2W     float64
-	WinRate4W     float64
-	AvgReturn1W   float64
-	AvgReturn2W   float64
-	AvgReturn4W   float64
-	SharpeRatio   float64
-	SortinoRatio  float64
-	MaxDrawdown   float64
-	ProfitFactor  float64
-	ExpectedValue float64
-	SampleSize    int
-	Confidence    float64 // Statistical confidence (0-100)
+	Model            string
+	Symbol           string
+	Timeframe        string
+	TotalSignals     int
+	Evaluated        int
+	WinRate1W        float64
+	WinRate2W        float64
+	WinRate4W        float64
+	AvgReturn1W      float64
+	AvgReturn2W      float64
+	AvgReturn4W      float64
+	SharpeRatio      float64
+	SortinoRatio     float64
+	MaxDrawdown      float64
+	ProfitFactor     float64
+	ExpectedValue    float64
+	SampleSize       int
+	Confidence       float64 // Statistical confidence (0-100)
 	WalkForwardScore float64 // Overfitting score (higher = more robust)
-	Config        QuantBacktestConfig
+	Config           QuantBacktestConfig
 }
 
 // QuantBacktestStats agregat semua model
 type QuantBacktestStats struct {
-	Models      []QuantBacktestResult
-	Symbol      string
-	Timeframe   string
-	StartDate   string
-	EndDate     string
-	TotalBars   int
-	Config      QuantBacktestConfig
+	Models    []QuantBacktestResult
+	Symbol    string
+	Timeframe string
+	StartDate string
+	EndDate   string
+	TotalBars int
+	Config    QuantBacktestConfig
 }
 
 // QuantBacktestAnalyzer untuk compute backtest stats dengan proper methodology
@@ -124,7 +124,7 @@ func (a *QuantBacktestAnalyzer) Analyze(ctx context.Context, symbol, model strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch historical data: %w", err)
 	}
-	
+
 	if len(historicalData) < minBars {
 		return nil, fmt.Errorf("insufficient historical data: have %d bars, need at least %d", len(historicalData), minBars)
 	}
@@ -150,13 +150,13 @@ func (a *QuantBacktestAnalyzer) Analyze(ctx context.Context, symbol, model strin
 	}
 
 	results := make([]QuantBacktestResult, 0, len(models))
-	
+
 	// Run backtest for each model
 	for _, m := range models {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		
+
 		result, err := a.backtestModel(ctx, code, symbol, "daily", m, bars)
 		if err != nil {
 			// Log error but continue with other models
@@ -189,22 +189,22 @@ func (a *QuantBacktestAnalyzer) Analyze(ctx context.Context, symbol, model strin
 func (a *QuantBacktestAnalyzer) backtestModel(ctx context.Context, code, symbol, timeframe, model string, bars []ta.OHLCV) (QuantBacktestResult, error) {
 	cfg := a.config
 	result := QuantBacktestResult{
-		Model:   strings.ToUpper(model),
-		Symbol:  symbol,
+		Model:     strings.ToUpper(model),
+		Symbol:    symbol,
 		Timeframe: timeframe,
-		Config:  cfg,
+		Config:    cfg,
 	}
 
 	// Generate signals using rolling window (NO LOOK-AHEAD BIAS)
 	// Important: We start from the END of the series and work backwards
 	// to ensure we never use future data
 	var signals []quantSignalPoint
-	
+
 	// Start from cfg.LookbackWindow to ensure we have enough history
 	// End at len(bars) - cfg.HorizonDays to ensure we can evaluate the signal
 	startIdx := cfg.LookbackWindow
 	endIdx := len(bars) - cfg.HorizonDays
-	
+
 	if startIdx >= endIdx {
 		return result, fmt.Errorf("insufficient data for backtest: need at least %d bars", cfg.LookbackWindow+cfg.HorizonDays)
 	}
@@ -213,11 +213,11 @@ func (a *QuantBacktestAnalyzer) backtestModel(ctx context.Context, code, symbol,
 		if ctx.Err() != nil {
 			return result, ctx.Err()
 		}
-		
+
 		// Use ONLY data up to point i (no look-ahead!)
 		windowStart := i - cfg.LookbackWindow
 		window := bars[windowStart:i]
-		
+
 		signal, err := a.runQuantModelAtPoint(ctx, symbol, model, window)
 		if err != nil {
 			continue // Skip this point, continue with next
@@ -246,7 +246,7 @@ func (a *QuantBacktestAnalyzer) backtestModel(ctx context.Context, code, symbol,
 		}
 
 		entryPrice := bars[entryIdx].Close
-		
+
 		// Calculate returns at different horizons
 		horizon4W := cfg.HorizonDays
 		horizon2W := horizon4W / 2
@@ -322,11 +322,11 @@ func (a *QuantBacktestAnalyzer) backtestModel(ctx context.Context, code, symbol,
 		result.WinRate1W = float64(wins1W) / float64(totalEvaluated) * 100
 		result.WinRate2W = float64(wins2W) / float64(totalEvaluated) * 100
 		result.WinRate4W = float64(wins4W) / float64(totalEvaluated) * 100
-		
+
 		result.AvgReturn1W = mean(returns1W)
 		result.AvgReturn2W = mean(returns2W)
 		result.AvgReturn4W = mean(returns4W)
-		
+
 		result.ExpectedValue = mean(returns4W)
 	}
 
@@ -452,14 +452,14 @@ func (a *QuantBacktestAnalyzer) runQuantModelAtPoint(ctx context.Context, symbol
 func (a *QuantBacktestAnalyzer) applyWalkForwardValidation(ctx context.Context, results *[]QuantBacktestResult, bars []ta.OHLCV) {
 	for i := range *results {
 		result := &(*results)[i]
-		
+
 		// Simple walk-forward: compare performance in first half vs second half
 		// If they differ significantly, model may be overfitted
-		
+
 		// This is a simplified version - full implementation would re-run backtest
 		// on different windows
 		result.WalkForwardScore = 0.8 // Placeholder - would need actual WF backtest
-		
+
 		// Adjust confidence based on WF score
 		result.Confidence *= result.WalkForwardScore
 	}
@@ -472,7 +472,7 @@ func computeSharpeRatio(returns []float64, annualizationFactor float64) float64 
 	if len(returns) < 2 {
 		return 0
 	}
-	
+
 	meanRet := mean(returns)
 	variance := 0.0
 	for _, r := range returns {
@@ -480,14 +480,14 @@ func computeSharpeRatio(returns []float64, annualizationFactor float64) float64 
 		variance += diff * diff
 	}
 	stdDev := math.Sqrt(variance / float64(len(returns)-1))
-	
+
 	if stdDev == 0 {
 		return 0
 	}
-	
+
 	annualizedReturn := meanRet * annualizationFactor
 	annualizedStdDev := stdDev * math.Sqrt(annualizationFactor)
-	
+
 	return annualizedReturn / annualizedStdDev
 }
 
@@ -496,7 +496,7 @@ func computeSortinoRatio(returns []float64, annualizationFactor float64) float64
 	if len(returns) < 2 {
 		return 0
 	}
-	
+
 	meanRet := mean(returns)
 	downsideVar := 0.0
 	count := 0
@@ -506,19 +506,19 @@ func computeSortinoRatio(returns []float64, annualizationFactor float64) float64
 			count++
 		}
 	}
-	
+
 	if count < 2 {
 		return 0
 	}
-	
+
 	downsideStdDev := math.Sqrt(downsideVar / float64(count-1))
 	if downsideStdDev == 0 {
 		return 0
 	}
-	
+
 	annualizedReturn := meanRet * annualizationFactor
 	annualizedDownsideStdDev := downsideStdDev * math.Sqrt(annualizationFactor)
-	
+
 	return annualizedReturn / annualizedDownsideStdDev
 }
 
@@ -527,10 +527,10 @@ func computeMaxDrawdown(equityCurve []float64) float64 {
 	if len(equityCurve) < 2 {
 		return 0
 	}
-	
+
 	peak := equityCurve[0]
 	maxDD := 0.0
-	
+
 	for _, eq := range equityCurve {
 		if eq > peak {
 			peak = eq
@@ -540,7 +540,7 @@ func computeMaxDrawdown(equityCurve []float64) float64 {
 			maxDD = dd
 		}
 	}
-	
+
 	return -maxDD
 }
 
@@ -549,15 +549,15 @@ func calculateStatisticalConfidence(winRate float64, sampleSize float64) float64
 	if sampleSize < 30 {
 		return 60.0
 	}
-	
+
 	// Wilson score interval for 95% confidence
 	z := 1.96
 	p := winRate / 100.0
-	
+
 	denominator := 1 + z*z/sampleSize
 	_ = (p + z*z/(2*sampleSize)) / denominator // center - calculated for Wilson interval but not needed for width
-	margin := z * math.Sqrt((p*(1-p) + z*z/(4*sampleSize))/sampleSize) / denominator
-	
+	margin := z * math.Sqrt((p*(1-p)+z*z/(4*sampleSize))/sampleSize) / denominator
+
 	// Confidence based on how tight the interval is
 	intervalWidth := margin * 2 * 100
 	if intervalWidth < 5 {

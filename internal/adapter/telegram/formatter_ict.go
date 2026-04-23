@@ -1,6 +1,6 @@
 package telegram
 
-// formatter_ict.go — ICT/SMC result formatting for Telegram HTML messages.
+// formatter_ict.go — ICT result formatting for Telegram HTML messages.
 
 import (
 	"fmt"

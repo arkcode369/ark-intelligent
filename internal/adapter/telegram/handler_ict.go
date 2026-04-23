@@ -1,6 +1,6 @@
 package telegram
 
-// handler_ict.go — /ict command: ICT/SMC Smart Money Concepts Analysis
+// handler_ict.go — /ict command: ICT Analysis
 //   /ict [SYMBOL] [TIMEFRAME]  — e.g. /ict EURUSD H4
 
 import (
@@ -109,9 +109,9 @@ func (h *Handler) cmdICT(ctx context.Context, chatID string, _ int64, args strin
 	// No args → show symbol selector.
 	if len(parts) == 0 {
 		_, err := h.bot.SendWithKeyboard(ctx, chatID,
-			`🔷 <b>ICT/SMC Analysis Engine</b>
+			`🔷 <b>ICT Analysis Engine</b>
 
-Analisis Smart Money Concepts:
+Analisis Inner Circle Trader:
 • Fair Value Gaps (FVG)
 • Order Blocks &amp; Breaker Blocks
 • Break of Structure (BOS) &amp; CHoCH
@@ -148,7 +148,7 @@ Pilih pair:`,
 
 	// Send loading indicator for long-running computation.
 	loadingID, _ := h.bot.SendLoading(ctx, chatID,
-		fmt.Sprintf("🔷 Menganalisis ICT/SMC untuk <b>%s</b> (%s)... ⏳", html.EscapeString(symbol), timeframe))
+		fmt.Sprintf("🔷 Menganalisis ICT untuk <b>%s</b> (%s)... ⏳", html.EscapeString(symbol), timeframe))
 
 	// Compute ICT analysis.
 	result, err := h.computeICTState(ctx, mapping, timeframe)

@@ -346,7 +346,7 @@ func (h *Handler) runVPBacktest(ctx context.Context, chatID string, symbol, time
 			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 		}
 		log.Error().Err(err).Str("symbol", mapping.Currency).Str("timeframe", timeframe).Str("mode", mode).Msg("vp backtest failed")
-		
+
 		// User-friendly error messages
 		errMsg := err.Error()
 		userMsg := "❌ Backtest gagal. "
@@ -359,14 +359,11 @@ func (h *Handler) runVPBacktest(ctx context.Context, chatID string, symbol, time
 		} else {
 			userMsg += fmt.Sprintf("Error: %v", err)
 		}
-		
+
 		_, err2 := h.bot.SendHTML(ctx, chatID, userMsg)
 		return err2
 	}
 
-	// Convert VPResult to ta.BacktestResult for chart generation
-	chartResult := convertVPResultToBacktestResult(vpResult, mapping.Currency, timeframe)
-	
 	// Generate chart from Python result
 	chartPNG, chartErr := h.generateVPChartFromVPResult(ctx, vpResult, mapping.Currency, timeframe, mode)
 	if chartErr != nil {
@@ -379,20 +376,23 @@ func (h *Handler) runVPBacktest(ctx context.Context, chatID string, symbol, time
 	}
 
 	// Format result
-	summary := formatBacktestResult(result)
+	summary := formatVPBTResult(vpResult)
 	kb := h.vpbtMenu()
 
 	// Send chart + caption with keyboard
 	if chartPNG != nil && len(chartPNG) > 0 {
 		_, err := h.bot.SendPhotoWithKeyboard(ctx, chatID, chartPNG, summary, kb)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	// Chart unavailable: prepend notification so user knows chart exists but failed
 	if chartErr != nil {
 		summary = "📊 <i>Chart sementara tidak tersedia. Menampilkan analisis teks.</i>\n\n" + summary
 	}
-	_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, summary, kb)
+	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, summary, kb)
 	return err
 }
 
@@ -466,7 +466,7 @@ func (h *Handler) showVPBTTrades(ctx context.Context, chatID string, msgID int, 
 
 	// Delete old and send new (might be too long for edit)
 	_ = h.bot.DeleteMessage(ctx, chatID, msgID)
-	_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, txt, kb)
+	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, txt, kb)
 	return err
 }
 
@@ -476,15 +476,15 @@ func (h *Handler) showVPBTTrades(ctx context.Context, chatID string, msgID int, 
 
 // vpChartInput is the JSON structure for the vpbt chart Python script.
 type vpChartInput struct {
-	EquityCurve []float64        `json:"equity_curve"`
-	TradeDates  []string         `json:"trade_dates"`
-	TradePnL    []float64        `json:"trade_pnl"`
-	Drawdown    []float64        `json:"drawdown"`
-	Symbol      string           `json:"symbol"`
-	Timeframe   string           `json:"timeframe"`
-	Mode        string           `json:"mode"`
-	Params      vpChartParams    `json:"params"`
-	VPLevels    []vpLevel        `json:"vp_levels"`
+	EquityCurve []float64     `json:"equity_curve"`
+	TradeDates  []string      `json:"trade_dates"`
+	TradePnL    []float64     `json:"trade_pnl"`
+	Drawdown    []float64     `json:"drawdown"`
+	Symbol      string        `json:"symbol"`
+	Timeframe   string        `json:"timeframe"`
+	Mode        string        `json:"mode"`
+	Params      vpChartParams `json:"params"`
+	VPLevels    []vpLevel     `json:"vp_levels"`
 }
 
 type vpChartParams struct {
@@ -655,7 +655,7 @@ func convertVPResultToBacktestResult(vpResult *vpbt.VPBacktestResult, symbol, ti
 		ExpectedValue:   vpResult.Result.ExpectedValue,
 		EquityCurve:     vpResult.Result.EquityCurve,
 	}
-	
+
 	for i, t := range vpResult.Result.Trades {
 		result.Trades[i] = ta.TradeRecord{
 			EntryPrice: t.EntryPrice,
@@ -666,7 +666,7 @@ func convertVPResultToBacktestResult(vpResult *vpbt.VPBacktestResult, symbol, ti
 			Grade:      t.Grade,
 		}
 	}
-	
+
 	return result
 }
 
@@ -720,7 +720,7 @@ func (h *Handler) generateVPChartFromVPResult(ctx context.Context, vpResult *vpb
 			}
 		}
 	}
-	
+
 	// Add POC, VAH, VAL as special levels
 	if vpResult.Result.VPLLevels.POC > 0 {
 		input.VPLevels = append(input.VPLevels, vpLevel{Price: vpResult.Result.VPLLevels.POC, Volume: 0, Type: "poc"})
@@ -805,6 +805,31 @@ func findVPChartScript() (string, error) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// formatVPBTResult formats a VPBacktestResult as a Telegram HTML message.
+func formatVPBTResult(r *vpbt.VPBacktestResult) string {
+	if !r.Success {
+		return "❌ <b>Backtest Failed</b>"
+	}
+
+	var sb strings.Builder
+	rslt := r.Result
+
+	sb.WriteString(fmt.Sprintf("📊 <b>Volume Profile Backtest</b>\n\n"))
+	sb.WriteString(fmt.Sprintf("<b>Total Trades:</b> %d\n", rslt.TotalTrades))
+	sb.WriteString(fmt.Sprintf("<b>Win Rate:</b> %.1f%%\n", rslt.WinRate*100))
+	sb.WriteString(fmt.Sprintf("<b>Profit Factor:</b> %.2f\n", rslt.ProfitFactor))
+	sb.WriteString(fmt.Sprintf("<b>Sharpe Ratio:</b> %.2f\n", rslt.SharpeRatio))
+	sb.WriteString(fmt.Sprintf("<b>Max Drawdown:</b> %.1f%%\n", rslt.MaxDrawdown*100))
+	sb.WriteString(fmt.Sprintf("<b>Total P&L:</b> %.2f\n", rslt.TotalPnL))
+	sb.WriteString(fmt.Sprintf("<b>Win/Loss:</b> %d/%d\n", rslt.WinCount, rslt.LossCount))
+
+	if r.TextOutput != "" {
+		sb.WriteString(fmt.Sprintf("\n<i>%s</i>", html.EscapeString(r.TextOutput)))
+	}
+
+	return sb.String()
+}
+
 // normalizeVPMode normalizes user input to a recognized VP mode.
 func normalizeVPMode(mode string) string {
 	switch strings.ToLower(mode) {
@@ -862,7 +887,7 @@ func (h *Handler) vpbtSymbolMenu() ports.InlineKeyboard {
 		row := make([]ports.InlineButton, 0, 4)
 		for j := i; j < end; j++ {
 			row = append(row, ports.InlineButton{
-				Text: fmt.Sprintf("📈 %s", symbols[j]),
+				Text:         fmt.Sprintf("📈 %s", symbols[j]),
 				CallbackData: fmt.Sprintf("vpbt:sym:%s", symbols[j]),
 			})
 		}

@@ -208,8 +208,6 @@ func (h *Handler) executeDeepLinkCommand(ctx context.Context, chatID string, use
 		return h.cmdIntermarket(ctx, chatID, userID, args)
 	case "wyckoff":
 		return h.cmdWyckoff(ctx, chatID, userID, args)
-	case "smc":
-		return h.cmdSMC(ctx, chatID, userID, args)
 	case "elliott":
 		return h.cmdElliott(ctx, chatID, userID, args)
 	default:
@@ -469,13 +467,12 @@ func (h *Handler) sendHelpSubCategory(ctx context.Context, chatID string, userID
 /quantbt — Quantitative ML backtest · <code>/quantbt EUR</code> · <code>/quantbt XAU 4h</code>
 /vpbt — Volume Profile backtest · <code>/vpbt EUR</code> · <code>/vpbt XAU 4h</code>
 /vp — Volume Profile institutional · <code>/vp EUR</code> · <code>/vp XAU 4h</code>
-/ict — ICT/SMC Smart Money Concepts · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
+/ict — ICT Analysis · <code>/ict EURUSD</code> · <code>/ict XAUUSD H4</code>
 /gex — Gamma Exposure (crypto options) · <code>/gex BTC</code> · <code>/gex ETH</code>
 /backtest — Backtest dashboard (17 sub-views)
 /accuracy — Win rate summary
 /report — Weekly signal performance
 /wyckoff — Wyckoff phase analysis · <code>/wyckoff EURUSD</code>
-/smc — SMC structure (BOS/CHoCH) · <code>/smc EURUSD</code>
 /elliott — Elliott Wave analysis · <code>/elliott EURUSD</code>`
 
 	case "ai":
@@ -622,7 +619,7 @@ func (h *Handler) cbHelp(ctx context.Context, chatID string, msgID int, userID i
 			}
 		}
 		helpText += "\n<i>Tap tombol untuk kembali atau mencoba contoh</i>"
-		
+
 		helpKb := ports.InlineKeyboard{
 			Rows: [][]ports.InlineButton{
 				{

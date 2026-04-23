@@ -36,12 +36,12 @@ type SimpleQuantBacktestResult struct {
 	ShortWinRate float64
 
 	// Returns
-	AvgReturn    float64
-	AvgWinReturn float64
+	AvgReturn     float64
+	AvgWinReturn  float64
 	AvgLossReturn float64
-	BestTrade    float64
-	WorstTrade   float64
-	ProfitFactor float64
+	BestTrade     float64
+	WorstTrade    float64
+	ProfitFactor  float64
 
 	// Risk
 	Sharpe     float64
@@ -583,7 +583,7 @@ func backtestGranger(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestRes
 	roc := make([]float64, n)
 	for i := rocPeriod; i < n; i++ {
 		if bars[i-rocPeriod].Close > 0 {
-			roc[i] = (bars[i].Close-bars[i-rocPeriod].Close)/bars[i-rocPeriod].Close*100
+			roc[i] = (bars[i].Close - bars[i-rocPeriod].Close) / bars[i-rocPeriod].Close * 100
 		}
 	}
 
@@ -677,7 +677,7 @@ func backtestPCA(bars []ta.OHLCV, timeframe string) (*SimpleQuantBacktestResult,
 		// Factor 1: ROC momentum (normalised to [-1,1])
 		roc := 0.0
 		if bars[i-rocPeriod].Close > 0 {
-			roc = (bars[i].Close-bars[i-rocPeriod].Close)/bars[i-rocPeriod].Close*100
+			roc = (bars[i].Close - bars[i-rocPeriod].Close) / bars[i-rocPeriod].Close * 100
 		}
 		f1 := math.Tanh(roc / 0.5) // scale: 0.5% ROC → tanh(1)
 
@@ -1076,4 +1076,3 @@ func calculateMaxDrawdown(equity []float64) float64 {
 }
 
 // ---------------------------------------------------------------------------
-

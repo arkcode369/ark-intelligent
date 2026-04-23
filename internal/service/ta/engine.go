@@ -15,8 +15,6 @@ type FullResult struct {
 	Patterns    []CandlePattern // from patterns.go
 	Divergences []Divergence    // from divergence.go
 	ICT         *ICTResult      // from ict.go — nil if insufficient data
-	SMC         *SMCResult      // convenience accessor — same as Snapshot.SMC
-	Wyckoff     *WyckoffSummary // populated by caller (avoids circular import with wyckoff pkg)
 	ComputedAt  time.Time
 }
 
@@ -99,11 +97,6 @@ func (e *Engine) ComputeSnapshot(bars []OHLCV) *IndicatorSnapshot {
 		snap.Delta = CalcDelta(bars)
 	}
 
-	// SMC: Smart Money Concepts (BOS, CHOCH, premium/discount zones)
-	if len(bars) >= 20 && snap.ATR > 0 {
-		snap.SMC = CalcSMC(bars, snap.ATR)
-	}
-
 	// Wyckoff phase detection (simplified ta-level analysis)
 	if len(bars) >= 50 && snap.ATR > 0 {
 		snap.Wyckoff = CalcWyckoff(bars, snap.ATR)
@@ -143,7 +136,6 @@ func (e *Engine) ComputeFull(bars []OHLCV) *FullResult {
 		Patterns:    patterns,
 		Divergences: divergences,
 		ICT:         CalcICT(bars, snap.ATR),
-		SMC:         snap.SMC,
 		ComputedAt:  time.Now(),
 	}
 }
@@ -172,7 +164,6 @@ func (e *Engine) ComputeFullForTF(bars []OHLCV, tf string) *FullResult {
 		Patterns:    patterns,
 		Divergences: divergences,
 		ICT:         CalcICT(bars, snap.ATR),
-		SMC:         snap.SMC,
 		ComputedAt:  time.Now(),
 	}
 }

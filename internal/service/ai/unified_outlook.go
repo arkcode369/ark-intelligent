@@ -45,7 +45,7 @@ type UnifiedOutlookData struct {
 	FedWatchData       *fed.FedWatchData
 	EurostatData       *macro.EurostatData
 	FedSpeeches        *fred.FedSpeechData // Recent Fed speeches (scraper via Firecrawl)
-	// ICTContexts holds ICT/SMC structure analysis for major symbols (H4 timeframe).
+	// ICTContexts holds ICT structure analysis for major symbols (H4 timeframe).
 	// Key = symbol (e.g. "EURUSD"), Value = ICTResult. May be nil if ICT not configured.
 	ICTContexts map[string]*ictsvc.ICTResult
 	// GEXResults holds Gamma Exposure analysis for crypto assets (Deribit options data).
@@ -707,10 +707,10 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 	}
 
 	// -----------------------------------------------------------------------
-	// Section: ICT/SMC Market Structure (H4 timeframe)
+	// Section: ICT Market Structure (H4 timeframe)
 	// -----------------------------------------------------------------------
 	if len(data.ICTContexts) > 0 {
-		b.WriteString(fmt.Sprintf("=== %d. ICT/SMC MARKET STRUCTURE (H4) ===\n", section))
+		b.WriteString(fmt.Sprintf("=== %d. ICT MARKET STRUCTURE (H4) ===\n", section))
 		section++ //nolint:ineffassign // section may be used in future extensions
 		for sym, r := range data.ICTContexts {
 			fvgCount := len(r.FVGZones)
@@ -737,7 +737,7 @@ func BuildUnifiedOutlookPrompt(data UnifiedOutlookData) string {
 				b.WriteString(fmt.Sprintf("  Structure: LastBOS=%s LastCHoCH=%s\n", lastBOS, lastCHoCH))
 			}
 		}
-		b.WriteString("NOTE: ICT/SMC data is H4. Use for identifying premium/discount zones and PD Arrays.\n\n")
+		b.WriteString("NOTE: ICT data is H4. Use for identifying premium/discount zones and PD Arrays.\n\n")
 	}
 
 	// -----------------------------------------------------------------------

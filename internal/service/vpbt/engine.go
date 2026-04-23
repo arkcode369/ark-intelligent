@@ -16,12 +16,12 @@ import (
 
 // VPBacktestParams holds parameters for VP backtest.
 type VPBacktestParams struct {
-	Symbol    string `json:"symbol"`
-	Timeframe string `json:"timeframe"`
-	Mode      string `json:"mode"`
-	Grade     string `json:"grade"`
+	Symbol    string      `json:"symbol"`
+	Timeframe string      `json:"timeframe"`
+	Mode      string      `json:"mode"`
+	Grade     string      `json:"grade"`
 	BarsData  []OHLCVJSON `json:"bars_data"`
-	Params    VPParams  `json:"params"`
+	Params    VPParams    `json:"params"`
 }
 
 type VPParams struct {
@@ -42,49 +42,49 @@ type OHLCVJSON struct {
 
 // VPBacktestResult holds the result from Python engine.
 type VPBacktestResult struct {
-	Success      bool     `json:"success"`
-	TextOutput   string   `json:"text_output"`
-	ChartPath    string   `json:"chart_path"`
-	Result       VPResult `json:"result"`
+	Success    bool     `json:"success"`
+	TextOutput string   `json:"text_output"`
+	ChartPath  string   `json:"chart_path"`
+	Result     VPResult `json:"result"`
 }
 
 type VPResult struct {
-	TotalTrades     int     `json:"total_trades"`
-	WinRate         float64 `json:"win_rate"`
-	ProfitFactor    float64 `json:"profit_factor"`
-	SharpeRatio     float64 `json:"sharpe_ratio"`
-	MaxDrawdown     float64 `json:"max_drawdown"`
-	ExpectedValue   float64 `json:"expected_value"`
-	AvgWin          float64 `json:"avg_win"`
-	AvgLoss         float64 `json:"avg_loss"`
-	TotalPnL        float64 `json:"total_pnl"`
-	WinCount        int     `json:"win_count"`
-	LossCount       int     `json:"loss_count"`
-	EquityCurve     []float64 `json:"equity_curve"`
-	Drawdown        []float64 `json:"drawdown"`
-	Trades          []VPTrade `json:"trades"`
-	VPLLevels       VPLLevels `json:"vp_levels"`
+	TotalTrades   int       `json:"total_trades"`
+	WinRate       float64   `json:"win_rate"`
+	ProfitFactor  float64   `json:"profit_factor"`
+	SharpeRatio   float64   `json:"sharpe_ratio"`
+	MaxDrawdown   float64   `json:"max_drawdown"`
+	ExpectedValue float64   `json:"expected_value"`
+	AvgWin        float64   `json:"avg_win"`
+	AvgLoss       float64   `json:"avg_loss"`
+	TotalPnL      float64   `json:"total_pnl"`
+	WinCount      int       `json:"win_count"`
+	LossCount     int       `json:"loss_count"`
+	EquityCurve   []float64 `json:"equity_curve"`
+	Drawdown      []float64 `json:"drawdown"`
+	Trades        []VPTrade `json:"trades"`
+	VPLLevels     VPLLevels `json:"vp_levels"`
 }
 
 type VPTrade struct {
-	EntryTime   string  `json:"entry_time"`
-	ExitTime    string  `json:"exit_time"`
-	EntryPrice  float64 `json:"entry_price"`
-	ExitPrice   float64 `json:"exit_price"`
-	Direction   string  `json:"direction"`
-	PnL         float64 `json:"pnl"`
-	Reason      string  `json:"reason"`
-	Grade       string  `json:"grade"`
+	EntryTime  string  `json:"entry_time"`
+	ExitTime   string  `json:"exit_time"`
+	EntryPrice float64 `json:"entry_price"`
+	ExitPrice  float64 `json:"exit_price"`
+	Direction  string  `json:"direction"`
+	PnL        float64 `json:"pnl"`
+	Reason     string  `json:"reason"`
+	Grade      string  `json:"grade"`
 }
 
 type VPLLevels struct {
-	POC      float64   `json:"poc"`
-	VAH      float64   `json:"vah"`
-	VAL      float64   `json:"val"`
+	POC      float64      `json:"poc"`
+	VAH      float64      `json:"vah"`
+	VAL      float64      `json:"val"`
 	HVNZones [][2]float64 `json:"hvn_zones"`
 	LVNZones [][2]float64 `json:"lvn_zones"`
-	Prices   []float64 `json:"prices"`
-	Volumes  []float64 `json:"volumes"`
+	Prices   []float64    `json:"prices"`
+	Volumes  []float64    `json:"volumes"`
 }
 
 // RunVPBacktest executes the Python VP backtest engine with real data.
@@ -102,7 +102,7 @@ func RunVPBacktest(ctx context.Context, symbol, timeframe, mode, grade string, b
 			hasVolume = true
 		}
 		barsJSON[i] = OHLCVJSON{
-			Time:   bar.Time.Format(time.RFC3339),
+			Time:   bar.Date.Format(time.RFC3339),
 			Open:   bar.Open,
 			High:   bar.High,
 			Low:    bar.Low,
@@ -110,7 +110,7 @@ func RunVPBacktest(ctx context.Context, symbol, timeframe, mode, grade string, b
 			Volume: vol,
 		}
 	}
-	
+
 	if !hasVolume {
 		log.Warn().Str("symbol", symbol).Msg("No volume data available, using range-based proxy")
 	}
@@ -161,7 +161,7 @@ func RunVPBacktest(ctx context.Context, symbol, timeframe, mode, grade string, b
 	if len(bars) > 500 {
 		timeout = 180 * time.Second
 	}
-	
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 

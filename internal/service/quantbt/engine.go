@@ -41,41 +41,41 @@ type OHLCVJSON struct {
 
 // QuantBTResult holds the result from Python engine.
 type QuantBTResult struct {
-	Mode       string      `json:"mode"`
-	Symbol     string      `json:"symbol"`
-	Success    bool        `json:"success"`
-	Error      string      `json:"error"`
-	Result     BTResult    `json:"result"`
-	TextOutput string      `json:"text_output"`
-	ChartPath  string      `json:"chart_path"`
+	Mode       string   `json:"mode"`
+	Symbol     string   `json:"symbol"`
+	Success    bool     `json:"success"`
+	Error      string   `json:"error"`
+	Result     BTResult `json:"result"`
+	TextOutput string   `json:"text_output"`
+	ChartPath  string   `json:"chart_path"`
 }
 
 type BTResult struct {
-	TotalTrades     int       `json:"total_trades"`
-	WinRate         float64   `json:"win_rate"`
-	ProfitFactor    float64   `json:"profit_factor"`
-	SharpeRatio     float64   `json:"sharpe_ratio"`
-	MaxDrawdown     float64   `json:"max_drawdown"`
-	ExpectedValue   float64   `json:"expected_value"`
-	AvgWin          float64   `json:"avg_win"`
-	AvgLoss         float64   `json:"avg_loss"`
-	TotalPnL        float64   `json:"total_pnl"`
-	WinCount        int       `json:"win_count"`
-	LossCount       int       `json:"loss_count"`
-	EquityCurve     []float64 `json:"equity_curve"`
-	Drawdown        []float64 `json:"drawdown"`
-	Trades          []BTTrade `json:"trades"`
+	TotalTrades   int       `json:"total_trades"`
+	WinRate       float64   `json:"win_rate"`
+	ProfitFactor  float64   `json:"profit_factor"`
+	SharpeRatio   float64   `json:"sharpe_ratio"`
+	MaxDrawdown   float64   `json:"max_drawdown"`
+	ExpectedValue float64   `json:"expected_value"`
+	AvgWin        float64   `json:"avg_win"`
+	AvgLoss       float64   `json:"avg_loss"`
+	TotalPnL      float64   `json:"total_pnl"`
+	WinCount      int       `json:"win_count"`
+	LossCount     int       `json:"loss_count"`
+	EquityCurve   []float64 `json:"equity_curve"`
+	Drawdown      []float64 `json:"drawdown"`
+	Trades        []BTTrade `json:"trades"`
 }
 
 type BTTrade struct {
-	EntryTime   string  `json:"entry_time"`
-	ExitTime    string  `json:"exit_time"`
-	EntryPrice  float64 `json:"entry_price"`
-	ExitPrice   float64 `json:"exit_price"`
-	Direction   string  `json:"direction"`
-	PnL         float64 `json:"pnl"`
-	Reason      string  `json:"reason"`
-	Grade       string  `json:"grade"`
+	EntryTime  string  `json:"entry_time"`
+	ExitTime   string  `json:"exit_time"`
+	EntryPrice float64 `json:"entry_price"`
+	ExitPrice  float64 `json:"exit_price"`
+	Direction  string  `json:"direction"`
+	PnL        float64 `json:"pnl"`
+	Reason     string  `json:"reason"`
+	Grade      string  `json:"grade"`
 }
 
 // RunQuantBacktest executes the Python quant backtest engine with real data.
@@ -88,7 +88,7 @@ func RunQuantBacktest(ctx context.Context, symbol, timeframe, grade string, bars
 	barsJSON := make([]OHLCVJSON, len(bars))
 	for i, bar := range bars {
 		barsJSON[i] = OHLCVJSON{
-			Date:   bar.Time.Format("2006-01-02"),
+			Date:   bar.Date.Format("2006-01-02"),
 			Open:   bar.Open,
 			High:   bar.High,
 			Low:    bar.Low,

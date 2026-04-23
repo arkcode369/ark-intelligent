@@ -1,4 +1,4 @@
-// Package ict implements Smart Money Concepts (SMC) / Inner Circle Trader (ICT)
+// Package ict implements Inner Circle Trader (ICT)
 // analysis engine for forex pairs. It detects Fair Value Gaps, Order Blocks,
 // Breaker Blocks, Change of Character (CHoCH), Break of Structure (BOS),
 // and Liquidity Sweeps from OHLCV data.

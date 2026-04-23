@@ -7,13 +7,13 @@ import (
 	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
-// Engine is the top-level ICT/SMC analysis engine.
+// Engine is the top-level ICT analysis engine.
 type Engine struct{}
 
 // NewEngine creates a new ICT Engine.
 func NewEngine() *Engine { return &Engine{} }
 
-// Analyze runs the full ICT/SMC analysis on a slice of OHLCV bars (newest-first).
+// Analyze runs the full ICT analysis on a slice of OHLCV bars (newest-first).
 // symbol and timeframe are for display purposes only.
 //
 // FVG and Order Block detection is delegated to the canonical ta.CalcICT
@@ -29,7 +29,7 @@ func (e *Engine) Analyze(bars []ta.OHLCV, symbol, timeframe string) *ICTResult {
 
 	if len(bars) < 15 {
 		result.Bias = "NEUTRAL"
-		result.Summary = "Insufficient data for ICT/SMC analysis (need at least 15 bars)."
+		result.Summary = "Insufficient data for ICT analysis (need at least 15 bars)."
 		return result
 	}
 

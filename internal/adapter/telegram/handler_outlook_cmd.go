@@ -210,7 +210,7 @@ func (h *Handler) generateOutlook(ctx context.Context, chatID string, userID int
 		}
 	}
 
-	// ICT/SMC market structure for major symbols (H4, graceful degradation)
+	// ICT market structure for major symbols (H4, graceful degradation)
 	var ictContexts map[string]*ictsvc.ICTResult
 	if h.ict != nil {
 		ictContexts = make(map[string]*ictsvc.ICTResult, 4)

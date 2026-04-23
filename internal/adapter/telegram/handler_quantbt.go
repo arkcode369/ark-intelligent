@@ -18,8 +18,8 @@ import (
 
 	"github.com/arkcode369/ark-intelligent/internal/ports"
 	pricesvc "github.com/arkcode369/ark-intelligent/internal/service/price"
-	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 	quantbt "github.com/arkcode369/ark-intelligent/internal/service/quantbt"
+	"github.com/arkcode369/ark-intelligent/internal/service/ta"
 )
 
 // ---------------------------------------------------------------------------
@@ -258,7 +258,7 @@ func (h *Handler) runQuantBacktest(ctx context.Context, chatID string, symbol, t
 			_ = h.bot.DeleteMessage(ctx, chatID, loadingID)
 		}
 		log.Error().Err(err).Str("symbol", mapping.Currency).Str("timeframe", timeframe).Msg("quant backtest failed")
-		
+
 		// User-friendly error messages
 		errMsg := err.Error()
 		userMsg := "❌ Quant backtest gagal. "
@@ -271,14 +271,11 @@ func (h *Handler) runQuantBacktest(ctx context.Context, chatID string, symbol, t
 		} else {
 			userMsg += fmt.Sprintf("Error: %v", err)
 		}
-		
+
 		_, err2 := h.bot.SendHTML(ctx, chatID, userMsg)
 		return err2
 	}
 
-	// Convert quant result to backtest result format for chart generation
-	chartResult := convertQuantResultToBacktestResult(quantResult, mapping.Currency, timeframe)
-	
 	// Generate chart from quant result
 	chartPNG, chartErr := h.generateQuantChartFromQuantResult(ctx, quantResult, mapping.Currency, timeframe)
 	if chartErr != nil {
@@ -291,20 +288,23 @@ func (h *Handler) runQuantBacktest(ctx context.Context, chatID string, symbol, t
 	}
 
 	// Format result
-	summary := formatBacktestResult(result)
+	summary := formatQuantBTResult(quantResult)
 	kb := h.quantBTMenu()
 
 	// Send chart + caption with keyboard
 	if chartPNG != nil && len(chartPNG) > 0 {
 		_, err := h.bot.SendPhotoWithKeyboard(ctx, chatID, chartPNG, summary, kb)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	// Chart unavailable: prepend notification so user knows chart exists but failed
 	if chartErr != nil {
 		summary = "📊 <i>Chart sementara tidak tersedia. Menampilkan analisis teks.</i>\n\n" + summary
 	}
-	_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, summary, kb)
+	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, summary, kb)
 	return err
 }
 
@@ -369,7 +369,7 @@ func (h *Handler) showQuantBTTrades(ctx context.Context, chatID string, msgID in
 		}
 		return h.bot.EditMessage(ctx, chatID, msgID, "❌ Tidak ada trade yang dihasilkan.")
 	}
-	
+
 	result := convertQuantResultToBacktestResult(quantResult, mapping.Currency, timeframe)
 
 	// Format last 10 trades
@@ -378,7 +378,7 @@ func (h *Handler) showQuantBTTrades(ctx context.Context, chatID string, msgID in
 
 	// Delete old and send new (might be too long for edit)
 	_ = h.bot.DeleteMessage(ctx, chatID, msgID)
-	_, err := h.bot.SendWithKeyboardChunked(ctx, chatID, txt, kb)
+	_, err = h.bot.SendWithKeyboardChunked(ctx, chatID, txt, kb)
 	return err
 }
 
@@ -388,14 +388,14 @@ func (h *Handler) showQuantBTTrades(ctx context.Context, chatID string, msgID in
 
 // quantChartInput is the JSON structure for the quant chart Python script.
 type quantChartInput struct {
-	EquityCurve []float64          `json:"equity_curve"`
-	TradeDates  []string           `json:"trade_dates"`
-	TradePnL    []float64          `json:"trade_pnl"`
-	Drawdown    []float64          `json:"drawdown"`
-	Symbol      string             `json:"symbol"`
-	Timeframe   string             `json:"timeframe"`
-	Params      quantChartParams   `json:"params"`
-	Features    []quantFeature     `json:"features"`
+	EquityCurve []float64        `json:"equity_curve"`
+	TradeDates  []string         `json:"trade_dates"`
+	TradePnL    []float64        `json:"trade_pnl"`
+	Drawdown    []float64        `json:"drawdown"`
+	Symbol      string           `json:"symbol"`
+	Timeframe   string           `json:"timeframe"`
+	Params      quantChartParams `json:"params"`
+	Features    []quantFeature   `json:"features"`
 }
 
 type quantChartParams struct {
@@ -411,7 +411,7 @@ type quantChartParams struct {
 }
 
 type quantFeature struct {
-	Name  string  `json:"name"`
+	Name       string  `json:"name"`
 	Importance float64 `json:"importance"`
 }
 
@@ -581,7 +581,39 @@ func findQuantChartScript() (string, error) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// formatQuantBTResult formats a QuantBTResult as a Telegram HTML message.
+func formatQuantBTResult(r *quantbt.QuantBTResult) string {
+	if !r.Success {
+		return fmt.Sprintf("❌ <b>Backtest Failed</b>\n\n%s", html.EscapeString(r.Error))
+	}
 
+	var sb strings.Builder
+	rslt := r.Result
+
+	sb.WriteString(fmt.Sprintf("📊 <b>Quantitative Backtest</b>\n\n"))
+	sb.WriteString(fmt.Sprintf("<b>Mode:</b> %s\n", html.EscapeString(r.Mode)))
+	sb.WriteString(fmt.Sprintf("<b>Total Trades:</b> %d\n", rslt.TotalTrades))
+	sb.WriteString(fmt.Sprintf("<b>Win Rate:</b> %.1f%%\n", rslt.WinRate*100))
+	sb.WriteString(fmt.Sprintf("<b>Profit Factor:</b> %.2f\n", rslt.ProfitFactor))
+	sb.WriteString(fmt.Sprintf("<b>Sharpe Ratio:</b> %.2f\n", rslt.SharpeRatio))
+	sb.WriteString(fmt.Sprintf("<b>Max Drawdown:</b> %.1f%%\n", rslt.MaxDrawdown*100))
+	sb.WriteString(fmt.Sprintf("<b>Expected Value:</b> %.2f\n", rslt.ExpectedValue))
+	sb.WriteString(fmt.Sprintf("<b>Total P&L:</b> %.2f\n", rslt.TotalPnL))
+	sb.WriteString(fmt.Sprintf("<b>Win/Loss:</b> %d/%d\n", rslt.WinCount, rslt.LossCount))
+
+	if rslt.AvgWin > 0 {
+		sb.WriteString(fmt.Sprintf("<b>Avg Win:</b> %.2f\n", rslt.AvgWin))
+	}
+	if rslt.AvgLoss < 0 {
+		sb.WriteString(fmt.Sprintf("<b>Avg Loss:</b> %.2f\n", rslt.AvgLoss))
+	}
+
+	if r.TextOutput != "" {
+		sb.WriteString(fmt.Sprintf("\n<i>%s</i>", html.EscapeString(r.TextOutput)))
+	}
+
+	return sb.String()
+}
 
 // ---------------------------------------------------------------------------
 // Keyboard builders for /quantbt
@@ -658,7 +690,7 @@ func convertQuantResultToBacktestResult(quantResult *quantbt.QuantBTResult, symb
 		ExpectedValue:   quantResult.Result.ExpectedValue,
 		EquityCurve:     quantResult.Result.EquityCurve,
 	}
-	
+
 	for i, t := range quantResult.Result.Trades {
 		result.Trades[i] = ta.TradeRecord{
 			EntryPrice: t.EntryPrice,
@@ -669,7 +701,7 @@ func convertQuantResultToBacktestResult(quantResult *quantbt.QuantBTResult, symb
 			Grade:      t.Grade,
 		}
 	}
-	
+
 	return result
 }
 
@@ -682,7 +714,7 @@ func (h *Handler) generateQuantChartFromQuantResult(ctx context.Context, quantRe
 	// Use Python chart generation via quant_engine.py
 	// The chart is already generated by compute_backtest if chart_path was provided
 	// Here we just read the generated chart
-	
+
 	// For now, return nil and let the text output be shown
 	// In production, we could call a separate chart generation function
 	return nil, fmt.Errorf("chart generation not yet implemented for quant backtest")

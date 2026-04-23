@@ -447,17 +447,7 @@ func main() {
 			IntradayRepo:   storageDeps.IntradayRepo,
 		}
 		handler.WithICT(ictServices)
-		log.Info().Msg("ICT/SMC commands registered (/ict)")
-
-		// Wire SMC services (Smart Money Concepts: BOS/CHOCH + ICT overlay)
-		smcServices := &tgbot.SMCServices{
-			ICTEngine:      ictsvc.NewEngine(),
-			TAEngine:       taEngine,
-			DailyPriceRepo: storageDeps.DailyPriceRepo,
-			IntradayRepo:   storageDeps.IntradayRepo,
-		}
-		handler.WithSMC(smcServices)
-		log.Info().Msg("SMC commands registered (/smc)")
+		log.Info().Msg("ICT commands registered (/ict)")
 
 		// Wire GEX services (Gamma Exposure engine via Deribit public API)
 		gexServices := &tgbot.GEXServices{

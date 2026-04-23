@@ -25,7 +25,7 @@ type HelpTopic struct {
 // helpTopics holds all contextual help definitions.
 var helpTopics = map[string]HelpTopic{
 	"gex": {
-		Title:       "Gamma Exposure (GEX)",
+		Title: "Gamma Exposure (GEX)",
 		Description: "Mengukur posisi dealer options dan dampaknya ke pergerakan harga.\n\n" +
 			"• <b>Positive GEX</b> = Dealer net long gamma → market range-bound, volatilitas rendah\n" +
 			"• <b>Negative GEX</b> = Dealer net short gamma → market trending, volatilitas tinggi\n" +
@@ -42,7 +42,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"skew", "ivol", "vix"},
 	},
 	"skew": {
-		Title:       "IV Skew / Smile Analysis",
+		Title: "IV Skew / Smile Analysis",
 		Description: "Menganalisis perbedaan Implied Volatility (IV) antara put dan call options.\n\n" +
 			"• <b>Put Skew</b> (skew negatif) = Put IV lebih tinggi → fear/bearish sentiment\n" +
 			"• <b>Call Skew</b> (skew positif) = Call IV lebih tinggi → bullish sentiment\n" +
@@ -57,7 +57,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"gex", "ivol", "vix"},
 	},
 	"ivol": {
-		Title:       "Implied Volatility Surface",
+		Title: "Implied Volatility Surface",
 		Description: "Menampilkan IV di berbagai strikes dan expiries untuk melihat market expectation.\n\n" +
 			"• <b>ATM IV</b> = Implied Volatility at-the-money → baseline volatilitas\n" +
 			"• <b>Term Structure</b> = IV vs waktu → backwardation (near-term tinggi) atau contango\n" +
@@ -72,7 +72,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"gex", "skew", "vix"},
 	},
 	"cot": {
-		Title:       "Commitment of Traders (COT)",
+		Title: "Commitment of Traders (COT)",
 		Description: "Data posisi institusional dari CFTC setiap Jumat.\n\n" +
 			"• <b>Large Speculators</b> = Hedge funds, CTAs → biasanya contrarian\n" +
 			"• <b>Commercials</b> = Hedgers (perusahaan) → usually right\n" +
@@ -88,7 +88,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"signal", "rank", "bias"},
 	},
 	"cta": {
-		Title:       "Classical Technical Analysis",
+		Title: "Classical Technical Analysis",
 		Description: "Analisis teknikal lengkap dengan multiple indicators.\n\n" +
 			"• <b>Trend</b> = MA, EMA, ADX untuk identifikasi trend\n" +
 			"• <b>Momentum</b> = RSI, MACD, Stochastic\n" +
@@ -104,7 +104,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"quant", "vp", "ict", "smc"},
 	},
 	"quant": {
-		Title:       "Quantitative / Econometric Analysis",
+		Title: "Quantitative / Econometric Analysis",
 		Description: "Analisis statistik advanced untuk trading signals.\n\n" +
 			"• <b>GARCH</b> = Volatility clustering & forecasting\n" +
 			"• <b>Regime Detection</b> = HMM untuk identify market state\n" +
@@ -120,7 +120,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"cta", "vp", "regime"},
 	},
 	"quantbt": {
-		Title:       "Quantitative Backtest (ML-Enhanced)",
+		Title: "Quantitative Backtest (ML-Enhanced)",
 		Description: "Backtest strategi dengan machine learning dan analisis statistik advanced.\n\n" +
 			"• <b>7 Timeframes</b> = 15m, 30m, 1h, 4h, 6h, 12h, daily\n" +
 			"• <b>Grade Filter</b> = A (best), B, C (all trades)\n" +
@@ -137,7 +137,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"ctabt", "cta", "backtest", "quant"},
 	},
 	"vpbt": {
-		Title:       "Volume Profile Backtest",
+		Title: "Volume Profile Backtest",
 		Description: "Backtest Volume Profile strategies dengan 10 mode analisis volume-at-price.\n\n" +
 			"• <b>Profile</b> = POC, VAH/VAL, HVN/LVN zones\n" +
 			"• <b>Session</b> = Asian/London/NY split + Naked POC\n" +
@@ -158,7 +158,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"ctabt", "quantbt", "vp", "backtest"},
 	},
 	"vix": {
-		Title:       "Volatility Index (VIX) & Volatility Suite",
+		Title: "Volatility Index (VIX) & Volatility Suite",
 		Description: "Dashboard untuk mengukur fear & greed market.\n\n" +
 			"• <b>VIX</b> = Fear index S&P 500 → >20 = fear, <15 = complacency\n" +
 			"• <b>VVIX</b> = Volatility of VIX → sentiment changes\n" +
@@ -173,7 +173,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"gex", "skew", "sentiment"},
 	},
 	"outlook": {
-		Title:       "AI Unified Outlook",
+		Title: "AI Unified Outlook",
 		Description: "Analisis AI yang menggabungkan semua data sources + web search.\n\n" +
 			"• <b>Data Integration</b> = COT, price, news, macro data\n" +
 			"• <b>Web Search</b> = Real-time news & sentiment\n" +
@@ -188,7 +188,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"macro", "impact", "sentiment"},
 	},
 	"calendar": {
-		Title:       "Economic Calendar",
+		Title: "Economic Calendar",
 		Description: "Jadwal rilis data ekonomi penting.\n\n" +
 			"• <b>High Impact</b> = NFP, CPI, FOMC, Rate decisions\n" +
 			"• <b>Medium Impact</b> = GDP, PMI, Retail sales\n" +
@@ -203,7 +203,7 @@ var helpTopics = map[string]HelpTopic{
 		Related: []string{"impact", "outlook", "macro"},
 	},
 	"price": {
-		Title:       "Daily Price Data",
+		Title: "Daily Price Data",
 		Description: "Harga terkini dan perubahan.\n\n" +
 			"• <b>OHLC</b> = Open, High, Low, Close\n" +
 			"• <b>Change</b> = Perubahan harian (%) dan absolute\n" +
