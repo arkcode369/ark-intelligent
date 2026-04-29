@@ -35,32 +35,62 @@ func (e *Engine) Analyze(bars []ta.OHLCV, symbol, timeframe string) *ICTResult {
 
 	// Step 1: Compute ATR for ta.CalcICT.
 	atr := ta.CalcATR(bars, 14)
+	result.ATR = atr
 
 	// Step 2: Delegate FVG + Order Block + Liquidity Level detection to ta.CalcICT.
 	// This is the single authoritative source for these computations.
 	if taICT := ta.CalcICT(bars, atr); taICT != nil {
 		result.FVGZones = convertFVGs(taICT.FairValueGaps)
 		result.OrderBlocks = convertOrderBlocks(taICT.OrderBlocks, taICT.BreakerBlocks)
+		result.Equilibrium = taICT.Equilibrium
+		result.PremiumZone = taICT.PremiumZone
+		result.DiscountZone = taICT.DiscountZone
+		result.LiquidityLevels = convertLiquidityLevels(taICT.LiquidityLevels)
 	}
 
-	// Step 3: Detect swing points (prerequisite for structure + sweeps).
-	swings := detectSwings(bars)
+	// Step 3: Detect swing points with DYNAMIC lookback based on timeframe.
+	swings := detectSwingsTF(bars, timeframe)
 
-	// Step 4: Market structure — CHoCH & BOS (unique to this engine).
+	// Step 4: Detect relevant anchors (most significant high/low for P&D and OTE).
+	result.RelevantHigh, result.RelevantLow = detectRelevantAnchors(bars, swings, atr)
+
+	// Step 5: Market structure — CHoCH & BOS (unique to this engine).
 	result.Structure = DetectStructure(swings)
 
-	// Step 5: Liquidity Sweeps (unique to this engine).
+	// Step 6: Liquidity Sweeps (unique to this engine).
 	result.Sweeps = DetectLiquiditySweeps(bars, swings)
 
-	// Step 6: Derive current bias from structure events.
+	// Step 7: Optimal Trade Entry zones — from relevant anchors + recent swings.
+	result.OTE = DetectOTEFromAnchors(bars, swings, result.RelevantHigh, result.RelevantLow)
+
+	// Step 8: Silver Bullet time windows with box data (intraday only).
+	result.SilverBullets = DetectSilverBullets(bars, result.FVGZones, timeframe)
+
+	// Step 9: Power of 3 (AMD) — multi-timeframe detection.
+	result.AMD = DetectAMD(bars, timeframe)
+
+	// Step 10: Judas Swing detection (intraday only).
+	result.JudasSwings = DetectJudasSwings(bars, timeframe)
+
+	// Step 11: Market Maker Models (MMD/MMW/MMS).
+	result.MarketMakerModels = DetectMarketMakerModels(bars, result.Bias, result.PremiumZone, result.DiscountZone)
+
+	// Step 12: Killzone boxes with price ranges + pivot lines.
+	result.KillzoneBoxes = DetectKillzoneBoxes(bars, timeframe)
+
+	// Step 13: DWM Pivots — previous Day/Week/Month High/Low.
+	result.DWMPivots = DetectDWMPivots(bars)
+
+	// Step 14: Derive current bias from structure events.
 	result.Bias = currentBias(result.Structure)
 
-	// Step 7: Killzone detection from the most recent bar.
+	// Step 15: Killzone detection from the most recent bar.
 	if len(bars) > 0 {
 		result.Killzone = detectKillzone(bars[0].Date)
+		result.CurrentPrice = bars[0].Close
 	}
 
-	// Step 8: Build narrative summary.
+	// Step 16: Build narrative summary.
 	result.Summary = buildSummary(result)
 
 	return result
@@ -120,6 +150,23 @@ func convertOrderBlocks(taOBs, taBreakers []ta.OrderBlock) []OrderBlock {
 	return out
 }
 
+// convertLiquidityLevels converts ta.LiquidityLevel slices to ict.LiquidityLevel slices.
+func convertLiquidityLevels(taLLs []ta.LiquidityLevel) []LiquidityLevel {
+	if len(taLLs) == 0 {
+		return nil
+	}
+	out := make([]LiquidityLevel, len(taLLs))
+	for i, ll := range taLLs {
+		out[i] = LiquidityLevel{
+			Price: ll.Price,
+			Type:  ll.Type,
+			Count: ll.Count,
+			Swept: ll.Swept,
+		}
+	}
+	return out
+}
+
 // detectKillzone returns the ICT session name if the given UTC time falls
 // within a known killzone window.
 func detectKillzone(t time.Time) string {
@@ -169,6 +216,11 @@ func buildSummary(r *ICTResult) string {
 	if lastStruct != "" {
 		summary += fmt.Sprintf(" Last structure event: %s.", lastStruct)
 	}
+	if r.PremiumZone {
+		summary += " Price in PREMIUM zone (above equilibrium)."
+	} else if r.DiscountZone {
+		summary += " Price in DISCOUNT zone (below equilibrium)."
+	}
 	if activeOB > 0 {
 		summary += fmt.Sprintf(" %d active Order Block(s).", activeOB)
 	}
@@ -177,6 +229,31 @@ func buildSummary(r *ICTResult) string {
 	}
 	if reversedSweeps > 0 {
 		summary += fmt.Sprintf(" %d confirmed liquidity sweep reversal(s).", reversedSweeps)
+	}
+	if len(r.LiquidityLevels) > 0 {
+		unswept := 0
+		for _, ll := range r.LiquidityLevels {
+			if !ll.Swept {
+				unswept++
+			}
+		}
+		if unswept > 0 {
+			summary += fmt.Sprintf(" %d unswept liquidity pool(s).", unswept)
+		}
+	}
+	if len(r.OTE) > 0 {
+		inOTE := false
+		for _, ote := range r.OTE {
+			if r.CurrentPrice >= ote.Low && r.CurrentPrice <= ote.High {
+				inOTE = true
+				break
+			}
+		}
+		if inOTE {
+			summary += " Price is in OTE zone — optimal entry!"
+		} else {
+			summary += fmt.Sprintf(" %d OTE zone(s) available.", len(r.OTE))
+		}
 	}
 	return summary
 }

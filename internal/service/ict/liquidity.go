@@ -14,7 +14,7 @@ import (
 //	Reversed=true if the following candle confirms (close in the opposite direction).
 func DetectLiquiditySweeps(bars []ta.OHLCV, swings []swingPoint) []LiquiditySweep {
 	n := len(bars)
-	if n < swingLookback*2+2 || len(swings) < 2 {
+	if n < 12 || len(swings) < 2 {
 		return nil
 	}
 
